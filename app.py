@@ -1,5 +1,5 @@
 from fastapi import Body, FastAPI, Request, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -79,9 +79,9 @@ app = FastAPI(
 # =============================================================================
 # Redis key conventions (single source of truth)
 # =============================================================================
-KEY_WHITELIST = f"{KEY_PREFIX}registry:whitelist"      # SET(scanner)
-KEY_REGISTRY  = f"{KEY_PREFIX}registry:scanners"       # SET(scanner)
-KEY_BUNDLE_CURRENT = f"{KEY_PREFIX}bundle:current"     # HASH(name, version, path, sha256)
+KEY_WHITELIST_NAME2MAC = f"{KEY_PREFIX}registry:whitelist_name2mac"  # HASH(name -> mac)
+KEY_REGISTRY  = f"{KEY_PREFIX}registry:scanners"                     # SET(scanner)
+KEY_BUNDLE_CURRENT = f"{KEY_PREFIX}bundle:current"                   # HASH(name, version, path, sha256)
 
 def key_scanner_meta(scanner: str) -> str:
     return f"{KEY_PREFIX}scanner:{scanner}:meta"       # HASH(...)
@@ -157,8 +157,8 @@ def get_bundle_current() -> Dict[str, Any]:
     return {"name": name, "version": version, "path": str(path), "sha256": sha, "exists": True}
 
 def require_whitelisted(scanner: str) -> None:
-    """403 if scanner not in whitelist."""
-    if not r.sismember(KEY_WHITELIST, scanner):
+    """403 if scanner name not in whitelist hash (name -> mac)."""
+    if not r.hexists(KEY_WHITELIST_NAME2MAC, scanner):
         raise HTTPException(status_code=403, detail=f"Scanner '{scanner}' not in whitelist")
 
 # =============================================================================
@@ -191,59 +191,103 @@ def health() -> Dict[str, Any]:
 # =============================================================================
 # 1) Registry & Whitelist (new scanner must be whitelisted first)
 # =============================================================================
-class WhitelistAddReq(BaseModel):
-    """Admin request to add scanners to whitelist."""
-    scanners: List[str] = Field(default_factory=list)
+class WhitelistItem(BaseModel):
+    scanner: str = Field(..., description="Assigned name, e.g. scanner01")
+    mac: str = Field(..., description="MAC address, e.g. 2c:cf:67:d0:67:f3")
 
-@app.post("/registry/whitelist/add", tags=["1 Registry & Whitelist"])
-def whitelist_add(req: WhitelistAddReq) -> Dict[str, Any]:
-    """
-    Add scanners to whitelist (admin helper).
+class WhitelistUpsertReq(BaseModel):
+    items: List[WhitelistItem] = Field(default_factory=list)
+    
+class RegisterReq(BaseModel):
+    mac: str
+    ip: Optional[str] = None
+    scanner_version: Optional[str] = None
+    capabilities: Optional[str] = None
 
-    Redis:
-      SADD nms:registry:whitelist <scanner...>
+def normalize_mac(mac: str) -> str:
+    return (mac or "").strip().lower()
+
+def find_name_by_mac(mac: str) -> str:
     """
-    if not req.scanners:
-        return {"status": "ok", "added": 0, "whitelist_size": r.scard(KEY_WHITELIST)}
-    added = r.sadd(KEY_WHITELIST, *req.scanners)
-    return {"status": "ok", "added": int(added), "whitelist_size": r.scard(KEY_WHITELIST)}
+    Reverse lookup using the single source-of-truth HASH(name -> mac).
+    For ~10 Pis, scanning is fine and avoids dual-table sync problems.
+    """
+    mac = normalize_mac(mac)
+    cursor = 0
+    while True:
+        cursor, pairs = r.hscan(KEY_WHITELIST_NAME2MAC, cursor=cursor, count=200)
+        # pairs is dict: {name: mac}
+        for name, v in pairs.items():
+            if (v or "").strip().lower() == mac:
+                return name
+        if int(cursor) == 0:
+            break
+    return ""
+
+@app.post("/registry/whitelist/upsert", tags=["1 Registry & Whitelist"])
+def whitelist_upsert(req: WhitelistUpsertReq) -> Dict[str, Any]:
+    """
+    Add/update whitelist mappings (scanner name -> MAC).
+    Single source of truth: Redis HASH nms:registry:whitelist_name2mac
+    """
+    if not req.items:
+        return {"status": "ok", "upserted": 0}
+
+    mapping: Dict[str, str] = {}
+    for it in req.items:
+        scanner = (it.scanner or "").strip()
+        mac = (it.mac or "").strip().lower()
+        if not scanner or not mac:
+            continue
+        mapping[scanner] = mac
+
+    if not mapping:
+        return {"status": "ok", "upserted": 0}
+
+    r.hset(KEY_WHITELIST_NAME2MAC, mapping=mapping)
+    return {"status": "ok", "upserted": len(mapping)}
 
 @app.get("/registry/whitelist", tags=["1 Registry & Whitelist"])
 def whitelist_list() -> Dict[str, Any]:
-    """
-    List current whitelist members.
+    m = r.hgetall(KEY_WHITELIST_NAME2MAC) or {}
+    # sort for stable display in Swagger responses
+    items = [{"scanner": k, "mac": v} for k, v in sorted(m.items(), key=lambda x: x[0])]
+    return {"count": len(items), "items": items, "key": KEY_WHITELIST_NAME2MAC}
 
-    Redis:
-      SMEMBERS nms:registry:whitelist
-    """
-    members = sorted(list(r.smembers(KEY_WHITELIST)))
-    return {"count": len(members), "scanners": members}
+@app.delete("/registry/whitelist/{scanner}", tags=["1 Registry & Whitelist"])
+def whitelist_delete(scanner: str) -> Dict[str, Any]:
+    scanner = (scanner or "").strip()
+    if not scanner:
+        raise HTTPException(status_code=400, detail="scanner required")
+    removed = r.hdel(KEY_WHITELIST_NAME2MAC, scanner)
+    return {"status": "ok", "removed": int(removed), "scanner": scanner}
 
-class RegisterReq(BaseModel):
-    """
-    Scanner self-registration payload.
-    The Pi can call this at boot/login to report identity and capabilities.
-    """
-    scanner: str
-    ip: Optional[str] = None
-    scanner_version: Optional[str] = None
-    capabilities: Optional[str] = None  # string for now (can be JSON later)
+@app.get("/registry/whitelist/reverse/{mac}", tags=["1 Registry & Whitelist"])
+def whitelist_reverse(mac: str) -> Dict[str, Any]:
+    mac = (mac or "").strip().lower()
+    name = find_name_by_mac(mac)
+    return {"mac": mac, "scanner": name, "found": bool(name)}
 
 @app.post("/registry/register", tags=["1 Registry & Whitelist"])
-def register(req: RegisterReq) -> Dict[str, Any]:
+def register(req: RegisterReq):
     """
-    Register a scanner in NMS registry (whitelist required).
+    Register a scanner by MAC (Pi is dumb, cloned SD).
 
-    Redis:
-      - SADD nms:registry:scanners <scanner>
-      - HSET nms:scanner:{scanner}:meta fields (ip, version, capabilities, last_seen_utc)
+    - Looks up scanner name by MAC in Redis HASH(name->mac)
+    - Updates registry/meta keyed by *name*
+    - Returns plain text scanner name (e.g., 'scanner01')
     """
-    require_whitelisted(req.scanner)
+    mac = normalize_mac(req.mac)
+    scanner = find_name_by_mac(mac)
+    if not scanner:
+        raise HTTPException(status_code=403, detail=f"MAC '{mac}' not in whitelist")
+
     now = utc_iso()
 
-    r.sadd(KEY_REGISTRY, req.scanner)
+    # Keep registry as NAMES (minimal disruption)
+    r.sadd(KEY_REGISTRY, scanner)
 
-    updates: Dict[str, str] = {"last_seen_utc": now}
+    updates: Dict[str, str] = {"last_seen_utc": now, "mac": mac}
     if req.ip:
         updates["ip"] = req.ip
     if req.scanner_version:
@@ -251,8 +295,10 @@ def register(req: RegisterReq) -> Dict[str, Any]:
     if req.capabilities:
         updates["capabilities"] = req.capabilities
 
-    r.hset(key_scanner_meta(req.scanner), mapping=updates)
-    return {"status": "ok", "scanner": req.scanner, "updated": updates}
+    r.hset(key_scanner_meta(scanner), mapping=updates)
+
+    # Plain text response for Pi
+    return PlainTextResponse(content=scanner)
 
 @app.get("/registry/scanners", tags=["1 Registry & Whitelist"])
 def list_scanners() -> Dict[str, Any]:
@@ -317,7 +363,7 @@ def bootstrap_check(scanner: str) -> Dict[str, Any]:
         "bundle_url": f"/bootstrap/bundle/{bundle['name']}",
         "sha256": bundle["sha256"],
         "installed_version": installed_version,
-        "whitelist_key": KEY_WHITELIST,
+        "whitelist_key": KEY_WHITELIST_NAME2MAC,
     }
 
 @app.get("/bootstrap/bundle/{bundle_name}", tags=["2 Bootstrap (Init/Update)"])
@@ -588,7 +634,7 @@ def cmd_load_script(script: ScriptLoad) -> Dict[str, Any]:
 
     added = 0
     for it in script.items:
-        if not r.sismember(KEY_WHITELIST, it.scanner):
+        if not r.sismember(KEY_WHITELIST_NAME2MAC, it.scanner):
             continue
 
         cmd_id = str(uuid.uuid4())
@@ -648,7 +694,7 @@ def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
         if not scanner:
             bad_rows += 1
             continue
-        if not r.sismember(KEY_WHITELIST, scanner):
+        if not r.sismember(KEY_WHITELIST_NAME2MAC, scanner):
             skipped_not_whitelisted += 1
             continue
 
@@ -923,7 +969,7 @@ def admin_reset(req: ResetReq) -> Dict[str, Any]:
     # Keys we must keep
     keep = set()
     if req.keep_whitelist:
-        keep.add(KEY_WHITELIST)
+        keep.add(KEY_WHITELIST_NAME2MAC)
     if req.keep_bundle_current:
         keep.add(KEY_BUNDLE_CURRENT)
 
@@ -962,16 +1008,12 @@ def debug_queue(scanner: str) -> Dict[str, Any]:
 
 @app.get("/debug/whitelist/{scanner}", tags=["9 Debug"])
 def debug_whitelist(scanner: str) -> Dict[str, Any]:
-    """
-    Debug whitelist membership and show whitelist preview.
-    """
-    members = sorted(list(r.smembers(KEY_WHITELIST)))
+    mac = r.hget(KEY_WHITELIST_NAME2MAC, scanner) or ""
     return {
-        "whitelist_key": KEY_WHITELIST,
+        "whitelist_key": KEY_WHITELIST_NAME2MAC,
         "scanner": scanner,
-        "sismember": bool(r.sismember(KEY_WHITELIST, scanner)),
-        "members_preview": members[:50],
-        "count": len(members),
+        "hexists": bool(r.hexists(KEY_WHITELIST_NAME2MAC, scanner)),
+        "mac": mac,
     }
 
 import asyncio
