@@ -1,0 +1,122 @@
+
+---
+
+## `docs/operator_api_notes.md`
+
+```md
+# Operator API Notes (not for Pi)
+
+Rule: APIs whose action part starts with "_" are **operator-only**.  
+These endpoints exist for lab control, debugging, maintenance, and integration testing.
+
+## Operator-only categories
+
+### Registry & Whitelist (operator-only)
+- Use these to manage the allowed device set and inspect mappings.
+- Anything that lists internal state (whitelist details, reverse lookup, etc.) should be underscore-prefixed.
+
+Typical operator-only endpoints:
+- GET `/registry/_list_whitelists`
+- GET `/registry/_list_whitelist_meta/{scanner}`
+- GET `/registry/_list_whitelist_meta_reverse/{mac}`
+- GET `/registry/_list_scanners`
+
+Write operations:
+- POST `/registry/_whitelist_upsert`
+- DELETE `/registry/_whitelist/{scanner}`
+
+> Recommended: keep `/registry/register` Pi-facing, everything else underscore.
+
+---
+
+### Bootstrap (Init/Update) (operator-only)
+Operator responsibilities:
+- Upload/delete bundles
+- Inspect bundle catalog and per-scanner bundle telemetry
+
+Typical operator-only endpoints:
+- GET `/bootstrap/_list_bundles`
+- GET `/bootstrap/_list_bundle_meta/{scanner}`
+- POST `/bootstrap/_bundle` (upload)
+- DELETE `/bootstrap/_bundle/{bundle_id}`
+
+Pi-facing endpoint:
+- GET `/bootstrap/bundle/{bundle_id}` (download)
+
+Telemetry endpoint (Pi-facing):
+- POST `/bootstrap/report/{scanner}`
+
+---
+
+### Commands (Polling) (operator-only)
+Operator responsibilities:
+- Schedule commands
+- Bulk load scripts
+- Inspect command queues
+
+Typical operator-only endpoints:
+- GET `/cmd/_list_command_queues`
+- GET `/cmd/_list_command_queue/{scanner}`
+- POST `/cmd/_enqueue/{scanner}`
+- POST `/cmd/_load_script`
+- POST `/cmd/_load_csv`
+
+Pi-facing endpoints:
+- GET `/cmd/poll/{scanner}`
+- POST `/cmd/ack/{scanner}`
+
+---
+
+### Northbound Relay (NMS → Web /dataScanned) (operator-only)
+Operator responsibilities:
+- Inspect payload queues and relay health
+- Manually flush
+- Control auto-flush
+
+Typical operator-only endpoints:
+- GET `/relay/_list_payload_queues`
+- GET `/relay/_list_payload_queue/{scanner}`
+- POST `/relay/_flush`
+- GET `/relay/_autoflush_status`
+- POST `/relay/_autoflush_set`
+
+Pi-facing endpoints:
+- (none)
+
+---
+
+### Admin (operator-only)
+Operator responsibilities:
+- Redis reset / cleanup
+
+Typical operator-only endpoints:
+- POST `/admin/_reset`
+
+Important notes:
+- Reset should be designed to optionally preserve whitelist, bundle index, and auto-flush flag.
+- Reset must never delete bundle ZIP files on disk unless explicitly requested (you currently keep disk untouched).
+
+---
+
+## Operational guidance
+
+### “Underscore = operator-only” must be enforced
+- Even without auth, Pi code should never call underscore APIs.
+- Optionally add a simple shared API key later for underscore endpoints only.
+
+### Telemetry fields
+Telemetry-only fields are safe for Pi to send, but must not change behavior:
+- `/registry/register`: `scanner_version`, `capabilities`
+- `/bootstrap/report`: `installed_version`
+- `/cmd/ack`: `detail`, `finished_at` (if absent, NMS stamps server time)
+
+### Schema stability
+- Bundle metadata is normalized at write-time (bundle upload).
+- Redis is currently empty, so no legacy upgrade logic is required.
+- If old data is ever restored, consider adding upgrade-on-read in `_bundle_meta_get()`.
+
+### Pi-facing API contract
+Pi is allowed to call only endpoints whose action part does NOT start with "_",
+plus:
+- GET `/health`
+All other endpoints are operator-only by convention.
