@@ -220,11 +220,20 @@ def health() -> Dict[str, Any]:
     }
 
 # =============================================================================
-# 1) Registry & Whitelist
+# 1) Registry & Whitelist  (REVISED: whitelist now stores mac + llm_weblink)
 # =============================================================================
+
+# --- NEW whitelist storage (canonical) ---
+KEY_WHITELIST_SCANNER_META: str = f"{KEY_PREFIX}registry:whitelist_scanner_meta"  # HASH(scanner -> json(meta))
+WHITELIST_SCHEMA_VERSION: int = 1
+
+# NOTE: KEY_REGISTRY and key_scanner_meta(scanner) remain unchanged.
+
 class WhitelistItem(BaseModel):
     scanner: str = Field(..., description="Assigned name, e.g. scanner01")
     mac: str = Field(..., description="MAC address, e.g. 2c:cf:67:d0:67:f3")
+    llm_weblink: str = Field(..., description="ChatGPT conversation URL for this Pi")
+    comment: Optional[str] = Field(default="", description="Optional note for humans")
 
 class WhitelistUpsertReq(BaseModel):
     items: List[WhitelistItem] = Field(default_factory=list)
@@ -238,74 +247,183 @@ class RegisterReq(BaseModel):
 def normalize_mac(mac: str) -> str:
     return (mac or "").strip().lower()
 
-def find_name_by_mac(mac: str) -> str:
+def require_whitelisted(scanner: str) -> None:
+    if not r.hexists(KEY_WHITELIST_SCANNER_META, scanner):
+        raise HTTPException(status_code=403, detail=f"Scanner '{scanner}' not in whitelist")
+
+def whitelist_meta_get(scanner: str) -> Dict[str, Any]:
+    """
+    Return stored whitelist meta for scanner, or {} if not found.
+    Does NOT normalize or write back. (Your DB is empty, so no legacy cleanup needed.)
+    """
+    s = r.hget(KEY_WHITELIST_SCANNER_META, scanner)
+    if not s:
+        return {}
+    try:
+        j = json.loads(s)
+        if isinstance(j, dict):
+            return j
+        return {"scanner": scanner, "meta_raw": s}
+    except Exception:
+        return {"scanner": scanner, "meta_raw": s}
+
+def find_scanner_by_mac(mac: str) -> str:
+    """
+    Reverse lookup: scan whitelist meta objects and match by mac.
+    """
     mac = normalize_mac(mac)
     cursor = 0
     while True:
-        cursor, pairs = r.hscan(KEY_WHITELIST_NAME2MAC, cursor=cursor, count=200)
-        for name, v in pairs.items():
-            if (v or "").strip().lower() == mac:
-                return name
+        cursor, pairs = r.hscan(KEY_WHITELIST_SCANNER_META, cursor=cursor, count=200)
+        for scanner, meta_s in pairs.items():
+            try:
+                meta = json.loads(meta_s) if meta_s else {}
+            except Exception:
+                meta = {}
+            if normalize_mac(meta.get("mac", "")) == mac:
+                return scanner
         if int(cursor) == 0:
             break
     return ""
 
+# -----------------------------------------------------------------------------
+# Operator-only: list all whitelist entries (FULL items)
+# -----------------------------------------------------------------------------
 @app.get("/registry/_list_whitelists", tags=["1 Registry & Whitelist"])
 def registry_list_whitelists() -> Dict[str, Any]:
-    m = r.hgetall(KEY_WHITELIST_NAME2MAC) or {}
-    items = [{"scanner": k, "mac": v} for k, v in sorted(m.items(), key=lambda x: x[0])]
-    return {"count": len(items), "items": items, "key": KEY_WHITELIST_NAME2MAC}
+    raw = r.hgetall(KEY_WHITELIST_SCANNER_META) or {}
+    items: List[Dict[str, Any]] = []
 
+    for scanner, meta_s in raw.items():
+        try:
+            meta = json.loads(meta_s)
+            if not isinstance(meta, dict):
+                meta = {"scanner": scanner, "meta_raw": meta_s}
+        except Exception:
+            meta = {"scanner": scanner, "meta_raw": meta_s}
+
+        # Ensure at least scanner field exists
+        meta["scanner"] = meta.get("scanner") or scanner
+        items.append(meta)
+
+    items.sort(key=lambda x: (x.get("scanner") or ""))
+
+    return {
+        "time": local_ts(),
+        "count": len(items),
+        "items": items,
+        "key": KEY_WHITELIST_SCANNER_META,
+        "schema_version": int(WHITELIST_SCHEMA_VERSION),
+    }
+
+# -----------------------------------------------------------------------------
+# Operator-only: whitelist meta for one scanner (metadata style)
+# -----------------------------------------------------------------------------
 @app.get("/registry/_list_whitelist_meta/{scanner}", tags=["1 Registry & Whitelist"])
 def registry_list_whitelist_meta(scanner: str) -> Dict[str, Any]:
     scanner = (scanner or "").strip()
-    mac = r.hget(KEY_WHITELIST_NAME2MAC, scanner) or ""
+    exists = bool(r.hexists(KEY_WHITELIST_SCANNER_META, scanner))
+    meta = whitelist_meta_get(scanner) if exists else {}
+
     return {
         "time": local_ts(),
-        "whitelist_key": KEY_WHITELIST_NAME2MAC,
+        "whitelist_key": KEY_WHITELIST_SCANNER_META,
         "scanner": scanner,
-        "hexists": bool(r.hexists(KEY_WHITELIST_NAME2MAC, scanner)),
-        "mac": mac,
+        "hexists": exists,
+        "meta": meta,
     }
 
+# -----------------------------------------------------------------------------
+# Operator-only: reverse lookup scanner by mac
+# -----------------------------------------------------------------------------
 @app.get("/registry/_list_whitelist_meta_reverse/{mac}", tags=["1 Registry & Whitelist"])
-def registry_list_whitelist_reverse(mac: str) -> Dict[str, Any]:
-    mac = (mac or "").strip().lower()
-    name = find_name_by_mac(mac)
-    return {"mac": mac, "scanner": name, "found": bool(name)}
+def registry_list_whitelist_meta_reverse(mac: str) -> Dict[str, Any]:
+    mac_n = normalize_mac(mac)
+    scanner = find_scanner_by_mac(mac_n)
+    found = bool(scanner)
+    meta = whitelist_meta_get(scanner) if found else {}
+    return {
+        "time": local_ts(),
+        "mac": mac_n,
+        "scanner": scanner,
+        "found": found,
+        "meta": meta,
+    }
 
+# -----------------------------------------------------------------------------
+# Operator-only: upsert whitelist items (scanner -> json(meta))
+# -----------------------------------------------------------------------------
 @app.post("/registry/_whitelist_upsert", tags=["1 Registry & Whitelist"])
 def registry_whitelist_upsert(req: WhitelistUpsertReq) -> Dict[str, Any]:
     if not req.items:
         return {"status": "ok", "upserted": 0}
 
-    mapping: Dict[str, str] = {}
+    now = local_ts()
+    upserted = 0
+
     for it in req.items:
         scanner = (it.scanner or "").strip()
-        mac = (it.mac or "").strip().lower()
-        if scanner and mac:
-            mapping[scanner] = mac
+        mac = normalize_mac(it.mac)
+        llm = (it.llm_weblink or "").strip()
+        comment = (it.comment or "").strip() if it.comment else ""
 
-    if not mapping:
-        return {"status": "ok", "upserted": 0}
+        if not scanner:
+            continue
+        if not mac:
+            continue
+        if not llm:
+            continue
 
-    r.hset(KEY_WHITELIST_NAME2MAC, mapping=mapping)
-    return {"status": "ok", "upserted": len(mapping)}
+        meta = {
+            "schema_version": int(WHITELIST_SCHEMA_VERSION),
+            "scanner": scanner,
+            "mac": mac,
+            "llm_weblink": llm,
+            "comment": comment,
+            "updated_at": now,
+        }
 
+        r.hset(KEY_WHITELIST_SCANNER_META, scanner, json.dumps(meta, ensure_ascii=False))
+        upserted += 1
+
+    return {
+        "status": "ok",
+        "time": now,
+        "upserted": int(upserted),
+        "key": KEY_WHITELIST_SCANNER_META,
+        "schema_version": int(WHITELIST_SCHEMA_VERSION),
+    }
+
+# -----------------------------------------------------------------------------
+# Operator-only: delete whitelist entry by scanner
+# -----------------------------------------------------------------------------
 @app.delete("/registry/_whitelist/{scanner}", tags=["1 Registry & Whitelist"])
 def registry_whitelist_delete(scanner: str) -> Dict[str, Any]:
     scanner = (scanner or "").strip()
     if not scanner:
         raise HTTPException(status_code=400, detail="scanner required")
-    removed = r.hdel(KEY_WHITELIST_NAME2MAC, scanner)
-    return {"status": "ok", "removed": int(removed), "scanner": scanner}
 
+    removed = r.hdel(KEY_WHITELIST_SCANNER_META, scanner)
+    return {
+        "status": "ok",
+        "time": local_ts(),
+        "scanner": scanner,
+        "removed": int(removed),
+        "key": KEY_WHITELIST_SCANNER_META,
+    }
+
+# -----------------------------------------------------------------------------
+# Pi-facing: register by mac -> returns {scanner, llm_weblink}
+# -----------------------------------------------------------------------------
 @app.post("/registry/register", tags=["1 Registry & Whitelist"])
-def register(req: RegisterReq):
+def register(req: RegisterReq) -> Dict[str, Any]:
     mac = normalize_mac(req.mac)
-    scanner = find_name_by_mac(mac)
+    scanner = find_scanner_by_mac(mac)
     if not scanner:
         raise HTTPException(status_code=403, detail=f"MAC '{mac}' not in whitelist")
+
+    wmeta = whitelist_meta_get(scanner)
+    llm = (wmeta.get("llm_weblink") or "").strip()
 
     now = local_ts()
     r.sadd(KEY_REGISTRY, scanner)
@@ -319,13 +437,22 @@ def register(req: RegisterReq):
         updates["capabilities"] = req.capabilities
 
     r.hset(key_scanner_meta(scanner), mapping=updates)
-    return PlainTextResponse(content=scanner)
 
+    return {
+        "scanner": scanner,
+        "llm_weblink": llm,
+        "time": now,
+        "time_format": TIME_FMT,
+    }
+
+# -----------------------------------------------------------------------------
+# Operator-only: list registered scanners (unchanged, but keep underscore)
+# -----------------------------------------------------------------------------
 @app.get("/registry/_list_scanners", tags=["1 Registry & Whitelist"])
 def registry_list_scanners() -> Dict[str, Any]:
     scanners = sorted(list(r.smembers(KEY_REGISTRY)))
     out = [{"scanner": s, "meta": r.hgetall(key_scanner_meta(s))} for s in scanners]
-    return {"count": len(out), "scanners": out}
+    return {"time": local_ts(), "count": len(out), "scanners": out}
 
 # =============================================================================
 # 2) Bootstrap (Bundles)
