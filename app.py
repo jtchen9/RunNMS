@@ -663,7 +663,6 @@ def cmd_enqueue(scanner: str, cmd: Cmd) -> Dict[str, Any]:
     except Exception:
         raise HTTPException(status_code=400, detail=f"execute_at must be like '{local_ts()}' (format {TIME_FMT})")
 
-    cmd_id = str(uuid.uuid4())
     created_at = local_ts()
 
     if cmd.args_json_text is not None and cmd.args_json_text.strip() != "":
@@ -679,20 +678,23 @@ def cmd_enqueue(scanner: str, cmd: Cmd) -> Dict[str, Any]:
     # Normalize execute_at to TIME_FMT (also removes any pasted noise)
     execute_at_norm = parse_local_dt(cmd.execute_at).strftime(TIME_FMT)
 
+    # IMPORTANT CHANGE:
+    # - Do NOT store cmd_id in Redis at all.
     fields = {
-        "cmd_id": cmd_id,
         "category": cmd.category,
         "action": cmd.action,
         "execute_at": execute_at_norm,
         "created_at": created_at,
         "args_json": args_json,
     }
-    r.xadd(key_cmd_stream(scanner), fields, maxlen=5000, approximate=True)
+
+    # Redis stream id (XID) becomes the real id. We return it as cmd_id to keep API contract stable.
+    xid = r.xadd(key_cmd_stream(scanner), fields, maxlen=5000, approximate=True)
 
     return {
         "status": "ok",
         "scanner": scanner,
-        "cmd_id": cmd_id,
+        "cmd_id": xid,              # KEEP RESPONSE FIELD NAME
         "created_at": created_at,
         "time_format": TIME_FMT,
     }
@@ -738,6 +740,11 @@ def cmd_poll(
 
         # normalize for output
         f2 = dict(fields)
+
+        # IMPORTANT CHANGE:
+        # - Provide cmd_id to Pi (contract unchanged), but cmd_id == Redis XID.
+        f2["cmd_id"] = xid
+
         try:
             f2["execute_at"] = parse_local_dt(f2.get("execute_at", "")).strftime(TIME_FMT)
         except Exception:
@@ -778,10 +785,11 @@ def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
     else:
         finished_at = local_ts()
 
+    # Record ack (unchanged idea; cmd_id now contains xid)
     r.xadd(
         key_cmdack_stream(scanner),
         {
-            "cmd_id": ack.cmd_id,
+            "cmd_id": ack.cmd_id,    # NOTE: now this is XID
             "status": ack.status,
             "finished_at": finished_at,
             "detail": ack.detail or "",
@@ -790,10 +798,15 @@ def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
         approximate=True,
     )
 
+    # IMPORTANT CHANGE (Option A):
+    # - Delete the command from the command stream using cmd_id as the Redis XID.
+    deleted = int(r.xdel(key_cmd_stream(scanner), ack.cmd_id))
+
     return {
         "status": "ok",
         "scanner": scanner,
-        "cmd_id": ack.cmd_id,
+        "cmd_id": ack.cmd_id,       # KEEP CONTRACT
+        "deleted": deleted,         # helpful debug signal
         "finished_at": finished_at,
         "time_format": TIME_FMT,
     }
