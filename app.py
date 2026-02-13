@@ -29,9 +29,7 @@ TIME_FMT: str = "%Y-%m-%d-%H:%M:%S"
 # -----------------------------------------------------------------------------#
 # 1) Registry & Whitelist
 # -----------------------------------------------------------------------------#
-KEY_WHITELIST_NAME2MAC: str = f"{KEY_PREFIX}registry:whitelist_name2mac"  # HASH(name -> mac)
 KEY_REGISTRY: str = f"{KEY_PREFIX}registry:scanners"                      # SET(scanner_name)
-
 def key_scanner_meta(scanner: str) -> str:
     return f"{KEY_PREFIX}scanner:{scanner}:meta"                          # HASH(...)
 
@@ -143,10 +141,6 @@ def sha256_file(p: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-def require_whitelisted(scanner: str) -> None:
-    if not r.hexists(KEY_WHITELIST_NAME2MAC, scanner):
-        raise HTTPException(status_code=403, detail=f"Scanner '{scanner}' not in whitelist")
-
 def _bundle_zip_path(bundle_id: str) -> Path:
     return BUNDLE_DIR / f"{bundle_id}.zip"
 
@@ -248,24 +242,30 @@ def normalize_mac(mac: str) -> str:
     return (mac or "").strip().lower()
 
 def require_whitelisted(scanner: str) -> None:
-    if not r.hexists(KEY_WHITELIST_SCANNER_META, scanner):
+    """
+    Whitelist check (UPDATED): uses KEY_WHITELIST_SCANNER_META.
+    """
+    if not r.hexists(KEY_WHITELIST_SCANNER_META, (scanner or "").strip()):
         raise HTTPException(status_code=403, detail=f"Scanner '{scanner}' not in whitelist")
 
 def whitelist_meta_get(scanner: str) -> Dict[str, Any]:
     """
-    Return stored whitelist meta for scanner, or {} if not found.
-    Does NOT normalize or write back. (Your DB is empty, so no legacy cleanup needed.)
+    Return parsed whitelist meta for a scanner.
+    Expected stored value: JSON dict with at least {scanner, mac, llm_weblink}.
     """
+    scanner = (scanner or "").strip()
+    if not scanner:
+        return {}
+
     s = r.hget(KEY_WHITELIST_SCANNER_META, scanner)
     if not s:
         return {}
+
     try:
         j = json.loads(s)
-        if isinstance(j, dict):
-            return j
-        return {"scanner": scanner, "meta_raw": s}
+        return j if isinstance(j, dict) else {}
     except Exception:
-        return {"scanner": scanner, "meta_raw": s}
+        return {}
 
 def find_scanner_by_mac(mac: str) -> str:
     """
@@ -961,7 +961,7 @@ def cmd_load_script(script: ScriptLoad) -> Dict[str, Any]:
     skipped_not_whitelisted = 0
 
     for it in script.items:
-        if not r.hexists(KEY_WHITELIST_NAME2MAC, it.scanner):
+        if not r.hexists(KEY_WHITELIST_SCANNER_META, (it.scanner or "").strip()):
             skipped_not_whitelisted += 1
             continue
 
@@ -1018,7 +1018,7 @@ def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
         if not scanner:
             bad_rows += 1
             continue
-        if not r.hexists(KEY_WHITELIST_NAME2MAC, scanner):
+        if not r.hexists(KEY_WHITELIST_SCANNER_META, scanner):
             skipped_not_whitelisted += 1
             continue
 
@@ -1380,7 +1380,7 @@ def admin_reset(req: ResetReq) -> Dict[str, Any]:
 
     keep = set()
     if req.keep_whitelist:
-        keep.add(KEY_WHITELIST_NAME2MAC)
+        keep.add(KEY_WHITELIST_SCANNER_META)
     if req.keep_bundles:
         keep.add(KEY_BUNDLE_INDEX)
     if req.keep_autoflush_flag:
