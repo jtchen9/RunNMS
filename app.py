@@ -1,9 +1,8 @@
 from fastapi import Body, FastAPI, Request, HTTPException, Query, File, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
-import base64
 import redis
 from datetime import datetime, timedelta
 import hashlib
@@ -19,6 +18,8 @@ import asyncio
 # Constants / Config  (NO getenv; lab-only hardcoded)
 # Place ALL constants + Redis key conventions here, before app = FastAPI(...)
 # =============================================================================
+WEB_BASE: str = "http://localhost:80"
+# WEB_BASE: str = "https://6g-private.com:80"
 
 REDIS_URL: str = "redis://localhost:6379/0"
 KEY_PREFIX: str = "nms:"  # Redis keyspace prefix
@@ -61,22 +62,21 @@ def key_cmdack_stream(scanner: str) -> str:
     return f"{KEY_PREFIX}cmdack:{scanner}"                                # STREAM(acks)
 
 # -----------------------------------------------------------------------------#
-# 5) Northbound Relay (NMS→Web)
+# 5) Northbound (NMS → Web Server)
 # -----------------------------------------------------------------------------#
-NMS_ID: str = "nms-192.168.137.3"
-WEB_BASE: str = "https://6g-private.com"
-WEB_POST_URL: str = f"{WEB_BASE}/dataScanned/batch"
-WEB_API_KEY: str = ""  # define ONCE
+NMS_ID: str = "nms-lab-01"
+WEB_API_KEY: str = ""  # optional in early dev
 
-AUTO_FLUSH: bool = False
-AUTO_FLUSH_EVERY_SEC: int = 10
-FLUSH_MIN_ITEMS: int = 20
-FLUSH_MAX_WAIT_SEC: int = 60
-FLUSH_BATCH_LIMIT: int = 200
+WEB_NMS_UPLOAD_URL: str = f"{WEB_BASE}/nms/upload_scan_batch"
+WEB_NMS_STATUS_URL: str = f"{WEB_BASE}/nms/report_status"
 
-KEY_LAST_UPLOAD: str = f"{KEY_PREFIX}uplink:last_upload"                  # HASH(scanner -> last_upload)
-KEY_LAST_RESULT: str = f"{KEY_PREFIX}uplink:last_result"                  # HASH(scanner -> last_result)
-KEY_AUTO_FLUSH: str  = f"{KEY_PREFIX}uplink:auto_flush"                   # STRING "0"/"1"
+NORTHBOUND_EVERY_SEC: int = 10
+UPLOAD_BATCH_MAX_BYTES: int = 100_000   # hard cap per POST (≈100KB)
+
+# optional operator visibility
+KEY_NB_LAST_UPLOAD: str = f"{KEY_PREFIX}nb:last_upload"   # HASH(robot -> time)
+KEY_NB_LAST_RESULT: str = f"{KEY_PREFIX}nb:last_result"   # HASH(robot -> result)
+KEY_NB_LAST_STATUS: str = f"{KEY_PREFIX}nb:last_status"   # STRING (time/result summary)
 
 # =============================================================================
 # Runtime init
@@ -194,6 +194,29 @@ def _bundle_meta_get(bundle_id: str) -> Dict[str, Any]:
 
     return meta
 
+def _web_headers() -> Dict[str, str]:
+    h: Dict[str, str] = {}
+    if WEB_API_KEY:
+        h["X-API-Key"] = WEB_API_KEY
+    return h
+
+def _safe_parse_entries_list(payload_text: str) -> Optional[List[Any]]:
+    """
+    Minimal validation only: must be JSON list.
+    No further inspection of list contents.
+    """
+    try:
+        v = json.loads(payload_text)
+    except Exception:
+        return None
+    if not isinstance(v, list):
+        return None
+    return v
+
+def _json_bytes(obj: Any) -> int:
+    # estimate size on wire (utf-8 json)
+    return len(json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
 # =============================================================================
 # 0) Health
 # =============================================================================
@@ -208,7 +231,7 @@ def health() -> Dict[str, Any]:
         "status": "ok",
         "redis_ok": redis_ok,
         "upload_enabled": UPLOAD_ENABLED,
-        "web_post_url_configured": bool(WEB_POST_URL),
+        "web_post_url_configured": bool(WEB_NMS_UPLOAD_URL and WEB_NMS_STATUS_URL),
         "time": local_ts(),
         "time_format": TIME_FMT,
     }
@@ -224,9 +247,9 @@ WHITELIST_SCHEMA_VERSION: int = 1
 # NOTE: KEY_REGISTRY and key_scanner_meta(scanner) remain unchanged.
 
 class WhitelistItem(BaseModel):
-    scanner: str = Field(..., description="Assigned name, e.g. scanner01")
+    scanner: str = Field(..., description="Assigned name, e.g. twin-scout-alpha")
     mac: str = Field(..., description="MAC address, e.g. 2c:cf:67:d0:67:f3")
-    llm_weblink: str = Field(..., description="ChatGPT conversation URL for this Pi")
+    llm_weblink: str = Field(default="", description="ChatGPT conversation URL for this Pi")
     comment: Optional[str] = Field(default="", description="Optional note for humans")
 
 class WhitelistUpsertReq(BaseModel):
@@ -353,6 +376,8 @@ def registry_list_whitelist_meta_reverse(mac: str) -> Dict[str, Any]:
 # -----------------------------------------------------------------------------
 # Operator-only: upsert whitelist items (scanner -> json(meta))
 # -----------------------------------------------------------------------------
+DEFAULT_LLM_WEBLINK = "https://chatgpt.com/"
+
 @app.post("/registry/_whitelist_upsert", tags=["1 Registry & Whitelist"])
 def registry_whitelist_upsert(req: WhitelistUpsertReq) -> Dict[str, Any]:
     if not req.items:
@@ -372,7 +397,7 @@ def registry_whitelist_upsert(req: WhitelistUpsertReq) -> Dict[str, Any]:
         if not mac:
             continue
         if not llm:
-            continue
+            llm = DEFAULT_LLM_WEBLINK
 
         meta = {
             "schema_version": int(WHITELIST_SCHEMA_VERSION),
@@ -423,7 +448,7 @@ def register(req: RegisterReq) -> Dict[str, Any]:
         raise HTTPException(status_code=403, detail=f"MAC '{mac}' not in whitelist")
 
     wmeta = whitelist_meta_get(scanner)
-    llm = (wmeta.get("llm_weblink") or "").strip()
+    llm = (wmeta.get("llm_weblink") or "").strip() or DEFAULT_LLM_WEBLINK
 
     now = local_ts()
     r.sadd(KEY_REGISTRY, scanner)
@@ -678,21 +703,25 @@ async def ingest(
     require_whitelisted(scanner)
 
     body = payload
-    content_type = request.headers.get("content-type", "application/octet-stream")
     received_at = local_ts()
     size = len(body)
     sha256 = hashlib.sha256(body).hexdigest()
-    payload_b64 = base64.b64encode(body).decode("ascii")
+
+    # store raw UTF-8 text (Pi is expected to send JSON)
+    try:
+        payload_text = body.decode("utf-8")
+    except Exception:
+        # cannot decode -> skip and reject (better than poisoning queue)
+        raise HTTPException(status_code=400, detail="payload must be utf-8 JSON text")
 
     key = key_uplink_stream(scanner)
     r.xadd(
         key,
         {
             "received_at": received_at,
-            "content_type": content_type,
             "size": str(size),
             "sha256": sha256,
-            "payload_b64": payload_b64,
+            "payload_text": payload_text,
         },
         maxlen=UPLINK_MAXLEN,
         approximate=True,
@@ -965,14 +994,12 @@ def cmd_load_script(script: ScriptLoad) -> Dict[str, Any]:
             skipped_not_whitelisted += 1
             continue
 
-        cmd_id = str(uuid.uuid4())
         created_at = local_ts()
         execute_at = (t0_dt + timedelta(seconds=int(it.t_offset_sec))).strftime(TIME_FMT)
 
         r.xadd(
             key_cmd_stream(it.scanner),
             {
-                "cmd_id": cmd_id,
                 "category": it.category,
                 "action": it.action,
                 "execute_at": execute_at,
@@ -1046,12 +1073,10 @@ def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
 
         execute_at = (t0_dt + timedelta(seconds=offset)).strftime(TIME_FMT)
         created_at = local_ts()
-        cmd_id = str(uuid.uuid4())
 
         r.xadd(
             key_cmd_stream(scanner),
             {
-                "cmd_id": cmd_id,
                 "category": category,
                 "action": action,
                 "execute_at": execute_at,
@@ -1073,291 +1098,212 @@ def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
     }
 
 # =============================================================================
-# 5) Northbound Relay (NMS -> Web /dataScanned)
-#     - uploader side (northbound)
-#     - consumes Redis streams queued by /ingest/{scanner} (southbound)
+# 5) Northbound (NMS -> Web Server)
 # =============================================================================
 
+def _post_upload_scan_batch(items: List[Dict[str, Any]]) -> Tuple[bool, str, int, int]:
+    """
+    Returns (ok, detail, accepted, rejected).
+    We treat HTTP 2xx + JSON status=ok as ok.
+    """
+    payload = {
+        "nms_id": NMS_ID,
+        "time": local_ts(),
+        "time_format": TIME_FMT,
+        "items": items,
+    }
+    try:
+        resp = requests.post(WEB_NMS_UPLOAD_URL, json=payload, headers=_web_headers(), timeout=10)
+        resp.raise_for_status()
+        j = resp.json()
+        if isinstance(j, dict) and j.get("status") == "ok":
+            return True, "ok", int(j.get("accepted") or 0), int(j.get("rejected") or 0)
+        return False, f"web returned {j}", 0, 0
+    except Exception as e:
+        return False, f"post failed: {e}", 0, 0
+
+def _northbound_upload_once() -> Dict[str, Any]:
+    """
+    One cycle: build a <=100KB batch from queued uplink streams.
+    Delete only what was actually sent (and only if web accepted).
+    Always returns quickly; never blocks future cycles.
+    """
+    robots = sorted(list(r.smembers(KEY_REGISTRY)))
+    selected_items: List[Dict[str, Any]] = []
+    selected_ids_by_robot: Dict[str, List[str]] = {}
+
+    bad_json_deleted = 0
+    oversize_deleted = 0
+
+    # We'll build the final envelope size-aware.
+    # Start with empty items envelope cost (approx).
+    envelope_base = {"nms_id": NMS_ID, "time": local_ts(), "time_format": TIME_FMT, "items": []}
+    base_bytes = _json_bytes(envelope_base)
+    budget = max(0, int(UPLOAD_BATCH_MAX_BYTES - base_bytes))
+
+    for robot in robots:
+        stream_key = key_uplink_stream(robot)
+        if budget <= 0:
+            break
+
+        entries = r.xrange(stream_key, count=5000)  # oldest first
+        for xid, fields in entries:
+            if budget <= 0:
+                break
+
+            payload_text = fields.get("payload_text", "")
+            received_at = fields.get("received_at", "") or local_ts()
+
+            lst = _safe_parse_entries_list(payload_text)
+            if lst is None:
+                # Bad payload: delete it so it won't clog forever
+                try:
+                    r.xdel(stream_key, xid)
+                except Exception:
+                    pass
+                bad_json_deleted += 1
+                continue
+
+            item = {
+                "scanner": robot,
+                "time": received_at,     # injected by NMS
+                "iface": "",             # intentionally blank
+                "entries": lst,          # raw list (no processing)
+                "time_format": TIME_FMT,
+            }
+
+            item_bytes = _json_bytes(item)
+            if item_bytes > UPLOAD_BATCH_MAX_BYTES:
+                # Single item can never fit -> drop it
+                try:
+                    r.xdel(stream_key, xid)
+                except Exception:
+                    pass
+                oversize_deleted += 1
+                continue
+
+            if item_bytes > budget:
+                # Not enough room this cycle; keep it queued for next cycle
+                break
+
+            selected_items.append(item)
+            selected_ids_by_robot.setdefault(robot, []).append(xid)
+            budget -= item_bytes
+
+    ok, detail, accepted, rejected = _post_upload_scan_batch(selected_items)
+
+    if ok:
+        # delete only selected ids
+        deleted_total = 0
+        for robot, ids in selected_ids_by_robot.items():
+            if not ids:
+                continue
+            try:
+                deleted_total += int(r.xdel(key_uplink_stream(robot), *ids))
+                r.hset(KEY_NB_LAST_UPLOAD, robot, local_ts())
+                r.hset(KEY_NB_LAST_RESULT, robot, f"ok sent={len(ids)}")
+            except Exception:
+                pass
+        return {
+            "status": "ok",
+            "sent_items": len(selected_items),
+            "deleted": deleted_total,
+            "bad_json_deleted": bad_json_deleted,
+            "oversize_deleted": oversize_deleted,
+            "web_detail": detail,
+            "accepted": accepted,
+            "rejected": rejected,
+            "time": local_ts(),
+        }
+
+    # failed post -> do not delete queued items
+    return {
+        "status": "fail",
+        "sent_items": len(selected_items),
+        "bad_json_deleted": bad_json_deleted,
+        "oversize_deleted": oversize_deleted,
+        "error": detail,
+        "time": local_ts(),
+    }
+
+def _build_status_snapshot() -> Dict[str, Any]:
+    robots = sorted(list(r.smembers(KEY_REGISTRY)))
+    robot_states: List[Dict[str, Any]] = []
+
+    for rid in robots:
+        meta = r.hgetall(key_scanner_meta(rid)) or {}
+        last_seen = meta.get("last_seen", "")
+
+        robot_states.append({
+            "robot_id": rid,
+            "last_seen": last_seen,
+            "mode": "unknown",
+            "stream_state": "unknown",
+            "stream_path": rid,
+            "location": {"mode": "unknown", "x": 0.0, "y": 0.0},
+            "detail": "",
+        })
+
+    return {
+        "nms_id": NMS_ID,
+        "time_local": local_ts(),
+        "time_format": TIME_FMT,
+        "experiment": {
+            "state": "idle",
+            "session_id": None,
+            "scenario_name": None,
+            "started_at": None,
+            "elapsed_sec": 0,
+            "next_scheduled_at": None,
+            "idle_duration_sec": 0,
+        },
+        "nms_status": {
+            "online": True,
+            "detail": "",
+            "uplink_queue_total": 0,
+            "command_queue_total": 0,
+            "last_uplink_ok": True,
+            "last_uplink_time": None,
+        },
+        "aps": [],
+        "robots": robot_states,
+    }
+
+def _post_report_status(snapshot: Dict[str, Any]) -> Tuple[bool, str, List[Dict[str, Any]]]:
+    try:
+        resp = requests.post(WEB_NMS_STATUS_URL, json=snapshot, headers=_web_headers(), timeout=10)
+        resp.raise_for_status()
+        j = resp.json()
+        if isinstance(j, dict) and j.get("status") == "ok":
+            cmds = j.get("commands") or []
+            if not isinstance(cmds, list):
+                cmds = []
+            return True, "ok", cmds
+        return False, f"web returned {j}", []
+    except Exception as e:
+        return False, f"post failed: {e}", []
+
+def _northbound_status_once() -> Dict[str, Any]:
+    snap = _build_status_snapshot()
+    ok, detail, cmds = _post_report_status(snap)
+    # For now: log-only (no command execution yet)
+    try:
+        r.set(KEY_NB_LAST_STATUS, f"{local_ts()} ok={ok} cmds={len(cmds)} detail={detail[:120]}")
+    except Exception:
+        pass
+    return {"ok": ok, "detail": detail, "commands_count": len(cmds), "time": local_ts()}
+
 def _xid_to_ms(xid: str) -> int:
-    """Convert Redis stream id '<ms>-<seq>' to millisecond timestamp."""
     return int(xid.split("-", 1)[0])
 
 def _stream_oldest_age_sec(stream_key: str) -> Tuple[int, str]:
-    """
-    Return (age_sec, oldest_id) for the oldest entry in a stream.
-    If the stream is empty, returns (0, "").
-    Age is computed using local OS time (Redis stream IDs are epoch-ms).
-    """
     first = r.xrange(stream_key, count=1)
     if not first:
         return 0, ""
-    oldest_id, _fields = first[0]
+    oldest_id, _ = first[0]
     now_ms = int(datetime.now().timestamp() * 1000)
     age_sec = max(0, (now_ms - _xid_to_ms(oldest_id)) // 1000)
     return int(age_sec), oldest_id
-
-def _should_flush(scanner: str) -> Tuple[bool, Dict[str, Any]]:
-    """
-    Decide whether a scanner stream should flush based on policy:
-      - queue length >= FLUSH_MIN_ITEMS OR
-      - oldest item age >= FLUSH_MAX_WAIT_SEC
-    """
-    stream_key = key_uplink_stream(scanner)
-    qlen = int(r.xlen(stream_key))
-
-    if qlen <= 0:
-        return False, {"scanner": scanner, "key": stream_key, "qlen": 0, "reason": "empty"}
-
-    age_sec, oldest_id = _stream_oldest_age_sec(stream_key)
-
-    if qlen >= FLUSH_MIN_ITEMS:
-        return True, {
-            "scanner": scanner,
-            "key": stream_key,
-            "qlen": qlen,
-            "age_sec": age_sec,
-            "oldest_id": oldest_id,
-            "reason": "min_items",
-        }
-
-    if age_sec >= FLUSH_MAX_WAIT_SEC:
-        return True, {
-            "scanner": scanner,
-            "key": stream_key,
-            "qlen": qlen,
-            "age_sec": age_sec,
-            "oldest_id": oldest_id,
-            "reason": "max_wait",
-        }
-
-    return False, {
-        "scanner": scanner,
-        "key": stream_key,
-        "qlen": qlen,
-        "age_sec": age_sec,
-        "oldest_id": oldest_id,
-        "reason": "not_due",
-    }
-
-def _post_to_web(scanner: str, items: List[Dict[str, Any]]) -> Tuple[bool, str]:
-    """
-    POST a batch to the Web server.
-    Returns (ok, detail). ok=True only if web returns JSON with {"ok": true}.
-    """
-    if not WEB_POST_URL:
-        return False, "WEB_POST_URL not configured"
-
-    headers: Dict[str, str] = {}
-    if WEB_API_KEY:
-        headers["X-API-Key"] = WEB_API_KEY
-
-    payload = {
-        "nms_id": NMS_ID,
-        "scanner": scanner,
-        "items": items,
-    }
-
-    try:
-        resp = requests.post(WEB_POST_URL, json=payload, headers=headers, timeout=10)
-        resp.raise_for_status()
-        j = resp.json()
-        if isinstance(j, dict) and j.get("ok") is True:
-            return True, f"web ok accepted={j.get('accepted')}"
-        return False, f"web returned {j}"
-    except Exception as e:
-        return False, f"post failed: {e}"
-
-def _relay_flush_impl(
-    scanner: Optional[str] = None,
-    force: bool = False,
-    limit: int = FLUSH_BATCH_LIMIT,
-) -> Dict[str, Any]:
-    """
-    Internal worker shared by:
-      - POST /relay/flush (manual)
-      - background auto-flush loop
-
-    Deletes items from Redis only when Web replies ok=true.
-    """
-    scanners = [scanner] if scanner else sorted(list(r.smembers(KEY_REGISTRY)))
-    results: List[Dict[str, Any]] = []
-
-    for s in scanners:
-        stream_key = key_uplink_stream(s)
-        qlen = int(r.xlen(stream_key))
-
-        if qlen == 0:
-            results.append({"scanner": s, "flushed": 0, "skipped": True, "reason": "empty"})
-            continue
-
-        due, info = _should_flush(s)
-        if (not force) and (not due):
-            results.append({"scanner": s, "flushed": 0, "skipped": True, **info})
-            continue
-
-        # Pull oldest entries up to limit (preserve order)
-        entries = r.xrange(stream_key, count=int(limit))
-
-        ids: List[str] = []
-        items: List[Dict[str, Any]] = []
-
-        for xid, fields in entries:
-            ids.append(xid)
-            items.append({
-                "redis_id": xid,
-                # IMPORTANT: field names must match what /ingest stored
-                "received_at": fields.get("received_at", ""),
-                "content_type": fields.get("content_type", ""),
-                "size": int(fields.get("size", "0") or 0),
-                "sha256": fields.get("sha256", ""),
-                "payload_b64": fields.get("payload_b64", ""),
-            })
-
-        ok, detail = _post_to_web(s, items)
-
-        if ok:
-            if ids:
-                r.xdel(stream_key, *ids)
-            r.hset(KEY_LAST_UPLOAD, s, local_ts())
-            r.hset(KEY_LAST_RESULT, s, f"ok flushed={len(ids)}")
-            results.append({
-                "scanner": s,
-                "flushed": len(ids),
-                "deleted": len(ids),
-                "web_detail": detail,
-                "time": local_ts(),
-            })
-        else:
-            r.hset(KEY_LAST_RESULT, s, f"fail {detail[:180]}")
-            results.append({
-                "scanner": s,
-                "flushed": 0,
-                "deleted": 0,
-                "error": detail,
-                "queued": qlen,
-                "time": local_ts(),
-            })
-
-    return {"status": "ok", "time": local_ts(), "results": results}
-
-@app.get("/relay/_list_payload_queues", tags=["5 Northbound Relay (NMS→Web /dataScanned)"])
-def relay_list_payload_queues() -> Dict[str, Any]:
-    """
-    Show per-scanner uplink queue status.
-    Purely NMS-side visibility.
-    """
-    scanners = sorted(list(r.smembers(KEY_REGISTRY)))
-    out: List[Dict[str, Any]] = []
-
-    for s in scanners:
-        stream_key = key_uplink_stream(s)
-        qlen = int(r.xlen(stream_key))
-        age_sec, oldest_id = _stream_oldest_age_sec(stream_key) if qlen else (0, "")
-        out.append({
-            "scanner": s,
-            "queue_key": stream_key,
-            "qlen": qlen,
-            "oldest_age_sec": int(age_sec),
-            "oldest_id": oldest_id,
-            "last_upload": r.hget(KEY_LAST_UPLOAD, s) or "",
-            "last_result": r.hget(KEY_LAST_RESULT, s) or "",
-        })
-
-    # NOTE: do not rely on AUTO_FLUSH constant for runtime state; show Redis flag too
-    af = r.get(KEY_AUTO_FLUSH)
-    if af is None:
-        af = "1" if AUTO_FLUSH else "0"
-        r.set(KEY_AUTO_FLUSH, af)
-
-    return {
-        "status": "ok",
-        "time": local_ts(),
-        "web_post_url": WEB_POST_URL,
-        "auto_flush_default": AUTO_FLUSH,
-        "auto_flush_enabled": (af == "1"),
-        "auto_flush_key": KEY_AUTO_FLUSH,
-        "flush_every_sec": AUTO_FLUSH_EVERY_SEC,
-        "policy": {
-            "min_items": FLUSH_MIN_ITEMS,
-            "max_wait_sec": FLUSH_MAX_WAIT_SEC,
-            "batch_limit": FLUSH_BATCH_LIMIT,
-        },
-        "time_format": TIME_FMT,
-        "scanners": out,
-    }
-
-@app.get("/relay/_list_payload_queue/{scanner}", tags=["5 Northbound Relay (NMS→Web /dataScanned)"])
-def relay_list_payload_queue(scanner: str) -> Dict[str, Any]:
-    """
-    Debug-only: show current queued uplink length for a scanner (pass-through queue).
-    This corresponds to Redis stream: nms:uplink:{scanner}
-    """
-    require_whitelisted(scanner)
-    key = key_uplink_stream(scanner)
-    return {
-        "time": local_ts(),
-        "queue_type": "payload",
-        "scanner": scanner,
-        "key": key,
-        "length": int(r.xlen(key)),
-        "maxlen": int(UPLINK_MAXLEN),
-    }
-
-@app.post("/relay/_flush", tags=["5 Northbound Relay (NMS→Web /dataScanned)"])
-def relay_flush(
-    scanner: Optional[str] = None,
-    force: bool = False,
-    limit: int = Query(FLUSH_BATCH_LIMIT, ge=1, le=5000),
-) -> Dict[str, Any]:
-    """
-    Flush queued items to Web for one scanner or all scanners.
-    - If force=false, only flush scanners meeting policy (min_items OR max_wait).
-    - Deletes items from Redis only when Web replies ok=true.
-    """
-    return _relay_flush_impl(scanner=scanner, force=force, limit=int(limit))
-
-@app.get("/relay/_autoflush_status", tags=["5 Northbound Relay (NMS→Web /dataScanned)"])
-def relay_autoflush_status() -> Dict[str, Any]:
-    """
-    Show current auto-flush flag stored in Redis.
-    This flag is what the background loop should check.
-    """
-    val = r.get(KEY_AUTO_FLUSH)
-    if val is None:
-        val = "1" if AUTO_FLUSH else "0"
-        r.set(KEY_AUTO_FLUSH, val)
-
-    return {
-        "status": "ok",
-        "time": local_ts(),
-        "enabled": (val == "1"),
-        "key": KEY_AUTO_FLUSH,
-        "every_sec": AUTO_FLUSH_EVERY_SEC,
-        "policy": {
-            "min_items": FLUSH_MIN_ITEMS,
-            "max_wait_sec": FLUSH_MAX_WAIT_SEC,
-            "batch_limit": FLUSH_BATCH_LIMIT,
-        },
-        "web_post_url": WEB_POST_URL,
-        "time_format": TIME_FMT,
-    }
-
-class AutoFlushSetReq(BaseModel):
-    enabled: bool
-
-@app.post("/relay/_autoflush_set", tags=["5 Northbound Relay (NMS→Web /dataScanned)"])
-def relay_autoflush_set(req: AutoFlushSetReq) -> Dict[str, Any]:
-    """
-    Enable/disable background auto-flush (writes Redis KEY_AUTO_FLUSH "1"/"0").
-    """
-    r.set(KEY_AUTO_FLUSH, "1" if bool(req.enabled) else "0")
-    return {
-        "status": "ok",
-        "time": local_ts(),
-        "enabled": bool(req.enabled),
-        "key": KEY_AUTO_FLUSH,
-        "time_format": TIME_FMT,
-    }
 
 # =============================================================================
 # 9) Admin
@@ -1366,14 +1312,13 @@ class ResetReq(BaseModel):
     confirm: str = Field(..., description="Must be EXACTLY 'RESET' to proceed.")
     keep_whitelist: bool = True
     keep_bundles: bool = True  # keep bundle metadata keys (and never touch bundle files on disk)
-    keep_autoflush_flag: bool = True  # keep KEY_AUTO_FLUSH value
 
 @app.post("/admin/_reset", tags=["9 Admin"])
 def admin_reset(req: ResetReq) -> Dict[str, Any]:
     """
     Admin-only: delete Redis keys under KEY_PREFIX, with optional keeps.
     - Does NOT touch bundle ZIP files on disk.
-    - By default keeps whitelist + bundle index + auto_flush flag.
+    - By default keeps whitelist + bundle index
     """
     if req.confirm != "RESET":
         raise HTTPException(status_code=400, detail="confirm must be 'RESET'")
@@ -1383,8 +1328,6 @@ def admin_reset(req: ResetReq) -> Dict[str, Any]:
         keep.add(KEY_WHITELIST_SCANNER_META)
     if req.keep_bundles:
         keep.add(KEY_BUNDLE_INDEX)
-    if req.keep_autoflush_flag:
-        keep.add(KEY_AUTO_FLUSH)
 
     deleted = 0
     scanned = 0
@@ -1414,20 +1357,27 @@ def admin_reset(req: ResetReq) -> Dict[str, Any]:
 # =============================================================================
 # Auto-flush background task
 # =============================================================================
-async def _autoflush_loop():
+async def _northbound_loop():
     while True:
         try:
-            if r.get(KEY_AUTO_FLUSH) == "1":
-                _relay_flush_impl(scanner=None, force=False, limit=FLUSH_BATCH_LIMIT)
+            _northbound_upload_once()
         except Exception:
             pass
-        await asyncio.sleep(AUTO_FLUSH_EVERY_SEC)
+        await asyncio.sleep(NORTHBOUND_EVERY_SEC)
+
+async def _status_loop():
+    while True:
+        try:
+            _northbound_status_once()
+        except Exception:
+            pass
+        await asyncio.sleep(NORTHBOUND_EVERY_SEC)
 
 @app.on_event("startup")
 async def _startup():
-    if r.get(KEY_AUTO_FLUSH) is None:
-        r.set(KEY_AUTO_FLUSH, "1" if AUTO_FLUSH else "0")
-    asyncio.create_task(_autoflush_loop())
+    asyncio.create_task(_northbound_loop())
+    asyncio.create_task(_status_loop())
+    
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

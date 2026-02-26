@@ -65,7 +65,7 @@ Notes:
 - They never affect control logic
 
 Response:
-- 200 OK, body: "scanner01"
+- 200 OK, body: "twin-scout-alpha"
 - 403 Forbidden if MAC not whitelisted
 
 ======================================================================
@@ -99,7 +99,7 @@ Request:
 Response:
 {
   "status": "ok",
-  "scanner": "scanner01",
+  "scanner": "twin-scout-alpha",
   "installed_version": "robotBundle1.0",
   "time": "YYYY-MM-DD-HH:MM:SS"
 }
@@ -124,8 +124,8 @@ Body:
 Response:
 {
   "status": "accepted",
-  "scanner": "scanner01",
-  "queued_in": "nms:uplink:scanner01",
+  "scanner": "twin-scout-alpha",
+  "queued_in": "nms:uplink:twin-scout-alpha",
   "bytes": 1234,
   "sha256": "hexstring",
   "received_at": "YYYY-MM-DD-HH:MM:SS"
@@ -144,7 +144,7 @@ Pi polls for due commands
 
 Response:
 {
-  "scanner": "scanner01",
+  "scanner": "twin-scout-alpha",
   "server_now": "YYYY-MM-DD-HH:MM:SS",
   "returned": 1,
   "commands": [
@@ -180,7 +180,7 @@ Request:
 Response:
 {
   "status": "ok",
-  "scanner": "scanner01",
+  "scanner": "twin-scout-alpha",
   "cmd_id": "uuid",
   "finished_at": "YYYY-MM-DD-HH:MM:SS"
 }
