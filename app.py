@@ -78,6 +78,18 @@ KEY_NB_LAST_UPLOAD: str = f"{KEY_PREFIX}nb:last_upload"   # HASH(robot -> time)
 KEY_NB_LAST_RESULT: str = f"{KEY_PREFIX}nb:last_result"   # HASH(robot -> result)
 KEY_NB_LAST_STATUS: str = f"{KEY_PREFIX}nb:last_status"   # STRING (time/result summary)
 
+KEY_NB_LAST_CMDS: str = f"{KEY_PREFIX}nb:last_cmds"          # STRING (json list)
+KEY_NB_LAST_CMDS_TIME: str = f"{KEY_PREFIX}nb:last_cmds_time" # STRING (time)
+KEY_NB_LAST_CMDS_ERR: str = f"{KEY_PREFIX}nb:last_cmds_err"   # STRING (error summary)
+
+# Desired state (intent) from web
+KEY_INTENT_VIDEO: str = f"{KEY_PREFIX}intent:video"          # HASH(robot -> "on"/"off")
+KEY_INTENT_VIDEO_TS: str = f"{KEY_PREFIX}intent:video_ts"    # HASH(robot -> time)
+
+# Last Pi-reported state observed by NMS (idempotency guard uses Pi truth)
+KEY_APPLIED_VIDEO: str = f"{KEY_PREFIX}applied:video"        # HASH(robot -> "on"/"off"/"unknown")
+KEY_APPLIED_VIDEO_TS: str = f"{KEY_PREFIX}applied:video_ts"  # HASH(robot -> time)
+
 # =============================================================================
 # Runtime init
 # =============================================================================
@@ -809,15 +821,23 @@ def cmd_list_command_queue(scanner: str) -> Dict[str, Any]:
         "oldest_id": oldest_id,
     }
 
-@app.post("/cmd/_enqueue/{scanner}", tags=["4 Commands (Polling)"])
-def cmd_enqueue(scanner: str, cmd: Cmd) -> Dict[str, Any]:
+def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
+    """
+    Single source of truth for enqueuing commands to Redis.
+    Used by:
+      - /cmd/_enqueue/{scanner}
+      - northbound bridge (web -> NMS command stream)
+    """
     require_whitelisted(scanner)
 
     # Validate execute_at format (force one style across Pi/NMS/DB)
     try:
         _ = parse_local_dt(cmd.execute_at)
     except Exception:
-        raise HTTPException(status_code=400, detail=f"execute_at must be like '{local_ts()}' (format {TIME_FMT})")
+        raise HTTPException(
+            status_code=400,
+            detail=f"execute_at must be like '{local_ts()}' (format {TIME_FMT})"
+        )
 
     created_at = local_ts()
 
@@ -831,11 +851,8 @@ def cmd_enqueue(scanner: str, cmd: Cmd) -> Dict[str, Any]:
     else:
         args_json = json.dumps(cmd.args or {}, ensure_ascii=False)
 
-    # Normalize execute_at to TIME_FMT (also removes any pasted noise)
     execute_at_norm = parse_local_dt(cmd.execute_at).strftime(TIME_FMT)
 
-    # IMPORTANT CHANGE:
-    # - Do NOT store cmd_id in Redis at all.
     fields = {
         "category": cmd.category,
         "action": cmd.action,
@@ -844,7 +861,6 @@ def cmd_enqueue(scanner: str, cmd: Cmd) -> Dict[str, Any]:
         "args_json": args_json,
     }
 
-    # Redis stream id (XID) becomes the real id. We return it as cmd_id to keep API contract stable.
     xid = r.xadd(key_cmd_stream(scanner), fields, maxlen=5000, approximate=True)
 
     return {
@@ -855,15 +871,62 @@ def cmd_enqueue(scanner: str, cmd: Cmd) -> Dict[str, Any]:
         "time_format": TIME_FMT,
     }
 
+@app.post("/cmd/_enqueue/{scanner}", tags=["4 Commands (Polling)"])
+def cmd_enqueue(scanner: str, cmd: Cmd) -> Dict[str, Any]:
+    return _cmd_enqueue_core(scanner, cmd)
+
 @app.get("/cmd/poll/{scanner}", tags=["4 Commands (Polling)"])
 def cmd_poll(
     scanner: str,
+    request: Request,
     now: Optional[str] = None,
-    limit: int = Query(5, ge=1, le=50)
+    limit: int = Query(5, ge=1, le=50),
+
+    # NEW: Pi-reported AV status (optional for backward compat)
+    av_streaming: Optional[int] = Query(
+        None, description="1 if AV stream currently running, else 0"
+    ),
+    av_detail: Optional[str] = Query(
+        None, description="Optional info like 'pid=1234' or 'rtsp=...'"
+    ),
+    boot_id: Optional[str] = Query(
+        None, description="Unique per boot; changes after reboot"
+    ),
 ) -> Dict[str, Any]:
     require_whitelisted(scanner)
 
     server_now_str = local_ts()
+    try:
+        meta_updates: Dict[str, str] = {
+            "last_seen": server_now_str,
+            "last_poll": server_now_str,
+        }
+        if request.client and request.client.host:
+            meta_updates["ip"] = request.client.host
+
+        # ---- NEW: capture Pi truth into scanner meta ----
+        if av_streaming is not None:
+            meta_updates["av_streaming"] = "1" if int(av_streaming) == 1 else "0"
+            meta_updates["av_updated_at"] = server_now_str
+
+        if av_detail is not None:
+            meta_updates["av_detail"] = (av_detail or "")[:200]  # cap to avoid abuse
+
+        if boot_id is not None:
+            meta_updates["boot_id"] = (boot_id or "")[:80]
+
+        r.hset(key_scanner_meta(scanner), mapping=meta_updates)
+        r.sadd(KEY_REGISTRY, scanner)  # keep registry warm
+
+        # ---- NEW: update APPLIED state from Pi truth (not from enqueue) ----
+        if av_streaming is not None:
+            applied = "on" if int(av_streaming) == 1 else "off"
+            r.hset(KEY_APPLIED_VIDEO, scanner, applied)
+            r.hset(KEY_APPLIED_VIDEO_TS, scanner, server_now_str)
+
+    except Exception:
+        pass
+
     server_now = parse_local_dt(server_now_str)
 
     raw = r.xrange(key_cmd_stream(scanner), count=5000)
@@ -894,12 +957,8 @@ def cmd_poll(
             skipped_expired += 1
             continue
 
-        # normalize for output
         f2 = dict(fields)
-
-        # IMPORTANT CHANGE:
-        # - Provide cmd_id to Pi (contract unchanged), but cmd_id == Redis XID.
-        f2["cmd_id"] = xid
+        f2["cmd_id"] = xid  # cmd_id == Redis XID
 
         try:
             f2["execute_at"] = parse_local_dt(f2.get("execute_at", "")).strftime(TIME_FMT)
@@ -1234,14 +1293,26 @@ def _build_status_snapshot() -> Dict[str, Any]:
         meta = r.hgetall(key_scanner_meta(rid)) or {}
         last_seen = meta.get("last_seen", "")
 
+        av_streaming = meta.get("av_streaming", "")
+        if av_streaming == "1":
+            stream_state = "on"
+        elif av_streaming == "0":
+            stream_state = "off"
+        else:
+            stream_state = "unknown"
+
         robot_states.append({
             "robot_id": rid,
             "last_seen": last_seen,
             "mode": "unknown",
-            "stream_state": "unknown",
+
+            # NEW: truthful Pi-reported stream state
+            "stream_state": stream_state,
             "stream_path": rid,
+
+            # Optional extra debug fields (safe + useful)
+            "detail": meta.get("av_detail", "")[:200],
             "location": {"mode": "unknown", "x": 0.0, "y": 0.0},
-            "detail": "",
         })
 
     return {
@@ -1285,13 +1356,56 @@ def _post_report_status(snapshot: Dict[str, Any]) -> Tuple[bool, str, List[Dict[
 
 def _northbound_status_once() -> Dict[str, Any]:
     snap = _build_status_snapshot()
-    ok, detail, cmds = _post_report_status(snap)
-    # For now: log-only (no command execution yet)
+
+    ok = False
+    detail = ""
+    cmds: List[Dict[str, Any]] = []
+
     try:
-        r.set(KEY_NB_LAST_STATUS, f"{local_ts()} ok={ok} cmds={len(cmds)} detail={detail[:120]}")
+        ok, detail, cmds = _post_report_status(snap)
+    except Exception as e:
+        ok = False
+        detail = f"post_status exception: {e}"
+        cmds = []
+
+    now = local_ts()
+
+    # Store last cmds from web for inspection/debug (your request)
+    try:
+        r.set(KEY_NB_LAST_CMDS, json.dumps(cmds, ensure_ascii=False))
     except Exception:
         pass
-    return {"ok": ok, "detail": detail, "commands_count": len(cmds), "time": local_ts()}
+
+    intent_updates = 0
+    enq = 0
+    noop = 0
+    err = 0
+
+    # Apply web cmds as intents (idempotent)
+    try:
+        intent_updates, enq, noop = _apply_web_cmds_as_intents(cmds)
+    except Exception:
+        err += 1
+
+    # Status line (easy to read in redis-cli)
+    try:
+        r.set(
+            KEY_NB_LAST_STATUS,
+            f"{now} ok={ok} cmds={len(cmds)} intent={intent_updates} enq={enq} noop={noop} err={err} detail={(detail or '')[:120]}"
+        )
+    except Exception:
+        pass
+
+    return {
+        "ok": ok,
+        "detail": detail,
+        "time": now,
+        "commands_count": len(cmds),
+        "intent_updates": intent_updates,
+        "enq": enq,
+        "noop": noop,
+        "err": err,
+    }
 
 def _xid_to_ms(xid: str) -> int:
     return int(xid.split("-", 1)[0])
@@ -1304,6 +1418,82 @@ def _stream_oldest_age_sec(stream_key: str) -> Tuple[int, str]:
     now_ms = int(datetime.now().timestamp() * 1000)
     age_sec = max(0, (now_ms - _xid_to_ms(oldest_id)) // 1000)
     return int(age_sec), oldest_id
+
+def _apply_web_cmds_as_intents(cmds: List[Dict[str, Any]]) -> Tuple[int, int, int]:
+    """
+    Convert web cmds -> desired intents.
+    Returns (intent_updates, enqueued_to_pi, skipped_as_noop)
+    """
+    intent_updates = 0
+    enq = 0
+    noop = 0
+    now = local_ts()
+
+    for c in (cmds or []):
+        target = str(c.get("target") or "").strip()
+        action = str(c.get("action") or "").strip()
+        category = str(c.get("category") or "").strip() or "av"
+
+        if not target or not action:
+            noop += 1
+            continue
+
+        # target must be whitelisted
+        if not r.hexists(KEY_WHITELIST_SCANNER_META, target):
+            noop += 1
+            continue
+
+        # Only handle the intents we recognize (expand later)
+        if action == "av.stream.start":
+            desired = "on"
+        elif action == "av.stream.stop":
+            desired = "off"
+        else:
+            noop += 1
+            continue
+
+        # 1) Record intent (desired state) from web (idempotent and OK to overwrite)
+        try:
+            r.hset(KEY_INTENT_VIDEO, target, desired)
+            r.hset(KEY_INTENT_VIDEO_TS, target, now)
+            intent_updates += 1
+        except Exception:
+            # If Redis hiccups, still attempt noop/enq decisions best-effort
+            pass
+
+        # 2) Determine "applied" based on Pi truth
+        # Prefer KEY_APPLIED_VIDEO (written by /cmd/poll), fallback to scanner meta.
+        applied = (r.hget(KEY_APPLIED_VIDEO, target) or "").strip()
+        if not applied:
+            meta = r.hgetall(key_scanner_meta(target)) or {}
+            if meta.get("av_streaming") == "1":
+                applied = "on"
+            elif meta.get("av_streaming") == "0":
+                applied = "off"
+
+        # 3) If Pi already in desired state -> noop
+        if applied == desired:
+            noop += 1
+            continue
+
+        # 4) Need to apply: enqueue ONE Pi command (execute now, args empty)
+        cmd_fields = {
+            "category": category,          # "av"
+            "action": action,              # av.stream.start/stop
+            "execute_at": now,
+            "created_at": now,
+            "args_json": "{}",
+            "web_cmd_id": str(c.get("cmd_id") or ""),  # trace only
+        }
+        r.xadd(key_cmd_stream(target), cmd_fields, maxlen=5000, approximate=True)
+        enq += 1
+
+        # IMPORTANT:
+        # Do NOT mark KEY_APPLIED_VIDEO here.
+        # It must only reflect Pi truth (updated by /cmd/poll).
+        # This fixes the reboot corner case automatically.
+
+    return intent_updates, enq, noop
 
 # =============================================================================
 # 9) Admin
