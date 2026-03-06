@@ -6,7 +6,6 @@ from typing import Optional, List, Dict, Any, Tuple
 import redis
 from datetime import datetime, timedelta
 import hashlib
-import uuid
 import json
 import uvicorn
 import requests

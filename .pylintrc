@@ -1,0 +1,9 @@
+[MESSAGES CONTROL]
+
+disable=all
+
+enable=function-redefined,
+    redefined-outer-name,
+    reimported, 
+    unused-import, 
+    unused-variable
