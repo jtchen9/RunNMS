@@ -89,6 +89,14 @@ KEY_INTENT_VIDEO_TS: str = f"{KEY_PREFIX}intent:video_ts"    # HASH(robot -> tim
 KEY_APPLIED_VIDEO: str = f"{KEY_PREFIX}applied:video"        # HASH(robot -> "on"/"off"/"unknown")
 KEY_APPLIED_VIDEO_TS: str = f"{KEY_PREFIX}applied:video_ts"  # HASH(robot -> time)
 
+# -----------------------------------------------------------------------------#
+# 6) AP performance upload
+# -----------------------------------------------------------------------------#
+AP_UPLINK_MAXLEN: int = 20000
+
+def key_ap_uplink_stream(scanner: str) -> str:
+    return f"{KEY_PREFIX}ap_uplink:{scanner}"   # STREAM(AP performance payloads)
+
 # =============================================================================
 # Runtime init
 # =============================================================================
@@ -465,12 +473,19 @@ def register(req: RegisterReq) -> Dict[str, Any]:
     r.sadd(KEY_REGISTRY, scanner)
 
     updates: Dict[str, str] = {"last_seen": now, "mac": mac}
+
     if req.ip:
         updates["ip"] = req.ip
     if req.scanner_version:
         updates["scanner_version"] = req.scanner_version
     if req.capabilities:
         updates["capabilities"] = req.capabilities
+
+    caps = (req.capabilities or "").lower()
+    if "ap" in caps:
+        updates["device_type"] = "ap"
+    else:
+        updates["device_type"] = "robot"
 
     r.hset(key_scanner_meta(scanner), mapping=updates)
 
@@ -881,16 +896,10 @@ def cmd_poll(
     now: Optional[str] = None,
     limit: int = Query(5, ge=1, le=50),
 
-    # NEW: Pi-reported AV status (optional for backward compat)
-    av_streaming: Optional[int] = Query(
-        None, description="1 if AV stream currently running, else 0"
-    ),
-    av_detail: Optional[str] = Query(
-        None, description="Optional info like 'pid=1234' or 'rtsp=...'"
-    ),
-    boot_id: Optional[str] = Query(
-        None, description="Unique per boot; changes after reboot"
-    ),
+    # robot-side live status
+    av_streaming: Optional[int] = Query(None, description="1 if AV stream currently running, else 0"),
+    av_detail: Optional[str] = Query(None, description="Optional info like 'pid=1234'"),
+    boot_id: Optional[str] = Query(None, description="Unique per boot; changes after reboot"),
 ) -> Dict[str, Any]:
     require_whitelisted(scanner)
 
@@ -903,21 +912,20 @@ def cmd_poll(
         if request.client and request.client.host:
             meta_updates["ip"] = request.client.host
 
-        # ---- NEW: capture Pi truth into scanner meta ----
         if av_streaming is not None:
             meta_updates["av_streaming"] = "1" if int(av_streaming) == 1 else "0"
             meta_updates["av_updated_at"] = server_now_str
 
         if av_detail is not None:
-            meta_updates["av_detail"] = (av_detail or "")[:200]  # cap to avoid abuse
+            meta_updates["av_detail"] = (av_detail or "")[:200]
 
         if boot_id is not None:
             meta_updates["boot_id"] = (boot_id or "")[:80]
 
         r.hset(key_scanner_meta(scanner), mapping=meta_updates)
-        r.sadd(KEY_REGISTRY, scanner)  # keep registry warm
+        r.sadd(KEY_REGISTRY, scanner)
 
-        # ---- NEW: update APPLIED state from Pi truth (not from enqueue) ----
+        # robot AV truth comes from Pi report
         if av_streaming is not None:
             applied = "on" if int(av_streaming) == 1 else "off"
             r.hset(KEY_APPLIED_VIDEO, scanner, applied)
@@ -926,51 +934,7 @@ def cmd_poll(
     except Exception:
         pass
 
-    server_now = parse_local_dt(server_now_str)
-
-    raw = r.xrange(key_cmd_stream(scanner), count=5000)
-
-    due_cmds = []
-    skipped_not_due = 0
-    skipped_expired = 0
-    skipped_bad_time = 0
-
-    for xid, fields in raw:
-        exec_at_s = fields.get("execute_at", "")
-        if not exec_at_s:
-            skipped_bad_time += 1
-            continue
-
-        try:
-            exec_at = parse_local_dt(exec_at_s)
-        except Exception:
-            skipped_bad_time += 1
-            continue
-
-        if exec_at > server_now:
-            skipped_not_due += 1
-            continue
-
-        age_sec = int((server_now - exec_at).total_seconds())
-        if age_sec > CMD_EXPIRE_SEC:
-            skipped_expired += 1
-            continue
-
-        f2 = dict(fields)
-        f2["cmd_id"] = xid  # cmd_id == Redis XID
-
-        try:
-            f2["execute_at"] = parse_local_dt(f2.get("execute_at", "")).strftime(TIME_FMT)
-        except Exception:
-            pass
-        try:
-            f2["created_at"] = parse_local_dt(f2.get("created_at", "")).strftime(TIME_FMT)
-        except Exception:
-            pass
-
-        due_cmds.append((xid, f2))
-        if len(due_cmds) >= limit:
-            break
+    collected = _collect_due_commands(scanner=scanner, limit=limit, server_now_str=server_now_str)
 
     return {
         "scanner": scanner,
@@ -978,13 +942,9 @@ def cmd_poll(
         "client_now": now,
         "cmd_expire_sec": CMD_EXPIRE_SEC,
         "time_format": TIME_FMT,
-        "returned": len(due_cmds),
-        "skipped": {
-            "not_due": skipped_not_due,
-            "expired": skipped_expired,
-            "bad_time": skipped_bad_time,
-        },
-        "commands": due_cmds,
+        "returned": len(collected["commands"]),
+        "skipped": collected["skipped"],
+        "commands": collected["commands"],
     }
 
 @app.post("/cmd/ack/{scanner}", tags=["4 Commands (Polling)"])
@@ -1285,34 +1245,57 @@ def _northbound_upload_once() -> Dict[str, Any]:
     }
 
 def _build_status_snapshot() -> Dict[str, Any]:
-    robots = sorted(list(r.smembers(KEY_REGISTRY)))
+    scanners = sorted(list(r.smembers(KEY_REGISTRY)))
     robot_states: List[Dict[str, Any]] = []
+    ap_states: List[Dict[str, Any]] = []
 
-    for rid in robots:
+    for rid in scanners:
         meta = r.hgetall(key_scanner_meta(rid)) or {}
         last_seen = meta.get("last_seen", "")
+        device_type = (meta.get("device_type") or "robot").strip().lower()
 
-        av_streaming = meta.get("av_streaming", "")
-        if av_streaming == "1":
-            stream_state = "on"
-        elif av_streaming == "0":
-            stream_state = "off"
+        if device_type == "ap":
+            try:
+                ssids = json.loads(meta.get("ssids_json", "[]") or "[]")
+                if not isinstance(ssids, list):
+                    ssids = []
+            except Exception:
+                ssids = []
+
+            channel_val = meta.get("channel", "")
+            antenna_val = meta.get("antenna_count", "")
+
+            ap_states.append({
+                "ap_id": rid,
+                "last_seen": last_seen,
+                "mac": meta.get("mac", ""),
+                "ip": meta.get("ip", ""),
+                "ssids": ssids,
+                "band": meta.get("band", ""),
+                "channel": int(channel_val) if str(channel_val).isdigit() else None,
+                "antenna_count": int(antenna_val) if str(antenna_val).isdigit() else None,
+                "traffic_enabled": meta.get("traffic_enabled", ""),
+                "detail": "",
+            })
+
         else:
-            stream_state = "unknown"
+            av_streaming = meta.get("av_streaming", "")
+            if av_streaming == "1":
+                stream_state = "on"
+            elif av_streaming == "0":
+                stream_state = "off"
+            else:
+                stream_state = "unknown"
 
-        robot_states.append({
-            "robot_id": rid,
-            "last_seen": last_seen,
-            "mode": "unknown",
-
-            # NEW: truthful Pi-reported stream state
-            "stream_state": stream_state,
-            "stream_path": rid,
-
-            # Optional extra debug fields (safe + useful)
-            "detail": meta.get("av_detail", "")[:200],
-            "location": {"mode": "unknown", "x": 0.0, "y": 0.0},
-        })
+            robot_states.append({
+                "robot_id": rid,
+                "last_seen": last_seen,
+                "mode": "unknown",
+                "stream_state": stream_state,
+                "stream_path": rid,
+                "location": {"mode": "unknown", "x": 0.0, "y": 0.0},
+                "detail": meta.get("av_detail", "")[:200],
+            })
 
     return {
         "nms_id": NMS_ID,
@@ -1335,7 +1318,7 @@ def _build_status_snapshot() -> Dict[str, Any]:
             "last_uplink_ok": True,
             "last_uplink_time": None,
         },
-        "aps": [],
+        "aps": ap_states,
         "robots": robot_states,
     }
 
@@ -1432,7 +1415,7 @@ def _apply_web_cmds_as_intents(cmds: List[Dict[str, Any]]) -> Tuple[int, int, in
         target = str(c.get("target") or "").strip()
         action = str(c.get("action") or "").strip()
         category = str(c.get("category") or "").strip() or "av"
-
+       
         if not target or not action:
             noop += 1
             continue
@@ -1493,6 +1476,216 @@ def _apply_web_cmds_as_intents(cmds: List[Dict[str, Any]]) -> Tuple[int, int, in
         # This fixes the reboot corner case automatically.
 
     return intent_updates, enq, noop
+
+# =============================================================================
+# 6) AP
+# =============================================================================
+class APPollStatus(BaseModel):
+    mac: str
+    ip: Optional[str] = None
+    ssids: List[str] = Field(default_factory=list)
+    band: Optional[str] = None
+    channel: Optional[int] = None
+    antenna_count: Optional[int] = None
+
+class APPollReq(BaseModel):
+    time: str
+    status: APPollStatus
+
+class APAssociationItem(BaseModel):
+    sta_mac: str
+    ssid: str
+    mcs: int
+
+class APTrafficRecord(BaseModel):
+    sta_mac: str
+    ac: str
+    avg_frame_duration_us: float
+    frame_count: int
+    mcs_distribution: Dict[str, int] = Field(default_factory=dict)
+
+class APTrafficReq(BaseModel):
+    time_start: str
+    time_end: str
+    associations: List[APAssociationItem] = Field(default_factory=list)
+    records: List[APTrafficRecord] = Field(default_factory=list)
+
+
+def _collect_due_commands(scanner: str, limit: int, server_now_str: str) -> Dict[str, Any]:
+    """
+    Shared helper for robot /cmd/poll and AP /ap/poll.
+    Returns due commands in the same envelope shape already used by robots.
+    """
+    server_now = parse_local_dt(server_now_str)
+    raw = r.xrange(key_cmd_stream(scanner), count=5000)
+
+    due_cmds = []
+    skipped_not_due = 0
+    skipped_expired = 0
+    skipped_bad_time = 0
+
+    for xid, fields in raw:
+        exec_at_s = fields.get("execute_at", "")
+        if not exec_at_s:
+            skipped_bad_time += 1
+            continue
+
+        try:
+            exec_at = parse_local_dt(exec_at_s)
+        except Exception:
+            skipped_bad_time += 1
+            continue
+
+        if exec_at > server_now:
+            skipped_not_due += 1
+            continue
+
+        age_sec = int((server_now - exec_at).total_seconds())
+        if age_sec > CMD_EXPIRE_SEC:
+            skipped_expired += 1
+            continue
+
+        f2 = dict(fields)
+        f2["cmd_id"] = xid  # keep robot/AP contract: cmd_id == Redis XID
+
+        try:
+            f2["execute_at"] = parse_local_dt(f2.get("execute_at", "")).strftime(TIME_FMT)
+        except Exception:
+            pass
+
+        try:
+            f2["created_at"] = parse_local_dt(f2.get("created_at", "")).strftime(TIME_FMT)
+        except Exception:
+            pass
+
+        due_cmds.append((xid, f2))
+        if len(due_cmds) >= limit:
+            break
+
+    return {
+        "commands": due_cmds,
+        "skipped": {
+            "not_due": skipped_not_due,
+            "expired": skipped_expired,
+            "bad_time": skipped_bad_time,
+        },
+    }
+
+@app.post("/ap/poll/{scanner}", tags=["6 AP Control (Polling)"])
+def ap_poll(
+    scanner: str,
+    req: APPollReq,
+    request: Request,
+    limit: int = Query(5, ge=1, le=50),
+) -> Dict[str, Any]:
+    require_whitelisted(scanner)
+
+    try:
+        _ = parse_local_dt(req.time)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail=f"time must be like '{local_ts()}' (format {TIME_FMT})"
+        )
+
+    server_now_str = local_ts()
+
+    ssids_json = json.dumps(req.status.ssids or [], ensure_ascii=False)
+
+    meta_updates: Dict[str, str] = {
+        "device_type": "ap",
+        "last_seen": server_now_str,
+        "last_ap_poll": server_now_str,
+        "status_updated_at": server_now_str,
+        "mac": normalize_mac(req.status.mac),
+        "ip": (req.status.ip or (request.client.host if request.client and request.client.host else "") or ""),
+        "ssids_json": ssids_json,
+        "band": str(req.status.band or ""),
+        "channel": str(req.status.channel if req.status.channel is not None else ""),
+        "antenna_count": str(req.status.antenna_count if req.status.antenna_count is not None else ""),
+    }
+
+    try:
+        r.hset(key_scanner_meta(scanner), mapping=meta_updates)
+        r.sadd(KEY_REGISTRY, scanner)
+    except Exception:
+        pass
+
+    collected = _collect_due_commands(scanner=scanner, limit=limit, server_now_str=server_now_str)
+
+    return {
+        "scanner": scanner,
+        "server_now": server_now_str,
+        "time_format": TIME_FMT,
+        "returned": len(collected["commands"]),
+        "skipped": collected["skipped"],
+        "commands": collected["commands"],
+    }
+
+@app.post("/ap/traffic/{scanner}", tags=["7 AP Performance Upload"])
+def ap_traffic(scanner: str, req: APTrafficReq) -> Dict[str, Any]:
+    require_whitelisted(scanner)
+
+    try:
+        ts0 = parse_local_dt(req.time_start).strftime(TIME_FMT)
+        ts1 = parse_local_dt(req.time_end).strftime(TIME_FMT)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail=f"time_start/time_end must be like '{local_ts()}' (format {TIME_FMT})"
+        )
+
+    payload = {
+        "time_start": ts0,
+        "time_end": ts1,
+        "associations": [x.model_dump() for x in req.associations],
+        "records": [x.model_dump() for x in req.records],
+    }
+    payload_text = json.dumps(payload, ensure_ascii=False)
+    received_at = local_ts()
+
+    try:
+        r.xadd(
+            key_ap_uplink_stream(scanner),
+            {
+                "received_at": received_at,
+                "time_start": ts0,
+                "time_end": ts1,
+                "assoc_count": str(len(req.associations)),
+                "record_count": str(len(req.records)),
+                "payload_text": payload_text,
+            },
+            maxlen=AP_UPLINK_MAXLEN,
+            approximate=True,
+        )
+
+        r.hset(
+            key_scanner_meta(scanner),
+            mapping={
+                "device_type": "ap",
+                "last_seen": received_at,
+                "last_ap_traffic": received_at,
+                "last_ap_traffic_time_start": ts0,
+                "last_ap_traffic_time_end": ts1,
+                "last_ap_assoc_count": str(len(req.associations)),
+                "last_ap_record_count": str(len(req.records)),
+            }
+        )
+        r.sadd(KEY_REGISTRY, scanner)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"failed to store AP traffic: {e}")
+
+    return {
+        "status": "accepted",
+        "scanner": scanner,
+        "received_at": received_at,
+        "time_start": ts0,
+        "time_end": ts1,
+        "association_count": len(req.associations),
+        "record_count": len(req.records),
+        "queued_in": key_ap_uplink_stream(scanner),
+    }
 
 # =============================================================================
 # 9) Admin
