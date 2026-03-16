@@ -164,7 +164,7 @@ def _bundle_zip_path(bundle_id: str) -> Path:
     return BUNDLE_DIR / f"{bundle_id}.zip"
 
 def _validate_bundle_id(bundle_id: str) -> str:
-    if not bundle_id or not bundle_id.startswith("robotBundle"):
+    if not bundle_id or not (bundle_id.startswith("apBundle") or bundle_id.startswith("robotBundle")):
         raise HTTPException(status_code=400, detail="bundle_id must start with 'robotBundle'")
     for ch in bundle_id:
         if not (ch.isalnum() or ch in "._-"):
