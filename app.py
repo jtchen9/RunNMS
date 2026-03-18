@@ -13,6 +13,11 @@ import csv
 import io
 import asyncio
 import base64
+import os
+import signal
+import subprocess
+import threading
+import time
 
 # =============================================================================
 # Constants / Config  (NO getenv; lab-only hardcoded)
@@ -97,6 +102,20 @@ AP_UPLINK_MAXLEN: int = 20000
 
 def key_ap_uplink_stream(scanner: str) -> str:
     return f"{KEY_PREFIX}ap_uplink:{scanner}"   # STREAM(AP performance payloads)
+
+# -----------------------------------------------------------------------------#
+# 7) Traffic / iperf3
+# -----------------------------------------------------------------------------#
+IPERF3_EXE: str = r"D:\Data\Software\iperf3\iperf3.exe"   # change to full path if needed on Windows
+IPERF3_DEFAULT_PORT: int = 5201
+
+KEY_TRAFFIC_IPERF3_STATUS: str = f"{KEY_PREFIX}traffic:iperf3:status"         # HASH
+KEY_TRAFFIC_IPERF3_LATEST_RAW: str = f"{KEY_PREFIX}traffic:iperf3:latest_raw" # STRING(JSON)
+KEY_TRAFFIC_IPERF3_LATEST_SUMMARY: str = f"{KEY_PREFIX}traffic:iperf3:latest_summary" # STRING(JSON)
+KEY_TRAFFIC_IPERF3_LAST_ERROR: str = f"{KEY_PREFIX}traffic:iperf3:last_error" # STRING
+
+KEY_TRAFFIC_EVENT_QUEUE: str = f"{KEY_PREFIX}traffic:event_queue"   # STREAM (short-lived queue)
+TRAFFIC_EVENT_QUEUE_MAXLEN: int = 1000
 
 # =============================================================================
 # Runtime init
@@ -976,6 +995,40 @@ def cmd_list_command_queue(scanner: str) -> Dict[str, Any]:
         "oldest_id": oldest_id,
     }
 
+@app.get("/cmd/_list_cmdacks/{scanner}", tags=["4 Commands (Polling)"])
+def cmd_list_cmdacks(
+    scanner: str,
+    limit: int = Query(20, ge=1, le=200)
+) -> Dict[str, Any]:
+    """
+    Debug-only: show recent command ACK entries for one scanner.
+    Newest first.
+    This corresponds to Redis stream: nms:cmdack:{scanner}
+    """
+    require_whitelisted(scanner)
+    key = key_cmdack_stream(scanner)
+
+    rows = r.xrevrange(key, count=int(limit))
+
+    items: List[Dict[str, Any]] = []
+    for xid, fields in rows:
+        item = {
+            "stream_id": xid,
+            "cmd_id": fields.get("cmd_id", ""),
+            "status": fields.get("status", ""),
+            "finished_at": fields.get("finished_at", ""),
+            "detail": fields.get("detail", ""),
+        }
+        items.append(item)
+
+    return {
+        "time": local_ts(),
+        "scanner": scanner,
+        "key": key,
+        "count": len(items),
+        "items": items,
+    }
+
 def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
     """
     Single source of truth for enqueuing commands to Redis.
@@ -1100,11 +1153,14 @@ def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
     else:
         finished_at = local_ts()
 
-    # Record ack (unchanged idea; cmd_id now contains xid)
+    # Read command BEFORE deletion
+    cmd_fields = _get_cmd_by_xid(scanner, ack.cmd_id)
+
+    # Record ACK
     r.xadd(
         key_cmdack_stream(scanner),
         {
-            "cmd_id": ack.cmd_id,    # NOTE: now this is XID
+            "cmd_id": ack.cmd_id,
             "status": ack.status,
             "finished_at": finished_at,
             "detail": ack.detail or "",
@@ -1113,15 +1169,28 @@ def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
         approximate=True,
     )
 
-    # IMPORTANT CHANGE (Option A):
-    # - Delete the command from the command stream using cmd_id as the Redis XID.
+    # 👉 Traffic event (PASS-THROUGH QUEUE)
+    if cmd_fields:
+        action = str(cmd_fields.get("action") or "").strip()
+        if action in ("traffic.session.start", "traffic.session.stop"):
+            event = {
+                "time": local_ts(),
+                "scanner": scanner,
+                "action": action,
+                "status": ack.status,
+                "finished_at": finished_at,
+                "detail": (ack.detail or "")[:200],
+            }
+            _append_traffic_event(event)
+
+    # Delete command
     deleted = int(r.xdel(key_cmd_stream(scanner), ack.cmd_id))
 
     return {
         "status": "ok",
         "scanner": scanner,
-        "cmd_id": ack.cmd_id,       # KEEP CONTRACT
-        "deleted": deleted,         # helpful debug signal
+        "cmd_id": ack.cmd_id,
+        "deleted": deleted,
         "finished_at": finished_at,
         "time_format": TIME_FMT,
     }
@@ -1712,7 +1781,7 @@ def _collect_due_commands(scanner: str, limit: int, server_now_str: str) -> Dict
         },
     }
 
-@app.post("/ap/poll/{scanner}", tags=["6 AP Control (Polling)"])
+@app.post("/ap/poll/{scanner}", tags=["6 AP Control"])
 def ap_poll(
     scanner: str,
     req: APPollReq,
@@ -1763,7 +1832,7 @@ def ap_poll(
         "commands": collected["commands"],
     }
 
-@app.post("/ap/traffic/{scanner}", tags=["7 AP Performance Upload"])
+@app.post("/ap/traffic/{scanner}", tags=["6 AP Control"])
 def ap_traffic(scanner: str, req: APTrafficReq) -> Dict[str, Any]:
     require_whitelisted(scanner)
 
@@ -1826,6 +1895,333 @@ def ap_traffic(scanner: str, req: APTrafficReq) -> Dict[str, Any]:
         "association_count": len(req.associations),
         "record_count": len(req.records),
         "queued_in": key_ap_uplink_stream(scanner),
+    }
+
+# =============================================================================
+# 7) Traffic
+# =============================================================================
+
+class Iperf3StartReq(BaseModel):
+    port: int = Field(default=IPERF3_DEFAULT_PORT, ge=1, le=65535)
+
+class Iperf3StopReq(BaseModel):
+    force: bool = Field(default=False)
+
+_iperf3_proc: Optional[subprocess.Popen] = None
+_iperf3_lock = threading.Lock()
+
+
+def _iperf3_status_get() -> Dict[str, Any]:
+    return r.hgetall(KEY_TRAFFIC_IPERF3_STATUS) or {}
+
+
+def _iperf3_status_set(mapping: Dict[str, str]) -> None:
+    r.hset(KEY_TRAFFIC_IPERF3_STATUS, mapping=mapping)
+
+
+def _iperf3_status_clear() -> None:
+    r.delete(KEY_TRAFFIC_IPERF3_STATUS)
+
+
+def _iperf3_running() -> bool:
+    global _iperf3_proc
+    return _iperf3_proc is not None and _iperf3_proc.poll() is None
+
+
+def _iperf3_build_summary(raw_json: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Keep summary very light.
+    """
+    summary: Dict[str, Any] = {
+        "time": local_ts(),
+        "protocol": "",
+        "duration_sec": None,
+        "throughput_mbps": None,
+        "bytes": None,
+    }
+
+    try:
+        start = raw_json.get("start", {}) or {}
+        test_start = start.get("test_start", {}) or {}
+        summary["protocol"] = str(test_start.get("protocol") or "").lower()
+
+        end = raw_json.get("end", {}) or {}
+
+        if summary["protocol"] == "udp":
+            s = end.get("sum", {}) or end.get("sum_received", {}) or {}
+        else:
+            s = end.get("sum_received", {}) or end.get("sum", {}) or {}
+
+        bps = s.get("bits_per_second")
+        seconds = s.get("seconds")
+        bytes_ = s.get("bytes")
+
+        if bps is not None:
+            summary["throughput_mbps"] = round(float(bps) / 1_000_000.0, 3)
+        if seconds is not None:
+            summary["duration_sec"] = float(seconds)
+        if bytes_ is not None:
+            summary["bytes"] = int(bytes_)
+
+    except Exception:
+        pass
+
+    return summary
+
+
+def _iperf3_capture_thread(proc: subprocess.Popen, port: int) -> None:
+    """
+    Wait for iperf3 server process to exit and store raw/summary result.
+    Assumes proc was launched with -J.
+    """
+    global _iperf3_proc
+
+    try:
+        stdout_data, stderr_data = proc.communicate()
+
+        stdout_s = stdout_data.decode("utf-8", errors="replace") if stdout_data else ""
+        stderr_s = stderr_data.decode("utf-8", errors="replace") if stderr_data else ""
+
+        now = local_ts()
+
+        if proc.returncode == 0 and stdout_s.strip():
+            try:
+                raw_json = json.loads(stdout_s)
+                summary = _iperf3_build_summary(raw_json)
+
+                record = {
+                    "time_local": local_ts(),           # NMS local time
+                    "time_format": TIME_FMT,
+                    "data": raw_json                    # original iperf3 output (unchanged, still UTC)
+                }
+
+                r.set(KEY_TRAFFIC_IPERF3_LATEST_RAW, json.dumps(record, ensure_ascii=False))
+                r.set(KEY_TRAFFIC_IPERF3_LATEST_SUMMARY, json.dumps(summary, ensure_ascii=False))
+                r.delete(KEY_TRAFFIC_IPERF3_LAST_ERROR)
+
+                _iperf3_status_set({
+                    "running": "0",
+                    "port": str(port),
+                    "pid": "",
+                    "started_at": _iperf3_status_get().get("started_at", ""),
+                    "ended_at": now,
+                    "last_result_at": now,
+                    "last_returncode": str(proc.returncode),
+                })
+
+            except Exception as e:
+                r.set(KEY_TRAFFIC_IPERF3_LAST_ERROR, f"{now} invalid_json: {e}")
+                _iperf3_status_set({
+                    "running": "0",
+                    "port": str(port),
+                    "pid": "",
+                    "started_at": _iperf3_status_get().get("started_at", ""),
+                    "ended_at": now,
+                    "last_result_at": "",
+                    "last_returncode": str(proc.returncode),
+                })
+        else:
+            err_text = stderr_s[:2000] if stderr_s else stdout_s[:2000]
+            r.set(KEY_TRAFFIC_IPERF3_LAST_ERROR, f"{now} returncode={proc.returncode} {err_text}")
+            _iperf3_status_set({
+                "running": "0",
+                "port": str(port),
+                "pid": "",
+                "started_at": _iperf3_status_get().get("started_at", ""),
+                "ended_at": now,
+                "last_result_at": "",
+                "last_returncode": str(proc.returncode),
+            })
+
+    finally:
+        with _iperf3_lock:
+            if _iperf3_proc is proc:
+                _iperf3_proc = None
+
+
+def _iperf3_start(port: int) -> Dict[str, Any]:
+    """
+    Start a one-session iperf3 server:
+      iperf3 -s -1 -J -p <port>
+    It will exit after one client session and store the result.
+    """
+    global _iperf3_proc
+
+    with _iperf3_lock:
+        if _iperf3_running():
+            raise HTTPException(status_code=409, detail="iperf3 server already running")
+
+        cmd = [
+            IPERF3_EXE,
+            "-s",
+            "-1",
+            "-J",
+            "-p",
+            str(port),
+        ]
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"failed to start iperf3: {e}")
+
+        _iperf3_proc = proc
+        now = local_ts()
+
+        _iperf3_status_set({
+            "running": "1",
+            "port": str(port),
+            "pid": str(proc.pid),
+            "started_at": now,
+            "ended_at": "",
+            "last_result_at": "",
+            "last_returncode": "",
+        })
+
+        t = threading.Thread(target=_iperf3_capture_thread, args=(proc, port), daemon=True)
+        t.start()
+
+        return {
+            "status": "ok",
+            "running": True,
+            "pid": proc.pid,
+            "port": port,
+            "started_at": now,
+            "cmd": cmd,
+        }
+
+
+def _iperf3_stop(force: bool = False) -> Dict[str, Any]:
+    global _iperf3_proc
+
+    with _iperf3_lock:
+        if not _iperf3_running():
+            return {
+                "status": "ok",
+                "running": False,
+                "note": "iperf3 server not running",
+                "time": local_ts(),
+            }
+
+        proc = _iperf3_proc
+        pid = proc.pid
+
+        try:
+            if force:
+                proc.kill()
+            else:
+                proc.terminate()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"failed to stop iperf3: {e}")
+
+        return {
+            "status": "ok",
+            "running": True,
+            "stopping": True,
+            "pid": pid,
+            "force": force,
+            "time": local_ts(),
+        }
+
+@app.post("/traffic/_iperf3_start", tags=["7 Traffic / iperf3"])
+def traffic_iperf3_start(req: Iperf3StartReq) -> Dict[str, Any]:
+    return _iperf3_start(port=int(req.port))
+
+
+@app.post("/traffic/_iperf3_stop", tags=["7 Traffic / iperf3"])
+def traffic_iperf3_stop(req: Iperf3StopReq) -> Dict[str, Any]:
+    return _iperf3_stop(force=bool(req.force))
+
+
+@app.get("/traffic/_iperf3_status", tags=["7 Traffic / iperf3"])
+def traffic_iperf3_status() -> Dict[str, Any]:
+    s = _iperf3_status_get()
+    running = _iperf3_running()
+    out = {
+        "time": local_ts(),
+        "running": running,
+        "status": s,
+    }
+    return out
+
+
+@app.get("/traffic/_iperf3_latest", tags=["7 Traffic / iperf3"])
+def traffic_iperf3_latest() -> Dict[str, Any]:
+    raw_s = r.get(KEY_TRAFFIC_IPERF3_LATEST_RAW) or ""
+    summary_s = r.get(KEY_TRAFFIC_IPERF3_LATEST_SUMMARY) or ""
+    err_s = r.get(KEY_TRAFFIC_IPERF3_LAST_ERROR) or ""
+
+    try:
+        raw_j = json.loads(raw_s) if raw_s else None
+    except Exception:
+        raw_j = None
+
+    try:
+        summary_j = json.loads(summary_s) if summary_s else None
+    except Exception:
+        summary_j = None
+
+    return {
+        "time": local_ts(),
+        "running": _iperf3_running(),
+        "status": _iperf3_status_get(),
+        "summary": summary_j,
+        "raw": raw_j,
+        "last_error": err_s,
+    }
+
+
+def _get_cmd_by_xid(scanner: str, xid: str) -> Optional[Dict[str, Any]]:
+    """
+    Read one command from nms:cmd:{scanner} by Redis stream ID (XID).
+    Returns the command fields dict, or None if not found.
+    """
+    try:
+        rows = r.xrange(key_cmd_stream(scanner), min=xid, max=xid, count=1)
+        if not rows:
+            return None
+        _, fields = rows[0]
+        return dict(fields)
+    except Exception:
+        return None
+
+def _append_traffic_event(event: Dict[str, Any]) -> None:
+    """
+    Append one traffic event into pass-through queue.
+    """
+    try:
+        r.xadd(
+            KEY_TRAFFIC_EVENT_QUEUE,
+            event,
+            maxlen=TRAFFIC_EVENT_QUEUE_MAXLEN,
+            approximate=True,
+        )
+    except Exception:
+        pass
+
+@app.get("/nb/traffic/events", tags=["8 Northbound"])
+def nb_get_traffic_events():
+    rows = r.xrange(KEY_TRAFFIC_EVENT_QUEUE, count=200)
+
+    events = []
+    ids = []
+
+    for xid, fields in rows:
+        events.append(dict(fields))
+        ids.append(xid)
+
+    # delete after read
+    if ids:
+        r.xdel(KEY_TRAFFIC_EVENT_QUEUE, *ids)
+
+    return {
+        "count": len(events),
+        "events": events,
     }
 
 # =============================================================================
