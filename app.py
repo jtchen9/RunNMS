@@ -116,23 +116,24 @@ def key_ap_uplink_stream(scanner: str) -> str:
 
 IPERF3_EXE: str = r"D:\Data\Software\iperf3\iperf3.exe"   # adjust if needed
 
-# TCP only for now
+# Shared pool for both TCP and UDP
 IPERF3_PORT_POOL: List[int] = list(range(5201, 5281))
 
 KEY_TRAFFIC_IPERF3_STATUS: str = f"{KEY_PREFIX}traffic:iperf3:status"          # HASH
 KEY_TRAFFIC_IPERF3_LAST_ERROR: str = f"{KEY_PREFIX}traffic:iperf3:last_error"  # STRING
 
-KEY_TRAFFIC_EVENT_QUEUE: str = f"{KEY_PREFIX}traffic:event_queue"               # STREAM
+KEY_TRAFFIC_EVENT_QUEUE: str = f"{KEY_PREFIX}traffic:event_queue"               # STREAM (pass-through)
 TRAFFIC_EVENT_QUEUE_MAXLEN: int = 1000
 
-# Keep for later 1-minute metric packaging
+KEY_TRAFFIC_EVENT_LOG: str = f"{KEY_PREFIX}traffic:event_log"                   # STREAM (debug/history-lite)
+TRAFFIC_EVENT_LOG_MAXLEN: int = 5000
+
 KEY_TRAFFIC_IPERF3_RESULT_QUEUE: str = f"{KEY_PREFIX}traffic:iperf3:result_queue"  # STREAM
 TRAFFIC_IPERF3_RESULT_QUEUE_MAXLEN: int = 500
 
 # Lease lifetime = duration_sec + grace
 TRAFFIC_PORT_LEASE_GRACE_SEC: int = 15
 
-# 
 # =============================================================================
 # Runtime init
 # =============================================================================
@@ -1211,7 +1212,6 @@ def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
         action = str(cmd_fields.get("action") or "").strip()
         args = parse_args_json(cmd_fields.get("args_json") or "")
 
-        # Traffic event queue
         if action in ("traffic.session.start", "traffic.session.stop"):
             event = {
                 "time": local_ts(),
@@ -1228,13 +1228,7 @@ def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
         status_lc = str(ack.status or "").strip().lower()
 
         if action == "traffic.session.start":
-            # start failed -> release reserved port immediately
             if status_lc != "ok":
-                _traffic_release_port_by_session(str(args.get("session_id") or ""))
-
-        elif action == "traffic.session.stop":
-            # stop success -> release reserved port
-            if status_lc == "ok":
                 _traffic_release_port_by_session(str(args.get("session_id") or ""))
 
     # Delete command
@@ -2129,6 +2123,7 @@ def _traffic_prepare_start_args(scanner: str, args: Dict[str, Any]) -> Dict[str,
     session_id = str(out.get("session_id") or "").strip()
     ac = str(out.get("ac") or "").strip().lower()
     protocol = str(out.get("protocol") or "udp").strip().lower()
+    target_ip = str(out.get("target_ip") or "").strip()
     duration_sec = int(out.get("duration_sec") or 0)
 
     if not session_id:
@@ -2137,13 +2132,14 @@ def _traffic_prepare_start_args(scanner: str, args: Dict[str, Any]) -> Dict[str,
         raise HTTPException(status_code=400, detail="traffic.session.start args.ac must be one of vo|vi|be|bk")
     if protocol not in ("tcp", "udp"):
         raise HTTPException(status_code=400, detail="traffic.session.start args.protocol must be tcp or udp")
+    if not target_ip:
+        raise HTTPException(status_code=400, detail="traffic.session.start missing args.target_ip")
     if duration_sec <= 0:
         raise HTTPException(status_code=400, detail="traffic.session.start args.duration_sec must be > 0")
 
     alloc_key = _traffic_alloc_key(scanner, ac, protocol)
 
     with _traffic_port_lock:
-        # Manual override allowed
         if "target_port" in out and out.get("target_port") not in (None, "", 0):
             port = int(out["target_port"])
 
@@ -2160,7 +2156,6 @@ def _traffic_prepare_start_args(scanner: str, args: Dict[str, Any]) -> Dict[str,
                 pass
 
         else:
-            # Prevent same (scanner, ac, protocol) from opening a second active session before releasing old one
             if alloc_key in _traffic_port_by_key:
                 old_port = _traffic_port_by_key[alloc_key]
                 raise HTTPException(
@@ -2180,7 +2175,10 @@ def _traffic_prepare_start_args(scanner: str, args: Dict[str, Any]) -> Dict[str,
             "scanner": scanner,
             "ac": ac,
             "protocol": protocol,
+            "target_ip": target_ip,
+            "target_port": port,
             "session_id": session_id,
+            "duration_sec": duration_sec,
             "alloc_key": alloc_key,
             "lease_until_ts": lease_until_ts,
             "assigned_at": local_ts(),
@@ -2191,6 +2189,93 @@ def _traffic_prepare_start_args(scanner: str, args: Dict[str, Any]) -> Dict[str,
         _traffic_port_by_key[alloc_key] = port
 
     return out
+
+def _rfc2822_gmt_to_local_ts(s: str) -> str:
+    """
+    iperf3 timestamp example: 'Fri, 20 Mar 2026 01:10:30 GMT'
+    We keep conversion simple; if parse fails, fall back to local_ts().
+    """
+    try:
+        dt = datetime.strptime(s, "%a, %d %b %Y %H:%M:%S %Z")
+        return dt.strftime(TIME_FMT)
+    except Exception:
+        return local_ts()
+
+
+def _traffic_finalize_port_result(port: int, raw_json: Optional[Dict[str, Any]], stderr_s: str) -> None:
+    """
+    Build one completed iperf3 session record from NMS-side server JSON,
+    queue it for 1-minute northbound upload, and release the leased port.
+    """
+    with _traffic_port_lock:
+        meta = _traffic_lease_by_port.pop(port, None) or {}
+        session_id = str(meta.get("session_id") or "").strip()
+        alloc_key = str(meta.get("alloc_key") or "").strip()
+
+        if session_id:
+            _traffic_port_by_session.pop(session_id, None)
+        if alloc_key:
+            _traffic_port_by_key.pop(alloc_key, None)
+
+        # release port back to queue tail
+        if port not in _traffic_free_ports:
+            _traffic_free_ports.append(port)
+
+    scanner = str(meta.get("scanner") or "")
+    protocol = str(meta.get("protocol") or "")
+    ac = str(meta.get("ac") or "")
+    target_ip = str(meta.get("target_ip") or "")
+    duration_sec = int(meta.get("duration_sec") or 0)
+    assigned_at = str(meta.get("assigned_at") or local_ts())
+
+    status = "ok"
+    error = ""
+
+    if raw_json is None:
+        status = "error"
+        error = (stderr_s or "").strip()[:1000]
+        data = {"error": error}
+        start_time = assigned_at
+        completion_time = local_ts()
+    else:
+        if "error" in raw_json:
+            status = "error"
+            error = str(raw_json.get("error") or "")[:1000]
+
+        start = raw_json.get("start", {}) or {}
+        ts = start.get("timestamp", {}) or {}
+        start_time = _rfc2822_gmt_to_local_ts(str(ts.get("time") or "")) if ts.get("time") else assigned_at
+        completion_time = local_ts()
+        data = raw_json
+
+    record = {
+        "session_id": session_id,
+        "scanner": scanner,
+        "protocol": protocol,
+        "ac": ac,
+        "target_ip": target_ip,
+        "target_port": port,
+        "start_time": start_time,
+        "completion_time": completion_time,
+        "duration_sec": duration_sec,
+        "status": status,
+        "error": error,
+        "data": data,
+    }
+
+    try:
+        r.xadd(
+            KEY_TRAFFIC_IPERF3_RESULT_QUEUE,
+            {
+                "scanner": scanner,
+                "completion_time": completion_time,
+                "payload_text": json.dumps(record, ensure_ascii=False),
+            },
+            maxlen=TRAFFIC_IPERF3_RESULT_QUEUE_MAXLEN,
+            approximate=True,
+        )
+    except Exception:
+        pass
 
 def _traffic_prepare_stop_args(scanner: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -2217,9 +2302,13 @@ def _iperf3_running(port: int) -> bool:
     return p is not None and p.poll() is None
 
 def _iperf3_spawn_server(port: int) -> subprocess.Popen:
+    """
+    One-session JSON server.
+    The pool supervisor will respawn it immediately after completion.
+    """
     return subprocess.Popen(
-        [IPERF3_EXE, "-s", "-p", str(port)],
-        stdout=subprocess.DEVNULL,
+        [IPERF3_EXE, "-s", "-1", "-J", "-p", str(port)],
+        stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         stdin=subprocess.DEVNULL,
     )
@@ -2227,13 +2316,25 @@ def _iperf3_spawn_server(port: int) -> subprocess.Popen:
 def _iperf3_waiter(proc: subprocess.Popen, port: int) -> None:
     global _iperf3_procs
 
-    _, stderr_data = proc.communicate()
+    stdout_data, stderr_data = proc.communicate()
+    stdout_s = stdout_data.decode("utf-8", errors="replace") if stdout_data else ""
     stderr_s = stderr_data.decode("utf-8", errors="replace") if stderr_data else ""
 
-    now = local_ts()
+    raw_json: Optional[Dict[str, Any]] = None
 
-    if stderr_s.strip():
-        r.set(KEY_TRAFFIC_IPERF3_LAST_ERROR, f"{now} port={port} {stderr_s[:1000]}")
+    if stdout_s.strip():
+        try:
+            parsed = json.loads(stdout_s)
+            if isinstance(parsed, dict):
+                raw_json = parsed
+        except Exception:
+            raw_json = None
+
+    if raw_json is None and stderr_s.strip():
+        r.set(KEY_TRAFFIC_IPERF3_LAST_ERROR, f"{local_ts()} port={port} {stderr_s[:1000]}")
+
+    # Build session result and release port
+    _traffic_finalize_port_result(port, raw_json, stderr_s)
 
     with _iperf3_lock:
         if _iperf3_procs.get(port) is proc:
@@ -2372,13 +2473,25 @@ def _get_cmd_by_xid(scanner: str, xid: str) -> Optional[Dict[str, Any]]:
 
 def _append_traffic_event(event: Dict[str, Any]) -> None:
     """
-    Append one traffic event into pass-through queue.
+    Append one traffic event into:
+      1) pass-through queue for 10-second northbound report
+      2) debug log stream for later inspection
     """
     try:
         r.xadd(
             KEY_TRAFFIC_EVENT_QUEUE,
             event,
             maxlen=TRAFFIC_EVENT_QUEUE_MAXLEN,
+            approximate=True,
+        )
+    except Exception:
+        pass
+
+    try:
+        r.xadd(
+            KEY_TRAFFIC_EVENT_LOG,
+            event,
+            maxlen=TRAFFIC_EVENT_LOG_MAXLEN,
             approximate=True,
         )
     except Exception:
