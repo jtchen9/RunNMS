@@ -1,3 +1,5 @@
+from collections import deque
+
 from fastapi import Body, FastAPI, Request, HTTPException, Query, File, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -95,6 +97,11 @@ KEY_INTENT_VIDEO_TS: str = f"{KEY_PREFIX}intent:video_ts"    # HASH(robot -> tim
 KEY_APPLIED_VIDEO: str = f"{KEY_PREFIX}applied:video"        # HASH(robot -> "on"/"off"/"unknown")
 KEY_APPLIED_VIDEO_TS: str = f"{KEY_PREFIX}applied:video_ts"  # HASH(robot -> time)
 
+SCANNER_IPERF3 = "__nms_iperf3__"
+
+KEY_TRAFFIC_IPERF3_RESULT_QUEUE: str = f"{KEY_PREFIX}traffic:iperf3:result_queue"  # STREAM
+TRAFFIC_IPERF3_RESULT_QUEUE_MAXLEN: int = 500
+
 # -----------------------------------------------------------------------------#
 # 6) AP performance upload
 # -----------------------------------------------------------------------------#
@@ -103,20 +110,29 @@ AP_UPLINK_MAXLEN: int = 20000
 def key_ap_uplink_stream(scanner: str) -> str:
     return f"{KEY_PREFIX}ap_uplink:{scanner}"   # STREAM(AP performance payloads)
 
-# -----------------------------------------------------------------------------#
-# 7) Traffic / iperf3
-# -----------------------------------------------------------------------------#
-IPERF3_EXE: str = r"D:\Data\Software\iperf3\iperf3.exe"   # change to full path if needed on Windows
-IPERF3_DEFAULT_PORT: int = 5201
+# =============================================================================
+# 7) Traffic
+# =============================================================================
 
-KEY_TRAFFIC_IPERF3_STATUS: str = f"{KEY_PREFIX}traffic:iperf3:status"         # HASH
-KEY_TRAFFIC_IPERF3_LATEST_RAW: str = f"{KEY_PREFIX}traffic:iperf3:latest_raw" # STRING(JSON)
-KEY_TRAFFIC_IPERF3_LATEST_SUMMARY: str = f"{KEY_PREFIX}traffic:iperf3:latest_summary" # STRING(JSON)
-KEY_TRAFFIC_IPERF3_LAST_ERROR: str = f"{KEY_PREFIX}traffic:iperf3:last_error" # STRING
+IPERF3_EXE: str = r"D:\Data\Software\iperf3\iperf3.exe"   # adjust if needed
 
-KEY_TRAFFIC_EVENT_QUEUE: str = f"{KEY_PREFIX}traffic:event_queue"   # STREAM (short-lived queue)
+# TCP only for now
+IPERF3_PORT_POOL: List[int] = list(range(5201, 5281))
+
+KEY_TRAFFIC_IPERF3_STATUS: str = f"{KEY_PREFIX}traffic:iperf3:status"          # HASH
+KEY_TRAFFIC_IPERF3_LAST_ERROR: str = f"{KEY_PREFIX}traffic:iperf3:last_error"  # STRING
+
+KEY_TRAFFIC_EVENT_QUEUE: str = f"{KEY_PREFIX}traffic:event_queue"               # STREAM
 TRAFFIC_EVENT_QUEUE_MAXLEN: int = 1000
 
+# Keep for later 1-minute metric packaging
+KEY_TRAFFIC_IPERF3_RESULT_QUEUE: str = f"{KEY_PREFIX}traffic:iperf3:result_queue"  # STREAM
+TRAFFIC_IPERF3_RESULT_QUEUE_MAXLEN: int = 500
+
+# Lease lifetime = duration_sec + grace
+TRAFFIC_PORT_LEASE_GRACE_SEC: int = 15
+
+# 
 # =============================================================================
 # Runtime init
 # =============================================================================
@@ -924,7 +940,7 @@ async def ingest(
 class Cmd(BaseModel):
     category: str = "scan"
     action: str
-    execute_at: str  # MUST be TIME_FMT
+    execute_at: Optional[str] = None
     args: Dict[str, Any] = Field(default_factory=dict)
     args_json_text: Optional[str] = None
 
@@ -1038,28 +1054,40 @@ def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
     """
     require_whitelisted(scanner)
 
-    # Validate execute_at format (force one style across Pi/NMS/DB)
-    try:
-        _ = parse_local_dt(cmd.execute_at)
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail=f"execute_at must be like '{local_ts()}' (format {TIME_FMT})"
-        )
-
     created_at = local_ts()
 
-    if cmd.args_json_text is not None and cmd.args_json_text.strip() != "":
-        raw = cmd.args_json_text.strip()
+    raw = (cmd.execute_at or "").strip()
+    if raw == "":
+        execute_at_norm = created_at
+    else:
         try:
-            json.loads(raw)
+            execute_at_norm = parse_local_dt(raw).strftime(TIME_FMT)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail=f"execute_at must be like '{local_ts()}' (format {TIME_FMT})"
+            )
+
+    # Build args_dict first
+    if cmd.args_json_text is not None and cmd.args_json_text.strip() != "":
+        raw_json = cmd.args_json_text.strip()
+        try:
+            parsed = json.loads(raw_json)
         except Exception:
             raise HTTPException(status_code=400, detail="args_json_text must be valid JSON text")
-        args_json = raw
+        if not isinstance(parsed, dict):
+            raise HTTPException(status_code=400, detail="args_json_text must decode to a JSON object")
+        args_dict = parsed
     else:
-        args_json = json.dumps(cmd.args or {}, ensure_ascii=False)
+        args_dict = dict(cmd.args or {})
 
-    execute_at_norm = parse_local_dt(cmd.execute_at).strftime(TIME_FMT)
+    # Traffic-specific port handling
+    if cmd.action == "traffic.session.start":
+        args_dict = _traffic_prepare_start_args(scanner, args_dict)
+    elif cmd.action == "traffic.session.stop":
+        args_dict = _traffic_prepare_stop_args(scanner, args_dict)
+
+    args_json = json.dumps(args_dict, ensure_ascii=False)
 
     fields = {
         "category": cmd.category,
@@ -1074,7 +1102,7 @@ def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
     return {
         "status": "ok",
         "scanner": scanner,
-        "cmd_id": xid,              # KEEP RESPONSE FIELD NAME
+        "cmd_id": xid,
         "created_at": created_at,
         "time_format": TIME_FMT,
     }
@@ -1141,6 +1169,13 @@ def cmd_poll(
         "commands": collected["commands"],
     }
 
+def parse_args_json(s: str) -> Dict[str, Any]:
+    try:
+        obj = json.loads((s or "").strip() or "{}")
+        return obj if isinstance(obj, dict) else {}
+    except Exception:
+        return {}
+
 @app.post("/cmd/ack/{scanner}", tags=["4 Commands (Polling)"])
 def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
     require_whitelisted(scanner)
@@ -1149,7 +1184,10 @@ def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
         try:
             finished_at = parse_local_dt(ack.finished_at).strftime(TIME_FMT)
         except Exception:
-            raise HTTPException(status_code=400, detail=f"finished_at must be like '{local_ts()}' (format {TIME_FMT})")
+            raise HTTPException(
+                status_code=400,
+                detail=f"finished_at must be like '{local_ts()}' (format {TIME_FMT})"
+            )
     else:
         finished_at = local_ts()
 
@@ -1169,19 +1207,35 @@ def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
         approximate=True,
     )
 
-    # 👉 Traffic event (PASS-THROUGH QUEUE)
     if cmd_fields:
         action = str(cmd_fields.get("action") or "").strip()
+        args = parse_args_json(cmd_fields.get("args_json") or "")
+
+        # Traffic event queue
         if action in ("traffic.session.start", "traffic.session.stop"):
             event = {
                 "time": local_ts(),
                 "scanner": scanner,
+                "parent_session_id": str(args.get("session_id") or ""),
                 "action": action,
                 "status": ack.status,
-                "finished_at": finished_at,
+                "completion_time": finished_at,
                 "detail": (ack.detail or "")[:200],
             }
             _append_traffic_event(event)
+
+        # Port release logic
+        status_lc = str(ack.status or "").strip().lower()
+
+        if action == "traffic.session.start":
+            # start failed -> release reserved port immediately
+            if status_lc != "ok":
+                _traffic_release_port_by_session(str(args.get("session_id") or ""))
+
+        elif action == "traffic.session.stop":
+            # stop success -> release reserved port
+            if status_lc == "ok":
+                _traffic_release_port_by_session(str(args.get("session_id") or ""))
 
     # Delete command
     deleted = int(r.xdel(key_cmd_stream(scanner), ack.cmd_id))
@@ -1418,6 +1472,58 @@ def _northbound_upload_once() -> Dict[str, Any]:
             selected_ids_by_robot.setdefault(robot, []).append(xid)
             budget -= item_bytes
 
+    # ---- NEW: include iperf3 results ----
+    try:
+        rows = r.xrange(KEY_TRAFFIC_IPERF3_RESULT_QUEUE, count=100)
+    except Exception:
+        rows = []
+
+    selected_iperf_ids: List[str] = []
+
+    for xid, fields in rows:
+        if budget <= 0:
+            break
+
+        try:
+            raw_j = json.loads(fields.get("raw_json", "") or "{}")
+        except Exception:
+            raw_j = None
+
+        try:
+            summary_j = json.loads(fields.get("summary_json", "") or "{}")
+        except Exception:
+            summary_j = None
+
+        item = {
+            "scanner": SCANNER_IPERF3,
+            "time": fields.get("time", local_ts()),
+            "iface": "",
+            "entries": [
+                {
+                    "type": "iperf3",
+                    "summary": summary_j,
+                    "raw": raw_j,
+                }
+            ],
+            "time_format": TIME_FMT,
+        }
+
+        item_bytes = _json_bytes(item)
+
+        if item_bytes > UPLOAD_BATCH_MAX_BYTES:
+            try:
+                r.xdel(KEY_TRAFFIC_IPERF3_RESULT_QUEUE, xid)
+            except Exception:
+                pass
+            continue
+
+        if item_bytes > budget:
+            break
+
+        selected_items.append(item)
+        selected_iperf_ids.append(xid)
+        budget -= item_bytes
+
     ok, detail, accepted, rejected = _post_upload_scan_batch(selected_items)
 
     if ok:
@@ -1432,6 +1538,15 @@ def _northbound_upload_once() -> Dict[str, Any]:
                 r.hset(KEY_NB_LAST_RESULT, robot, f"ok sent={len(ids)}")
             except Exception:
                 pass
+
+        # delete iperf3 items
+        iperf_deleted = 0
+        if selected_iperf_ids:
+            try:
+                iperf_deleted = int(r.xdel(KEY_TRAFFIC_IPERF3_RESULT_QUEUE, *selected_iperf_ids))
+            except Exception:
+                pass
+
         return {
             "status": "ok",
             "sent_items": len(selected_items),
@@ -1442,6 +1557,7 @@ def _northbound_upload_once() -> Dict[str, Any]:
             "accepted": accepted,
             "rejected": rejected,
             "time": local_ts(),
+            "iperf_deleted": iperf_deleted,
         }
 
     # failed post -> do not delete queued items
@@ -1530,6 +1646,7 @@ def _build_status_snapshot() -> Dict[str, Any]:
         },
         "aps": ap_states,
         "robots": robot_states,
+        "traffic_events": _pop_traffic_events_for_status(),
     }
 
 def _post_report_status(snapshot: Dict[str, Any]) -> Tuple[bool, str, List[Dict[str, Any]]]:
@@ -1686,6 +1803,27 @@ def _apply_web_cmds_as_intents(cmds: List[Dict[str, Any]]) -> Tuple[int, int, in
         # This fixes the reboot corner case automatically.
 
     return intent_updates, enq, noop
+
+def _pop_traffic_events_for_status() -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = []
+    ids: List[str] = []
+
+    try:
+        rows = r.xrange(KEY_TRAFFIC_EVENT_QUEUE, count=200)
+    except Exception:
+        rows = []
+
+    for xid, fields in rows:
+        events.append(dict(fields))
+        ids.append(xid)
+
+    if ids:
+        try:
+            r.xdel(KEY_TRAFFIC_EVENT_QUEUE, *ids)
+        except Exception:
+            pass
+
+    return events
 
 # =============================================================================
 # 6) AP
@@ -1900,281 +2038,323 @@ def ap_traffic(scanner: str, req: APTrafficReq) -> Dict[str, Any]:
 # =============================================================================
 # 7) Traffic
 # =============================================================================
-
-class Iperf3StartReq(BaseModel):
-    port: int = Field(default=IPERF3_DEFAULT_PORT, ge=1, le=65535)
-
-class Iperf3StopReq(BaseModel):
-    force: bool = Field(default=False)
-
-_iperf3_proc: Optional[subprocess.Popen] = None
+_iperf3_procs: Dict[int, subprocess.Popen] = {}
 _iperf3_lock = threading.Lock()
+_iperf3_enabled: bool = False
+_iperf3_thread: Optional[threading.Thread] = None
 
+# Port allocator state
+_traffic_port_lock = threading.Lock()
+_traffic_free_ports = deque(IPERF3_PORT_POOL)                  # head=free oldest, tail=released latest
+_traffic_lease_by_port: Dict[int, Dict[str, Any]] = {}         # port -> lease meta
+_traffic_port_by_session: Dict[str, int] = {}                  # session_id -> port
+_traffic_port_by_key: Dict[str, int] = {}                      # "<scanner>|<ac>" -> port
 
 def _iperf3_status_get() -> Dict[str, Any]:
     return r.hgetall(KEY_TRAFFIC_IPERF3_STATUS) or {}
 
-
 def _iperf3_status_set(mapping: Dict[str, str]) -> None:
     r.hset(KEY_TRAFFIC_IPERF3_STATUS, mapping=mapping)
-
 
 def _iperf3_status_clear() -> None:
     r.delete(KEY_TRAFFIC_IPERF3_STATUS)
 
+def _traffic_alloc_key(scanner: str, ac: str, protocol: str) -> str:
+    return f"{scanner.strip().lower()}|{ac.strip().lower()}|{protocol.strip().lower()}"
 
-def _iperf3_running() -> bool:
-    global _iperf3_proc
-    return _iperf3_proc is not None and _iperf3_proc.poll() is None
+def _traffic_port_queue_init() -> None:
+    global _traffic_free_ports, _traffic_lease_by_port, _traffic_port_by_session, _traffic_port_by_key
 
+    with _traffic_port_lock:
+        _traffic_free_ports = deque(IPERF3_PORT_POOL)
+        _traffic_lease_by_port = {}
+        _traffic_port_by_session = {}
+        _traffic_port_by_key = {}
 
-def _iperf3_build_summary(raw_json: Dict[str, Any]) -> Dict[str, Any]:
+def _traffic_gc_expired_ports() -> None:
     """
-    Keep summary very light.
+    Reclaim expired port leases so finished sessions do not block the queue forever.
     """
-    summary: Dict[str, Any] = {
-        "time": local_ts(),
-        "protocol": "",
-        "duration_sec": None,
-        "throughput_mbps": None,
-        "bytes": None,
-    }
+    now_ts = time.time()
+    expired_ports: List[int] = []
 
-    try:
-        start = raw_json.get("start", {}) or {}
-        test_start = start.get("test_start", {}) or {}
-        summary["protocol"] = str(test_start.get("protocol") or "").lower()
+    with _traffic_port_lock:
+        for port, meta in list(_traffic_lease_by_port.items()):
+            lease_until_ts = float(meta.get("lease_until_ts") or 0.0)
+            if lease_until_ts > 0 and now_ts >= lease_until_ts:
+                expired_ports.append(port)
 
-        end = raw_json.get("end", {}) or {}
+        for port in expired_ports:
+            meta = _traffic_lease_by_port.pop(port, None) or {}
+            session_id = str(meta.get("session_id") or "").strip()
+            alloc_key = str(meta.get("alloc_key") or "").strip()
 
-        if summary["protocol"] == "udp":
-            s = end.get("sum", {}) or end.get("sum_received", {}) or {}
-        else:
-            s = end.get("sum_received", {}) or end.get("sum", {}) or {}
+            if session_id:
+                _traffic_port_by_session.pop(session_id, None)
+            if alloc_key:
+                _traffic_port_by_key.pop(alloc_key, None)
 
-        bps = s.get("bits_per_second")
-        seconds = s.get("seconds")
-        bytes_ = s.get("bytes")
+            _traffic_free_ports.append(port)
 
-        if bps is not None:
-            summary["throughput_mbps"] = round(float(bps) / 1_000_000.0, 3)
-        if seconds is not None:
-            summary["duration_sec"] = float(seconds)
-        if bytes_ is not None:
-            summary["bytes"] = int(bytes_)
-
-    except Exception:
-        pass
-
-    return summary
-
-
-def _iperf3_capture_thread(proc: subprocess.Popen, port: int) -> None:
+def _traffic_release_port_by_session(session_id: str) -> Optional[int]:
     """
-    Wait for iperf3 server process to exit and store raw/summary result.
-    Assumes proc was launched with -J.
+    Release a leased port by session_id and return the port, or None if not found.
     """
-    global _iperf3_proc
+    session_id = (session_id or "").strip()
+    if not session_id:
+        return None
 
-    try:
-        stdout_data, stderr_data = proc.communicate()
+    with _traffic_port_lock:
+        port = _traffic_port_by_session.pop(session_id, None)
+        if port is None:
+            return None
 
-        stdout_s = stdout_data.decode("utf-8", errors="replace") if stdout_data else ""
-        stderr_s = stderr_data.decode("utf-8", errors="replace") if stderr_data else ""
+        meta = _traffic_lease_by_port.pop(port, None) or {}
+        alloc_key = str(meta.get("alloc_key") or "").strip()
+        if alloc_key:
+            _traffic_port_by_key.pop(alloc_key, None)
 
-        now = local_ts()
+        _traffic_free_ports.append(port)
+        return port
 
-        if proc.returncode == 0 and stdout_s.strip():
+def _traffic_prepare_start_args(scanner: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Fill target_port if missing using FIFO free-port queue.
+    Reserve one port per (scanner, ac, protocol) until released or expired.
+    """
+    _traffic_gc_expired_ports()
+
+    out = dict(args or {})
+
+    session_id = str(out.get("session_id") or "").strip()
+    ac = str(out.get("ac") or "").strip().lower()
+    protocol = str(out.get("protocol") or "udp").strip().lower()
+    duration_sec = int(out.get("duration_sec") or 0)
+
+    if not session_id:
+        raise HTTPException(status_code=400, detail="traffic.session.start missing args.session_id")
+    if ac not in ("vo", "vi", "be", "bk"):
+        raise HTTPException(status_code=400, detail="traffic.session.start args.ac must be one of vo|vi|be|bk")
+    if protocol not in ("tcp", "udp"):
+        raise HTTPException(status_code=400, detail="traffic.session.start args.protocol must be tcp or udp")
+    if duration_sec <= 0:
+        raise HTTPException(status_code=400, detail="traffic.session.start args.duration_sec must be > 0")
+
+    alloc_key = _traffic_alloc_key(scanner, ac, protocol)
+
+    with _traffic_port_lock:
+        # Manual override allowed
+        if "target_port" in out and out.get("target_port") not in (None, "", 0):
+            port = int(out["target_port"])
+
+            if port not in IPERF3_PORT_POOL:
+                raise HTTPException(status_code=400, detail=f"target_port {port} not in allowed pool")
+
+            current = _traffic_lease_by_port.get(port)
+            if current and str(current.get("session_id") or "") != session_id:
+                raise HTTPException(status_code=409, detail=f"target_port {port} already in use")
+
             try:
-                raw_json = json.loads(stdout_s)
-                summary = _iperf3_build_summary(raw_json)
+                _traffic_free_ports.remove(port)
+            except ValueError:
+                pass
 
-                record = {
-                    "time_local": local_ts(),           # NMS local time
-                    "time_format": TIME_FMT,
-                    "data": raw_json                    # original iperf3 output (unchanged, still UTC)
-                }
-
-                r.set(KEY_TRAFFIC_IPERF3_LATEST_RAW, json.dumps(record, ensure_ascii=False))
-                r.set(KEY_TRAFFIC_IPERF3_LATEST_SUMMARY, json.dumps(summary, ensure_ascii=False))
-                r.delete(KEY_TRAFFIC_IPERF3_LAST_ERROR)
-
-                _iperf3_status_set({
-                    "running": "0",
-                    "port": str(port),
-                    "pid": "",
-                    "started_at": _iperf3_status_get().get("started_at", ""),
-                    "ended_at": now,
-                    "last_result_at": now,
-                    "last_returncode": str(proc.returncode),
-                })
-
-            except Exception as e:
-                r.set(KEY_TRAFFIC_IPERF3_LAST_ERROR, f"{now} invalid_json: {e}")
-                _iperf3_status_set({
-                    "running": "0",
-                    "port": str(port),
-                    "pid": "",
-                    "started_at": _iperf3_status_get().get("started_at", ""),
-                    "ended_at": now,
-                    "last_result_at": "",
-                    "last_returncode": str(proc.returncode),
-                })
         else:
-            err_text = stderr_s[:2000] if stderr_s else stdout_s[:2000]
-            r.set(KEY_TRAFFIC_IPERF3_LAST_ERROR, f"{now} returncode={proc.returncode} {err_text}")
-            _iperf3_status_set({
-                "running": "0",
-                "port": str(port),
-                "pid": "",
-                "started_at": _iperf3_status_get().get("started_at", ""),
-                "ended_at": now,
-                "last_result_at": "",
-                "last_returncode": str(proc.returncode),
-            })
+            # Prevent same (scanner, ac, protocol) from opening a second active session before releasing old one
+            if alloc_key in _traffic_port_by_key:
+                old_port = _traffic_port_by_key[alloc_key]
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"active traffic session already exists for scanner={scanner} ac={ac} protocol={protocol} on port={old_port}"
+                )
 
-    finally:
-        with _iperf3_lock:
-            if _iperf3_proc is proc:
-                _iperf3_proc = None
+            if not _traffic_free_ports:
+                raise HTTPException(status_code=503, detail="no free traffic ports available")
 
+            port = int(_traffic_free_ports.popleft())
+            out["target_port"] = port
 
-def _iperf3_start(port: int) -> Dict[str, Any]:
+        lease_until_ts = time.time() + duration_sec + TRAFFIC_PORT_LEASE_GRACE_SEC
+
+        meta = {
+            "scanner": scanner,
+            "ac": ac,
+            "protocol": protocol,
+            "session_id": session_id,
+            "alloc_key": alloc_key,
+            "lease_until_ts": lease_until_ts,
+            "assigned_at": local_ts(),
+        }
+
+        _traffic_lease_by_port[port] = meta
+        _traffic_port_by_session[session_id] = port
+        _traffic_port_by_key[alloc_key] = port
+
+    return out
+
+def _traffic_prepare_stop_args(scanner: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Start a one-session iperf3 server:
-      iperf3 -s -1 -J -p <port>
-    It will exit after one client session and store the result.
+    Fill target_port if missing using current session lease, for robot convenience.
+    Does not release the port here; release happens on ACK success.
     """
-    global _iperf3_proc
+    _traffic_gc_expired_ports()
+
+    out = dict(args or {})
+    session_id = str(out.get("session_id") or "").strip()
+    if not session_id:
+        raise HTTPException(status_code=400, detail="traffic.session.stop missing args.session_id")
+
+    with _traffic_port_lock:
+        port = _traffic_port_by_session.get(session_id)
+
+    if port is not None and ("target_port" not in out or out.get("target_port") in (None, "", 0)):
+        out["target_port"] = int(port)
+
+    return out
+
+def _iperf3_running(port: int) -> bool:
+    p = _iperf3_procs.get(port)
+    return p is not None and p.poll() is None
+
+def _iperf3_spawn_server(port: int) -> subprocess.Popen:
+    return subprocess.Popen(
+        [IPERF3_EXE, "-s", "-p", str(port)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        stdin=subprocess.DEVNULL,
+    )
+
+def _iperf3_waiter(proc: subprocess.Popen, port: int) -> None:
+    global _iperf3_procs
+
+    _, stderr_data = proc.communicate()
+    stderr_s = stderr_data.decode("utf-8", errors="replace") if stderr_data else ""
+
+    now = local_ts()
+
+    if stderr_s.strip():
+        r.set(KEY_TRAFFIC_IPERF3_LAST_ERROR, f"{now} port={port} {stderr_s[:1000]}")
 
     with _iperf3_lock:
-        if _iperf3_running():
-            raise HTTPException(status_code=409, detail="iperf3 server already running")
+        if _iperf3_procs.get(port) is proc:
+            _iperf3_procs.pop(port, None)
 
-        cmd = [
-            IPERF3_EXE,
-            "-s",
-            "-1",
-            "-J",
-            "-p",
-            str(port),
-        ]
+def _iperf3_pool_loop() -> None:
+    """
+    Keep one iperf3 server process alive for every port in IPERF3_PORT_POOL.
+    """
+    global _iperf3_enabled, _iperf3_procs
 
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                stdin=subprocess.DEVNULL,
-            )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"failed to start iperf3: {e}")
+    while _iperf3_enabled:
+        for port in IPERF3_PORT_POOL:
+            try:
+                if _iperf3_running(port):
+                    continue
 
-        _iperf3_proc = proc
-        now = local_ts()
+                proc = _iperf3_spawn_server(port)
+                time.sleep(0.02)  # slight pacing helps Windows process startup
+
+                with _iperf3_lock:
+                    _iperf3_procs[port] = proc
+
+                _iperf3_status_set({
+                    "running": "1",
+                    "mode": "always_on_pool",
+                    "ports_total": str(len(IPERF3_PORT_POOL)),
+                    "last_restart_port": str(port),
+                    "last_restart_at": local_ts(),
+                    "free_ports": str(len(_traffic_free_ports)),
+                    "leased_ports": str(len(_traffic_lease_by_port)),
+                })
+
+                threading.Thread(
+                    target=_iperf3_waiter,
+                    args=(proc, port),
+                    daemon=True,
+                ).start()
+
+            except Exception as e:
+                r.set(KEY_TRAFFIC_IPERF3_LAST_ERROR, f"{local_ts()} spawn_fail port={port} {e}")
+
+        time.sleep(1)
+
+def _iperf3_start_autonomous() -> None:
+    """
+    Start the always-on iperf3 server pool once.
+    Safe to call multiple times.
+    """
+    global _iperf3_enabled, _iperf3_thread
+
+    with _iperf3_lock:
+        if _iperf3_enabled:
+            return
+
+        _iperf3_enabled = True
 
         _iperf3_status_set({
             "running": "1",
-            "port": str(port),
-            "pid": str(proc.pid),
-            "started_at": now,
-            "ended_at": "",
-            "last_result_at": "",
-            "last_returncode": "",
+            "mode": "always_on_pool",
+            "ports_total": str(len(IPERF3_PORT_POOL)),
+            "started_at": local_ts(),
+            "last_restart_port": "",
+            "last_restart_at": "",
+            "free_ports": str(len(_traffic_free_ports)),
+            "leased_ports": "0",
         })
 
-        t = threading.Thread(target=_iperf3_capture_thread, args=(proc, port), daemon=True)
+        t = threading.Thread(target=_iperf3_pool_loop, daemon=True)
+        _iperf3_thread = t
         t.start()
 
-        return {
-            "status": "ok",
-            "running": True,
-            "pid": proc.pid,
-            "port": port,
-            "started_at": now,
-            "cmd": cmd,
-        }
-
-
-def _iperf3_stop(force: bool = False) -> Dict[str, Any]:
-    global _iperf3_proc
+def _iperf3_stop_autonomous() -> None:
+    """
+    Maintenance-only helper. Not part of normal workflow.
+    """
+    global _iperf3_enabled, _iperf3_procs
 
     with _iperf3_lock:
-        if not _iperf3_running():
-            return {
-                "status": "ok",
-                "running": False,
-                "note": "iperf3 server not running",
-                "time": local_ts(),
-            }
+        _iperf3_enabled = False
+        procs = list(_iperf3_procs.items())
 
-        proc = _iperf3_proc
-        pid = proc.pid
-
+    for _, proc in procs:
         try:
-            if force:
-                proc.kill()
-            else:
+            if proc.poll() is None:
                 proc.terminate()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"failed to stop iperf3: {e}")
+        except Exception:
+            pass
 
-        return {
-            "status": "ok",
-            "running": True,
-            "stopping": True,
-            "pid": pid,
-            "force": force,
-            "time": local_ts(),
-        }
-
-@app.post("/traffic/_iperf3_start", tags=["7 Traffic / iperf3"])
-def traffic_iperf3_start(req: Iperf3StartReq) -> Dict[str, Any]:
-    return _iperf3_start(port=int(req.port))
-
-
-@app.post("/traffic/_iperf3_stop", tags=["7 Traffic / iperf3"])
-def traffic_iperf3_stop(req: Iperf3StopReq) -> Dict[str, Any]:
-    return _iperf3_stop(force=bool(req.force))
-
+    _iperf3_status_set({
+        "running": "0",
+        "mode": "always_on_pool",
+        "ports_total": str(len(IPERF3_PORT_POOL)),
+        "last_stop_at": local_ts(),
+        "free_ports": str(len(_traffic_free_ports)),
+        "leased_ports": str(len(_traffic_lease_by_port)),
+    })
 
 @app.get("/traffic/_iperf3_status", tags=["7 Traffic / iperf3"])
 def traffic_iperf3_status() -> Dict[str, Any]:
-    s = _iperf3_status_get()
-    running = _iperf3_running()
-    out = {
-        "time": local_ts(),
-        "running": running,
-        "status": s,
-    }
-    return out
+    listening_ports: List[int] = []
 
+    with _iperf3_lock:
+        for port in IPERF3_PORT_POOL:
+            if _iperf3_running(port):
+                listening_ports.append(port)
 
-@app.get("/traffic/_iperf3_latest", tags=["7 Traffic / iperf3"])
-def traffic_iperf3_latest() -> Dict[str, Any]:
-    raw_s = r.get(KEY_TRAFFIC_IPERF3_LATEST_RAW) or ""
-    summary_s = r.get(KEY_TRAFFIC_IPERF3_LATEST_SUMMARY) or ""
-    err_s = r.get(KEY_TRAFFIC_IPERF3_LAST_ERROR) or ""
-
-    try:
-        raw_j = json.loads(raw_s) if raw_s else None
-    except Exception:
-        raw_j = None
-
-    try:
-        summary_j = json.loads(summary_s) if summary_s else None
-    except Exception:
-        summary_j = None
+    _traffic_gc_expired_ports()
 
     return {
         "time": local_ts(),
-        "running": _iperf3_running(),
+        "enabled": _iperf3_enabled,
+        "mode": "always_on_pool",
+        "ports_total": len(IPERF3_PORT_POOL),
+        "ports_running": len(listening_ports),
+        "listening_ports": listening_ports,
+        "free_ports": list(_traffic_free_ports),
+        "leases": dict(_traffic_lease_by_port),
         "status": _iperf3_status_get(),
-        "summary": summary_j,
-        "raw": raw_j,
-        "last_error": err_s,
+        "last_error": r.get(KEY_TRAFFIC_IPERF3_LAST_ERROR) or "",
     }
-
 
 def _get_cmd_by_xid(scanner: str, xid: str) -> Optional[Dict[str, Any]]:
     """
@@ -2203,26 +2383,6 @@ def _append_traffic_event(event: Dict[str, Any]) -> None:
         )
     except Exception:
         pass
-
-@app.get("/nb/traffic/events", tags=["8 Northbound"])
-def nb_get_traffic_events():
-    rows = r.xrange(KEY_TRAFFIC_EVENT_QUEUE, count=200)
-
-    events = []
-    ids = []
-
-    for xid, fields in rows:
-        events.append(dict(fields))
-        ids.append(xid)
-
-    # delete after read
-    if ids:
-        r.xdel(KEY_TRAFFIC_EVENT_QUEUE, *ids)
-
-    return {
-        "count": len(events),
-        "events": events,
-    }
 
 # =============================================================================
 # 9) Admin
@@ -2296,7 +2456,13 @@ async def _status_loop():
 async def _startup():
     asyncio.create_task(_northbound_loop())
     asyncio.create_task(_status_loop())
-    
+
+    _traffic_port_queue_init()
+
+    try:
+        _iperf3_start_autonomous()
+    except Exception:
+        pass    
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
