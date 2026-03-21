@@ -20,7 +20,7 @@ router = APIRouter()
 class Cmd(BaseModel):
     category: str = "scan"
     action: str
-    execute_at: str
+    execute_at: Optional[str] = None
     args: Dict[str, Any] = Field(default_factory=dict)
     args_json_text: Optional[str] = None
 
@@ -106,16 +106,19 @@ def cmd_list_command_queue(scanner: str) -> Dict[str, Any]:
 def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
     m1Registry.require_whitelisted(scanner)
 
-    try:
-        _ = utility.parse_local_dt(cmd.execute_at)
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail=f"execute_at must be like '{utility.local_ts()}' (format {config.TIME_FMT})"
-        )
-
     created_at = utility.local_ts()
+    raw = (cmd.execute_at or "").strip()
 
+    if raw == "":
+        execute_at_norm = created_at
+    else:
+        try:
+            execute_at_norm = utility.parse_local_dt(cmd.execute_at).strftime(config.TIME_FMT)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail=f"execute_at must be like '{utility.local_ts()}' (format {config.TIME_FMT})"
+            )
     if cmd.args_json_text is not None and cmd.args_json_text.strip() != "":
         raw = cmd.args_json_text.strip()
         try:
@@ -125,8 +128,6 @@ def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
         args_json = raw
     else:
         args_json = json.dumps(cmd.args or {}, ensure_ascii=False)
-
-    execute_at_norm = utility.parse_local_dt(cmd.execute_at).strftime(config.TIME_FMT)
 
     fields = {
         "category": cmd.category,
