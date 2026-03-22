@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 import config
 import utility
 import m1Registry
+import m7Traffic
 
 router = APIRouter()
 
@@ -146,6 +147,46 @@ def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
         "created_at": created_at,
         "time_format": config.TIME_FMT,
     }
+
+
+def _enqueue_script_or_csv_item(
+    *,
+    scanner: str,
+    category: str,
+    action: str,
+    execute_at: str,
+    args: Dict[str, Any],
+) -> None:
+    """
+    Dispatch one scheduled row to the correct internal queue.
+
+    - traffic rows -> NMS traffic command stream
+    - everything else -> existing robot/AP command stream
+    """
+    category_n = (category or "").strip().lower()
+    action_n = (action or "").strip()
+
+    if category_n == "traffic" or action_n in ("traffic.session.start", "traffic.session.stop"):
+        m7Traffic._traffic_enqueue_core(
+            scanner=scanner,
+            action=action_n,
+            execute_at=execute_at,
+            args_json=json.dumps(args or {}, ensure_ascii=False),
+        )
+        return
+
+    config.r.xadd(
+        config.key_cmd_stream(scanner),
+        {
+            "category": category,
+            "action": action,
+            "execute_at": execute_at,
+            "created_at": utility.local_ts(),
+            "args_json": json.dumps(args or {}, ensure_ascii=False),
+        },
+        maxlen=5000,
+        approximate=True,
+    )
 
 
 @router.post("/cmd/_enqueue/{scanner}", tags=["4 Commands (Polling)"])
@@ -324,20 +365,14 @@ def cmd_load_script(script: ScriptLoad) -> Dict[str, Any]:
             skipped_not_whitelisted += 1
             continue
 
-        created_at = utility.local_ts()
         execute_at = (t0_dt + timedelta(seconds=int(it.t_offset_sec))).strftime(config.TIME_FMT)
 
-        config.r.xadd(
-            config.key_cmd_stream(it.scanner),
-            {
-                "category": it.category,
-                "action": it.action,
-                "execute_at": execute_at,
-                "created_at": created_at,
-                "args_json": json.dumps(it.args or {}, ensure_ascii=False),
-            },
-            maxlen=5000,
-            approximate=True,
+        _enqueue_script_or_csv_item(
+            scanner=it.scanner,
+            category=it.category,
+            action=it.action,
+            execute_at=execute_at,
+            args=it.args or {},
         )
         added += 1
 
@@ -399,19 +434,13 @@ def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
             args = {}
 
         execute_at = (t0_dt + timedelta(seconds=offset)).strftime(config.TIME_FMT)
-        created_at = utility.local_ts()
 
-        config.r.xadd(
-            config.key_cmd_stream(scanner),
-            {
-                "category": category,
-                "action": action,
-                "execute_at": execute_at,
-                "created_at": created_at,
-                "args_json": json.dumps(args, ensure_ascii=False),
-            },
-            maxlen=5000,
-            approximate=True,
+        _enqueue_script_or_csv_item(
+            scanner=scanner,
+            category=category,
+            action=action,
+            execute_at=execute_at,
+            args=args,
         )
         added += 1
 

@@ -86,6 +86,37 @@ AP_UPLINK_MAXLEN: int = 20000
 def key_ap_uplink_stream(scanner: str) -> str:
     return f"{KEY_PREFIX}ap_uplink:{scanner}"  # STREAM(AP performance payloads)
 
+# -------------------
+# 7) iperf3 Traffic (NMS-side)
+# -------------------
+# Robot-side passive reflector ports:
+# NMS allocates from the free-port FIFO queue of each robot.
+TRAFFIC_PORT_START: int = 5201
+TRAFFIC_PORT_END: int = 5212
+
+# Internal NMS traffic command/event/result streams
+TRAFFIC_CMD_MAXLEN: int = 20000
+TRAFFIC_EVENT_MAXLEN: int = 20000
+TRAFFIC_RESULT_MAXLEN: int = 20000
+
+# Traffic worker loop
+TRAFFIC_LOOP_EVERY_SEC: int = 1
+TRAFFIC_LOOP_BATCH_LIMIT: int = 50
+
+# Temporary debug/runtime retention
+# Keep short-lived runtime state only when needed.
+TRAFFIC_TEMP_TTL_SEC: int = 48 * 3600
+
+KEY_TRAFFIC_CMD_STREAM: str = f"{KEY_PREFIX}traffic:cmd"        # STREAM(NMS-internal timed traffic commands)
+KEY_TRAFFIC_EVENT_STREAM: str = f"{KEY_PREFIX}traffic:events"   # STREAM(10-second traffic on/off/error events)
+KEY_TRAFFIC_RESULT_STREAM: str = f"{KEY_PREFIX}traffic:results" # STREAM(1-minute completed iperf3 reports)
+
+def key_traffic_temp_running(scanner: str, session_id: str) -> str:
+    return f"{KEY_PREFIX}traffic:_temp:running:{scanner}:{session_id}"
+
+def key_traffic_temp_ports(scanner: str) -> str:
+    return f"{KEY_PREFIX}traffic:_temp:ports:{scanner}"
+
 # ==================
 # Runtime init
 # ==================

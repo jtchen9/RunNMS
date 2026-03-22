@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 import json
 import asyncio
 import requests
@@ -17,7 +17,57 @@ def _web_headers() -> Dict[str, str]:
     return h
 
 
-def _post_upload_scan_batch(items: List[Dict[str, Any]]) -> Tuple[bool, str, int, int]:
+def _collect_iperf3_sessions_for_upload(
+    budget: int,
+    limit: int = 200,
+) -> Tuple[List[Dict[str, Any]], List[str], int]:
+    rows = config.r.xrange(config.KEY_TRAFFIC_RESULT_STREAM, count=limit)
+
+    out: List[Dict[str, Any]] = []
+    ids: List[str] = []
+    bad_json_deleted = 0
+
+    for xid, fields in rows:
+        raw_json = fields.get("raw_json", "") or "{}"
+
+        try:
+            raw_obj = json.loads(raw_json)
+        except Exception:
+            try:
+                config.r.xdel(config.KEY_TRAFFIC_RESULT_STREAM, xid)
+            except Exception:
+                pass
+            bad_json_deleted += 1
+            continue
+
+        item = {
+            "scanner": fields.get("scanner", ""),
+            "session_id": fields.get("session_id", ""),
+            "completion_time": fields.get("completion_time", ""),
+            "time_format": config.TIME_FMT,
+            "status": fields.get("status", ""),
+            "detail": fields.get("detail", ""),
+            "raw": raw_obj,
+        }
+
+        item_bytes = utility._json_bytes(item)
+        if item_bytes > budget:
+            break
+
+        out.append(item)
+        ids.append(xid)
+        budget -= item_bytes
+
+        if budget <= 0:
+            break
+
+    return out, ids, bad_json_deleted
+
+
+def _post_upload_scan_batch(
+    items: List[Dict[str, Any]],
+    iperf3_sessions: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[bool, str, int, int]:
     """
     Returns (ok, detail, accepted, rejected).
     We treat HTTP 2xx + JSON status=ok as ok.
@@ -27,6 +77,7 @@ def _post_upload_scan_batch(items: List[Dict[str, Any]]) -> Tuple[bool, str, int
         "time": utility.local_ts(),
         "time_format": config.TIME_FMT,
         "items": items,
+        "iperf3_sessions": iperf3_sessions or [],
     }
     try:
         resp = requests.post(config.WEB_NMS_UPLOAD_URL, json=payload, headers=_web_headers(), timeout=10)
@@ -49,10 +100,20 @@ def _northbound_upload_once() -> Dict[str, Any]:
     selected_items: List[Dict[str, Any]] = []
     selected_ids_by_robot: Dict[str, List[str]] = {}
 
+    selected_iperf3_sessions: List[Dict[str, Any]] = []
+    selected_iperf3_ids: List[str] = []
+
     bad_json_deleted = 0
     oversize_deleted = 0
+    iperf3_bad_json_deleted = 0
 
-    envelope_base = {"nms_id": config.NMS_ID, "time": utility.local_ts(), "time_format": config.TIME_FMT, "items": []}
+    envelope_base = {
+        "nms_id": config.NMS_ID,
+        "time": utility.local_ts(),
+        "time_format": config.TIME_FMT,
+        "items": [],
+        "iperf3_sessions": [],
+    }
     base_bytes = utility._json_bytes(envelope_base)
     budget = max(0, int(config.UPLOAD_BATCH_MAX_BYTES - base_bytes))
 
@@ -102,10 +163,35 @@ def _northbound_upload_once() -> Dict[str, Any]:
             selected_ids_by_robot.setdefault(robot, []).append(xid)
             budget -= item_bytes
 
-    ok, detail, accepted, rejected = _post_upload_scan_batch(selected_items)
+    robots = sorted(list(config.r.smembers(config.KEY_REGISTRY)))
+    selected_items: List[Dict[str, Any]] = []
+    selected_ids_by_robot: Dict[str, List[str]] = {}
+
+    selected_iperf3_sessions: List[Dict[str, Any]] = []
+    selected_iperf3_ids: List[str] = []
+
+    bad_json_deleted = 0
+    oversize_deleted = 0
+    iperf3_bad_json_deleted = 0
+
+    envelope_base = {
+        "nms_id": config.NMS_ID,
+        "time": utility.local_ts(),
+        "time_format": config.TIME_FMT,
+        "items": [],
+        "iperf3_sessions": [],
+    }
+    base_bytes = utility._json_bytes(envelope_base)
+    budget = max(0, int(config.UPLOAD_BATCH_MAX_BYTES - base_bytes))
+
+    ok, detail, accepted, rejected = _post_upload_scan_batch(
+        selected_items,
+        iperf3_sessions=selected_iperf3_sessions,
+    )
 
     if ok:
         deleted_total = 0
+
         for robot, ids in selected_ids_by_robot.items():
             if not ids:
                 continue
@@ -115,11 +201,20 @@ def _northbound_upload_once() -> Dict[str, Any]:
                 config.r.hset(config.KEY_NB_LAST_RESULT, robot, f"ok sent={len(ids)}")
             except Exception:
                 pass
+
+        if selected_iperf3_ids:
+            try:
+                deleted_total += int(config.r.xdel(config.KEY_TRAFFIC_RESULT_STREAM, *selected_iperf3_ids))
+            except Exception:
+                pass
+
         return {
             "status": "ok",
             "sent_items": len(selected_items),
+            "sent_iperf3_sessions": len(selected_iperf3_sessions),
             "deleted": deleted_total,
             "bad_json_deleted": bad_json_deleted,
+            "iperf3_bad_json_deleted": iperf3_bad_json_deleted,
             "oversize_deleted": oversize_deleted,
             "web_detail": detail,
             "accepted": accepted,
@@ -130,14 +225,37 @@ def _northbound_upload_once() -> Dict[str, Any]:
     return {
         "status": "fail",
         "sent_items": len(selected_items),
+        "sent_iperf3_sessions": len(selected_iperf3_sessions),
         "bad_json_deleted": bad_json_deleted,
+        "iperf3_bad_json_deleted": iperf3_bad_json_deleted,
         "oversize_deleted": oversize_deleted,
         "error": detail,
         "time": utility.local_ts(),
     }
 
 
-def _build_status_snapshot() -> Dict[str, Any]:
+def _collect_traffic_events(limit: int = 200) -> Tuple[List[Dict[str, Any]], List[str]]:
+    rows = config.r.xrange(config.KEY_TRAFFIC_EVENT_STREAM, count=limit)
+
+    out: List[Dict[str, Any]] = []
+    ids: List[str] = []
+
+    for xid, fields in rows:
+        item = {
+            "scanner": fields.get("scanner", ""),
+            "session_id": fields.get("session_id", ""),
+            "action": fields.get("action", ""),
+            "status": fields.get("status", ""),
+            "completion_time": fields.get("completion_time", ""),
+            "detail": fields.get("detail", ""),
+        }
+        out.append(item)
+        ids.append(xid)
+
+    return out, ids
+
+
+def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     scanners = sorted(list(config.r.smembers(config.KEY_REGISTRY)))
     robot_states: List[Dict[str, Any]] = []
     ap_states: List[Dict[str, Any]] = []
@@ -190,6 +308,9 @@ def _build_status_snapshot() -> Dict[str, Any]:
                 "detail": meta.get("av_detail", "")[:200],
             })
 
+    if traffic_events is None:
+        traffic_events = []
+
     return {
         "nms_id": config.NMS_ID,
         "time_local": utility.local_ts(),
@@ -213,6 +334,7 @@ def _build_status_snapshot() -> Dict[str, Any]:
         },
         "aps": ap_states,
         "robots": robot_states,
+        "traffic_events": traffic_events,
     }
 
 
@@ -296,7 +418,15 @@ def _apply_web_cmds_as_intents(cmds: List[Dict[str, Any]]) -> Tuple[int, int, in
 
 
 def _northbound_status_once() -> Dict[str, Any]:
-    snap = _build_status_snapshot()
+    traffic_events: List[Dict[str, Any]] = []
+    traffic_event_ids: List[str] = []
+
+    try:
+        traffic_events, traffic_event_ids = _collect_traffic_events()
+    except Exception:
+        traffic_events, traffic_event_ids = [], []
+
+    snap = _build_status_snapshot(traffic_events=traffic_events)
 
     ok = False
     detail = ""
@@ -308,6 +438,12 @@ def _northbound_status_once() -> Dict[str, Any]:
         ok = False
         detail = f"post_status exception: {e}"
         cmds = []
+
+    if ok and traffic_event_ids:
+        try:
+            config.r.xdel(config.KEY_TRAFFIC_EVENT_STREAM, *traffic_event_ids)
+        except Exception:
+            pass
 
     now = utility.local_ts()
 

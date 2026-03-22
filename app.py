@@ -9,6 +9,7 @@ import m3Ingest
 import m4Commands
 import m5Northbound
 import m6AP
+import m7Traffic
 import m9Admin
 
 # ==========================
@@ -31,6 +32,7 @@ app.include_router(m2Bootstrap.router)
 app.include_router(m3Ingest.router)
 app.include_router(m4Commands.router)
 app.include_router(m6AP.router)
+app.include_router(m7Traffic.router)
 app.include_router(m9Admin.router)
 
 # =============================
@@ -40,7 +42,8 @@ app.include_router(m9Admin.router)
 async def _startup():
     asyncio.create_task(m5Northbound._northbound_loop())
     asyncio.create_task(m5Northbound._status_loop())
-
+    asyncio.create_task(m7Traffic._traffic_loop())
+    
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

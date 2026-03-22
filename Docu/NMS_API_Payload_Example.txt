@@ -1,0 +1,171 @@
+10-second report:
+
+{
+  "nms_id": "nms-lab-01",
+  "time_local": "2026-03-22-21:30:10",
+  "time_format": "%Y-%m-%d-%H:%M:%S",
+
+  "experiment": {
+    "state": "idle",
+    "session_id": null,
+    "scenario_name": null,
+    "started_at": null,
+    "elapsed_sec": 0,
+    "next_scheduled_at": null,
+    "idle_duration_sec": 120
+  },
+
+  "nms_status": {
+    "online": true,
+    "detail": "",
+    "uplink_queue_total": 12,
+    "command_queue_total": 3,
+    "last_uplink_ok": true,
+    "last_uplink_time": "2026-03-22-21:30:00"
+  },
+
+  "aps": [
+    {
+      "ap_id": "ap-lab-east-01",
+      "last_seen": "2026-03-22-21:30:08",
+      "mac": "aa:bb:cc:dd:ee:ff",
+      "ip": "192.168.1.10",
+      "ssids": ["Lab-5G", "Lab-2G"],
+      "band": "5g",
+      "channel": 44,
+      "antenna_count": 2,
+      "traffic_enabled": "",
+      "detail": ""
+    }
+  ],
+
+  "robots": [
+    {
+      "robot_id": "twin-scout-bravo",
+      "last_seen": "2026-03-22-21:30:09",
+      "mode": "unknown",
+      "stream_state": "off",
+      "stream_path": "twin-scout-bravo",
+      "location": {
+        "mode": "unknown",
+        "x": 0.0,
+        "y": 0.0
+      },
+      "detail": ""
+    }
+  ],
+
+  "traffic_events": [
+    {
+      "scanner": "twin-scout-bravo",
+      "session_id": "video-001",
+      "action": "traffic.session.start",
+      "status": "ok",
+      "completion_time": "2026-03-22-21:30:05",
+      "detail": "started video-001"
+    },
+    {
+      "scanner": "twin-scout-bravo",
+      "session_id": "video-001",
+      "action": "traffic.session.stop",
+      "status": "error",
+      "completion_time": "2026-03-22-21:30:07",
+      "detail": "no running or queued session found"
+    }
+  ]
+}
+
+
+===========
+1-min report:
+
+{
+  "nms_id": "nms-lab-01",
+  "time": "2026-03-22-21:31:00",
+  "time_format": "%Y-%m-%d-%H:%M:%S",
+
+  "items": [
+    {
+      "scanner": "twin-scout-alpha",
+      "time": "2026-03-22-21:30:55",
+      "iface": "",
+      "entries": [
+        {
+          "bssid": "00:11:22:33:44:55",
+          "ssid": "Lab-5G",
+          "freq": 5180.0,
+          "signal": -54.0
+        },
+        {
+          "bssid": "66:77:88:99:aa:bb",
+          "ssid": "Lab-2G",
+          "freq": 2412.0,
+          "signal": -61.0
+        }
+      ],
+      "time_format": "%Y-%m-%d-%H:%M:%S"
+    }
+  ],
+
+  "iperf3_sessions": [
+    {
+      "scanner": "twin-scout-bravo",
+      "session_id": "video-001",
+      "completion_time": "2026-03-22-21:30:59",
+      "time_format": "%Y-%m-%d-%H:%M:%S",
+      "status": "ok",
+      "detail": "",
+      "raw": {
+        "start": {
+          "connected": [
+            {
+              "socket": 5,
+              "local_host": "192.168.1.2",
+              "remote_host": "192.168.1.23",
+              "remote_port": 5203
+            }
+          ],
+          "test_start": {
+            "protocol": "UDP",
+            "duration": 60,
+            "bytes": 0,
+            "blocks": 0
+          }
+        },
+        "intervals": [
+          {
+            "sum": {
+              "start": 0,
+              "end": 60,
+              "seconds": 60,
+              "bytes": 37500000,
+              "bits_per_second": 5000000,
+              "lost_packets": 120,
+              "packets": 30000,
+              "lost_percent": 0.4
+            }
+          }
+        ],
+        "end": {
+          "sum": {
+            "seconds": 60,
+            "bytes": 37500000,
+            "bits_per_second": 5000000,
+            "lost_packets": 120,
+            "packets": 30000,
+            "lost_percent": 0.4
+          }
+        }
+      }
+    },
+    {
+      "scanner": "twin-scout-charlie",
+      "session_id": "background-sync",
+      "completion_time": "2026-03-22-21:30:58",
+      "time_format": "%Y-%m-%d-%H:%M:%S",
+      "status": "error",
+      "detail": "iperf3 timeout",
+      "raw": {}
+    }
+  ]
+}
