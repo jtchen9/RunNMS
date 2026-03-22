@@ -44,7 +44,7 @@ class WhitelistUpsertReq(BaseModel):
 
 class RegisterReq(BaseModel):
     mac: str
-    ip: Optional[str] = None
+    ip: Optional[str] = None   # authoritative Wi-Fi traffic IP: wlan1 first, else wlan0, else ""
     scanner_version: Optional[str] = None
     capabilities: Optional[str] = None
 
@@ -246,8 +246,16 @@ def register(req: RegisterReq) -> Dict[str, Any]:
 
     updates: Dict[str, str] = {"last_seen": now, "mac": mac}
 
-    if req.ip:
-        updates["ip"] = req.ip
+    # Registration-reported IP is the authoritative Wi-Fi traffic IP.
+    # Robot side should already choose:
+    #   wlan1 first
+    #   else wlan0
+    #   else ""
+    #
+    # We ALWAYS write the field, even when it is empty string,
+    # so stale old IP is cleared instead of silently kept.
+    updates["ip"] = (req.ip or "").strip()
+
     if req.scanner_version:
         updates["scanner_version"] = req.scanner_version
     if req.capabilities:

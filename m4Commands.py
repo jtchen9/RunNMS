@@ -228,8 +228,15 @@ def cmd_poll(
             "last_seen": server_now_str,
             "last_poll": server_now_str,
         }
+
+        # Do NOT overwrite meta["ip"] here.
+        # The authoritative traffic IP must come only from /registry/register,
+        # where robot side reports:
+        #   wlan1 first, else wlan0, else ""
+        #
+        # Keep the poll source IP separately for debugging only.
         if request.client and request.client.host:
-            meta_updates["ip"] = request.client.host
+            meta_updates["last_poll_ip"] = request.client.host
 
         if av_streaming is not None:
             meta_updates["av_streaming"] = "1" if int(av_streaming) == 1 else "0"
