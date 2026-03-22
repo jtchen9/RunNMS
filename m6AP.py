@@ -50,7 +50,7 @@ class APTrafficReq(BaseModel):
     records: List[APTrafficRecord] = Field(default_factory=list)
 
 
-@router.post("/ap/poll/{scanner}", tags=["6 AP Control (Polling)"])
+@router.post("/ap/poll/{scanner}", tags=["6 AP Control"])
 def ap_poll(
     scanner: str,
     req: APPollReq,
@@ -102,7 +102,7 @@ def ap_poll(
     }
 
 
-@router.post("/ap/traffic/{scanner}", tags=["7 AP Performance Upload"])
+@router.post("/ap/traffic/{scanner}", tags=["6 AP Control"])
 def ap_traffic(scanner: str, req: APTrafficReq) -> Dict[str, Any]:
     m1Registry.require_whitelisted(scanner)
 

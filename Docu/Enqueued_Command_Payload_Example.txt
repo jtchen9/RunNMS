@@ -1,0 +1,49 @@
+
+
+
+=== Expired ===
+{
+  "category": "traffic",
+  "action": "traffic.session.start",
+  "args": {
+    "session_id": "test-tcp-01",
+    "target_ip": "10.43.4.75",
+    "protocol": "tcp",
+    "ac": "vi",
+    "duration_sec": 60,
+    "parallel": 2,
+    "report_interval_sec": 10
+  }
+}
+
+{
+  "category": "traffic",
+  "action": "traffic.session.stop",
+  "args": {
+    "session_id": "test-tcp-01"
+  }
+}
+
+{
+  "category": "traffic",
+  "action": "traffic.session.start",
+  "args": {
+    "session_id": "test-udp-01",
+    "target_ip": "10.43.4.75",
+    "protocol": "udp",
+    "ac": "vi",
+    "bitrate": "5M",
+    "duration_sec": 60,
+    "packet_size": 1200,
+    "report_interval_sec": 10
+  }
+}
+
+{
+  "category": "traffic",
+  "action": "traffic.session.stop",
+  "args": {
+    "session_id": "test-udp-01"
+  }
+}
+
