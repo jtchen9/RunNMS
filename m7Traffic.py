@@ -91,20 +91,42 @@ def _release_port(scanner: str, port: str) -> None:
     config.r.expire(key, config.TRAFFIC_TEMP_TTL_SEC)
 
 
-def _push_event(scanner: str, session_id: str, action: str, status: str, detail: str = "") -> None:
+def _push_event(
+    scanner: str,
+    session_id: str,
+    action: str,
+    status: str,
+    detail: str = "",
+    duration_sec: Optional[int] = None,
+) -> None:
+    fields = {
+        "scanner": scanner,
+        "session_id": session_id,
+        "action": action,
+        "status": status,
+        "completion_time": utility.local_ts(),
+        "detail": detail or "",
+    }
+
+    if duration_sec is not None:
+        fields["duration_sec"] = str(int(duration_sec))
+
+    # Operational short-lived event stream (consumed by _status_loop)
     config.r.xadd(
         config.KEY_TRAFFIC_EVENT_STREAM,
-        {
-            "scanner": scanner,
-            "session_id": session_id,
-            "action": action,
-            "status": status,
-            "completion_time": utility.local_ts(),
-            "detail": detail or "",
-        },
+        fields,
         maxlen=config.TRAFFIC_EVENT_MAXLEN,
         approximate=True,
     )
+
+    # Debug/history mirror with longer TTL for RedisInsight / lab-map validation
+    config.r.xadd(
+        config.KEY_TRAFFIC_EVENT_TEMP_STREAM,
+        fields,
+        maxlen=config.TRAFFIC_EVENT_TEMP_MAXLEN,
+        approximate=True,
+    )
+    config.r.expire(config.KEY_TRAFFIC_EVENT_TEMP_STREAM, config.TRAFFIC_TEMP_TTL_SEC)
 
 
 def _push_result(scanner: str, session_id: str, status: str, raw: Any, detail: str = "") -> None:
@@ -510,15 +532,37 @@ def _execute_start_real(scanner: str, args: Dict[str, Any]):
     )
 
     def _watch():
+        status = "ok"
+        detail = ""
+        raw: Any = {}
+
         try:
             out, _ = proc.communicate()
-            raw = json.loads(out) if out else {}
-            _push_result(scanner, session_id, "ok", raw)
+            text = (out or "").strip()
+
+            if text:
+                try:
+                    raw = json.loads(text)
+                    status = "ok"
+                    detail = ""
+                except Exception:
+                    raw = {"raw_output": text}
+                    status = "error"
+                    detail = "iperf3 output is not valid JSON (likely interrupted)"
+            else:
+                raw = {}
+                status = "error"
+                detail = "iperf3 produced no output (likely interrupted)"
         except Exception as e:
-            _push_result(scanner, session_id, "error", {}, str(e))
+            raw = {}
+            status = "error"
+            detail = f"watcher exception: {type(e).__name__}: {e}"
         finally:
-            _release_port(scanner, port)
-            config.r.delete(config.key_traffic_temp_running(scanner, session_id))
+            try:
+                _push_result(scanner, session_id, status, raw, detail)
+            finally:
+                _release_port(scanner, port)
+                config.r.delete(config.key_traffic_temp_running(scanner, session_id))
 
     threading.Thread(target=_watch, daemon=True).start()
 
@@ -578,6 +622,14 @@ def _execute_stop_real(scanner: str, args: Dict[str, Any]):
     return False, "no running or queued session found"
 
 
+def _event_duration_sec_from_args(args: Dict[str, Any]) -> int:
+    try:
+        d = int(args.get("duration_sec") or 60)
+        return d if d > 0 else 60
+    except Exception:
+        return 60
+
+
 def _execute_due_command(xid: str, fields: Dict[str, str]) -> None:
     scanner = (fields.get("scanner") or "").strip()
     action = (fields.get("action") or "").strip()
@@ -593,8 +645,10 @@ def _execute_due_command(xid: str, fields: Dict[str, str]) -> None:
 
     ok = False
     detail = ""
+    duration_sec: Optional[int] = None
 
     if action == "traffic.session.start":
+        duration_sec = _event_duration_sec_from_args(args)
         ok, detail = _execute_start_real(scanner, args)
 
     elif action == "traffic.session.stop":
@@ -606,9 +660,9 @@ def _execute_due_command(xid: str, fields: Dict[str, str]) -> None:
         action=action,
         status="ok" if ok else "error",
         detail=detail,
+        duration_sec=duration_sec,
     )
 
-    # delete command after execution
     try:
         config.r.xdel(config.KEY_TRAFFIC_CMD_STREAM, xid)
     except Exception:

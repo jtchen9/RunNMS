@@ -122,6 +122,9 @@ def key_traffic_temp_running(scanner: str, session_id: str) -> str:
 def key_traffic_temp_ports(scanner: str) -> str:
     return f"{KEY_PREFIX}traffic:_temp:ports:{scanner}"
 
+KEY_TRAFFIC_EVENT_TEMP_STREAM: str = f"{KEY_PREFIX}traffic:events:temp"  # STREAM(debug mirror of traffic events)
+TRAFFIC_EVENT_TEMP_MAXLEN: int = 5000
+
 # ==================
 # Runtime init
 # ==================

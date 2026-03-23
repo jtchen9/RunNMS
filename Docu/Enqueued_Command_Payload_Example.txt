@@ -1,49 +1,41 @@
+traffic.session.start/tcp:
 
-
-
-=== Expired ===
 {
-  "category": "traffic",
+  "scanner": "twin-scout-bravo",
   "action": "traffic.session.start",
+  "execute_at": "2026-03-23-16:58:00",
   "args": {
-    "session_id": "test-tcp-01",
-    "target_ip": "10.43.4.75",
+    "session_id": "debug-tcp-300s-002",
+    "ac": "be",
     "protocol": "tcp",
-    "ac": "vi",
-    "duration_sec": 60,
-    "parallel": 2,
-    "report_interval_sec": 10
+    "duration_sec": 300
   }
 }
 
-{
-  "category": "traffic",
-  "action": "traffic.session.stop",
-  "args": {
-    "session_id": "test-tcp-01"
-  }
-}
 
+=============
+traffic.session.start/udp:
 {
-  "category": "traffic",
+  "scanner": "twin-scout-bravo",
   "action": "traffic.session.start",
+  "execute_at": "2026-03-23-16:58:00",
   "args": {
-    "session_id": "test-udp-01",
-    "target_ip": "10.43.4.75",
+    "session_id": "debug-udp-explicit-001",
+    "ac": "vo",
     "protocol": "udp",
-    "ac": "vi",
-    "bitrate": "5M",
-    "duration_sec": 60,
-    "packet_size": 1200,
-    "report_interval_sec": 10
+    "duration_sec": 100,
+    "bitrate": "1M",
+    "packet_size": 1200
   }
 }
+
+=============
+traffic.session.stop:
 
 {
-  "category": "traffic",
+  "scanner": "twin-scout-bravo",
   "action": "traffic.session.stop",
   "args": {
-    "session_id": "test-udp-01"
+    "session_id": "debug-cancel-001"
   }
 }
-

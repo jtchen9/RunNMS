@@ -259,6 +259,7 @@ def _northbound_upload_once() -> Dict[str, Any]:
         "bad_json_deleted": bad_json_deleted,
         "iperf3_bad_json_deleted": iperf3_bad_json_deleted,
         "oversize_deleted": oversize_deleted,
+
         "error": detail,
         "time": utility.local_ts(),
     }
@@ -271,6 +272,12 @@ def _collect_traffic_events(limit: int = 200) -> Tuple[List[Dict[str, Any]], Lis
     ids: List[str] = []
 
     for xid, fields in rows:
+        duration_raw = fields.get("duration_sec", "")
+        try:
+            duration_sec = int(duration_raw) if str(duration_raw).strip() != "" else None
+        except Exception:
+            duration_sec = None
+
         item = {
             "scanner": fields.get("scanner", ""),
             "session_id": fields.get("session_id", ""),
@@ -279,6 +286,10 @@ def _collect_traffic_events(limit: int = 200) -> Tuple[List[Dict[str, Any]], Lis
             "completion_time": fields.get("completion_time", ""),
             "detail": fields.get("detail", ""),
         }
+
+        if duration_sec is not None:
+            item["duration_sec"] = duration_sec
+
         out.append(item)
         ids.append(xid)
 

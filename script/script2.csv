@@ -1,0 +1,5 @@
+scanner,t_offset_sec,category,action,args_json
+twin-scout-bravo,0,av,av.stream.start,{}
+twin-scout-bravo,170,scan,scan.start,{}
+twin-scout-bravo,30,traffic,traffic.session.start,"{""session_id"":""m2-mixed-001"",""ac"":""vi"",""protocol"":""udp"",""duration_sec"":300}"
+twin-scout-bravo,270,traffic,traffic.session.stop,"{""session_id"":""m2-mixed-001""}"

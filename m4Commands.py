@@ -4,7 +4,7 @@ import json
 import csv
 import io
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, Form
 from pydantic import BaseModel, Field
 
 import config
@@ -448,6 +448,106 @@ def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
         "status": "ok",
         "t0": t0_dt.strftime(config.TIME_FMT),
         "time_format": config.TIME_FMT,
+        "added": added,
+        "skipped_not_whitelisted": skipped_not_whitelisted,
+        "bad_rows": bad_rows,
+    }
+
+@router.post("/cmd/_load_csv_file", tags=["4 Commands (Polling)"])
+async def cmd_load_csv_file(
+    t0: str = Form(..., description=f"Absolute local time, format: {config.TIME_FMT}"),
+    csv_file: UploadFile = File(..., description="Upload a CSV file with columns: scanner,t_offset_sec,category,action,args_json"),
+) -> Dict[str, Any]:
+    try:
+        t0_dt = utility.parse_local_dt(t0)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid t0; expected like '{utility.local_ts()}' (format {config.TIME_FMT})"
+        )
+
+    filename = (csv_file.filename or "").lower()
+    if not filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Uploaded file must be a .csv file")
+
+    try:
+        raw_bytes = await csv_file.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read uploaded CSV file: {e}")
+
+    # Try UTF-8 first, then UTF-8 with BOM, then a common Windows fallback.
+    text = None
+    for enc in ("utf-8", "utf-8-sig", "cp950"):
+        try:
+            text = raw_bytes.decode(enc)
+            break
+        except Exception:
+            continue
+
+    if text is None:
+        raise HTTPException(status_code=400, detail="Unable to decode CSV file as text")
+
+    f = io.StringIO(text)
+    reader = csv.DictReader(f)
+    required_cols = {"scanner", "t_offset_sec", "category", "action", "args_json"}
+    if not required_cols.issubset(set(reader.fieldnames or [])):
+        raise HTTPException(
+            status_code=400,
+            detail=f"CSV must have columns: {sorted(list(required_cols))}"
+        )
+
+    added = 0
+    skipped_not_whitelisted = 0
+    bad_rows = 0
+
+    for row in reader:
+        scanner = (row.get("scanner") or "").strip()
+        if not scanner:
+            bad_rows += 1
+            continue
+
+        if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
+            skipped_not_whitelisted += 1
+            continue
+
+        try:
+            offset = int((row.get("t_offset_sec") or "0").strip())
+        except Exception:
+            bad_rows += 1
+            continue
+
+        category = (row.get("category") or "scan").strip() or "scan"
+        action = (row.get("action") or "").strip()
+        if not action:
+            bad_rows += 1
+            continue
+
+        args_s = (row.get("args_json") or "").strip()
+        if args_s:
+            try:
+                args = json.loads(args_s)
+            except Exception:
+                bad_rows += 1
+                continue
+        else:
+            args = {}
+
+        execute_at = (t0_dt + timedelta(seconds=offset)).strftime(config.TIME_FMT)
+
+        _enqueue_script_or_csv_item(
+            scanner=scanner,
+            category=category,
+            action=action,
+            execute_at=execute_at,
+            args=args,
+        )
+        added += 1
+
+    return {
+        "status": "ok",
+        "t0": t0_dt.strftime(config.TIME_FMT),
+        "time_format": config.TIME_FMT,
+        "filename": csv_file.filename or "",
         "added": added,
         "skipped_not_whitelisted": skipped_not_whitelisted,
         "bad_rows": bad_rows,
