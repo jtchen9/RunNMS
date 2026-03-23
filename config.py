@@ -61,7 +61,8 @@ WEB_API_KEY: str = ""  # optional in early dev
 WEB_NMS_UPLOAD_URL: str = f"{WEB_BASE}/nms/upload_scan_batch"
 WEB_NMS_STATUS_URL: str = f"{WEB_BASE}/nms/report_status"
 
-NORTHBOUND_EVERY_SEC: int = 10
+STATUS_EVERY_SEC: int = 10
+NORTHBOUND_UPLOAD_EVERY_SEC: int = 60
 UPLOAD_BATCH_MAX_BYTES: int = 100_000  # hard cap per POST (≈100KB)
 
 KEY_NB_LAST_UPLOAD: str = f"{KEY_PREFIX}nb:last_upload"
@@ -77,6 +78,10 @@ KEY_INTENT_VIDEO_TS: str = f"{KEY_PREFIX}intent:video_ts"
 
 KEY_APPLIED_VIDEO: str = f"{KEY_PREFIX}applied:video"
 KEY_APPLIED_VIDEO_TS: str = f"{KEY_PREFIX}applied:video_ts"
+
+KEY_NB_LAST_UPLOAD_PAYLOAD: str = f"{KEY_PREFIX}nb:last_upload_payload"
+KEY_NB_LAST_STATUS_PAYLOAD: str = f"{KEY_PREFIX}nb:last_status_payload"
+NB_DEBUG_TTL_SEC: int = 48 * 3600
 
 # -------------------
 # 6) AP performance upload

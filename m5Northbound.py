@@ -67,6 +67,7 @@ def _collect_iperf3_sessions_for_upload(
 def _post_upload_scan_batch(
     items: List[Dict[str, Any]],
     iperf3_sessions: Optional[List[Dict[str, Any]]] = None,
+    ap_traffic_reports: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[bool, str, int, int]:
     """
     Returns (ok, detail, accepted, rejected).
@@ -78,7 +79,15 @@ def _post_upload_scan_batch(
         "time_format": config.TIME_FMT,
         "items": items,
         "iperf3_sessions": iperf3_sessions or [],
+        "ap_traffic_reports": ap_traffic_reports or [],
     }
+
+    try:
+        config.r.set(config.KEY_NB_LAST_UPLOAD_PAYLOAD, json.dumps(payload, ensure_ascii=False))
+        config.r.expire(config.KEY_NB_LAST_UPLOAD_PAYLOAD, config.NB_DEBUG_TTL_SEC)
+    except Exception:
+        pass
+
     try:
         resp = requests.post(config.WEB_NMS_UPLOAD_URL, json=payload, headers=_web_headers(), timeout=10)
         resp.raise_for_status()
@@ -88,13 +97,22 @@ def _post_upload_scan_batch(
         return False, f"web returned {j}", 0, 0
     except Exception as e:
         return False, f"post failed: {e}", 0, 0
-
+    
 
 def _northbound_upload_once() -> Dict[str, Any]:
     """
-    One cycle: build a <=100KB batch from queued uplink streams.
-    Delete only what was actually sent (and only if web accepted).
-    Always returns quickly; never blocks future cycles.
+    One cycle: build one 1-minute northbound payload from passive producers.
+
+    Ownership:
+    - robot scan producers write to nms:uplink:{scanner}
+    - iperf3 producer writes to KEY_TRAFFIC_RESULT_STREAM
+    - AP producer may later write to its own holding area
+
+    This function is the sole owner that:
+    1) reads available data
+    2) assembles the 1-minute payload
+    3) POSTs /nms/upload_scan_batch
+    4) deletes only what was successfully sent
     """
     robots = sorted(list(config.r.smembers(config.KEY_REGISTRY)))
     selected_items: List[Dict[str, Any]] = []
@@ -102,6 +120,8 @@ def _northbound_upload_once() -> Dict[str, Any]:
 
     selected_iperf3_sessions: List[Dict[str, Any]] = []
     selected_iperf3_ids: List[str] = []
+
+    ap_traffic_reports: List[Dict[str, Any]] = []
 
     bad_json_deleted = 0
     oversize_deleted = 0
@@ -113,10 +133,14 @@ def _northbound_upload_once() -> Dict[str, Any]:
         "time_format": config.TIME_FMT,
         "items": [],
         "iperf3_sessions": [],
+        "ap_traffic_reports": [],
     }
     base_bytes = utility._json_bytes(envelope_base)
     budget = max(0, int(config.UPLOAD_BATCH_MAX_BYTES - base_bytes))
 
+    # -------------------------
+    # 1) Collect robot scan items
+    # -------------------------
     for robot in robots:
         stream_key = config.key_uplink_stream(robot)
         if budget <= 0:
@@ -163,32 +187,36 @@ def _northbound_upload_once() -> Dict[str, Any]:
             selected_ids_by_robot.setdefault(robot, []).append(xid)
             budget -= item_bytes
 
-    robots = sorted(list(config.r.smembers(config.KEY_REGISTRY)))
-    selected_items: List[Dict[str, Any]] = []
-    selected_ids_by_robot: Dict[str, List[str]] = {}
+    # -------------------------
+    # 2) Collect completed iperf3 session results
+    # -------------------------
+    if budget > 0:
+        try:
+            selected_iperf3_sessions, selected_iperf3_ids, iperf3_bad_json_deleted = _collect_iperf3_sessions_for_upload(
+                budget=budget,
+                limit=200,
+            )
+        except Exception:
+            selected_iperf3_sessions, selected_iperf3_ids, iperf3_bad_json_deleted = [], [], 0
 
-    selected_iperf3_sessions: List[Dict[str, Any]] = []
-    selected_iperf3_ids: List[str] = []
+    # -------------------------
+    # 3) AP traffic reports placeholder
+    # -------------------------
+    # Keep empty list until AP producer format is finalized.
+    ap_traffic_reports = []
 
-    bad_json_deleted = 0
-    oversize_deleted = 0
-    iperf3_bad_json_deleted = 0
-
-    envelope_base = {
-        "nms_id": config.NMS_ID,
-        "time": utility.local_ts(),
-        "time_format": config.TIME_FMT,
-        "items": [],
-        "iperf3_sessions": [],
-    }
-    base_bytes = utility._json_bytes(envelope_base)
-    budget = max(0, int(config.UPLOAD_BATCH_MAX_BYTES - base_bytes))
-
+    # -------------------------
+    # 4) POST assembled 1-minute payload
+    # -------------------------
     ok, detail, accepted, rejected = _post_upload_scan_batch(
         selected_items,
         iperf3_sessions=selected_iperf3_sessions,
+        ap_traffic_reports=ap_traffic_reports,
     )
 
+    # -------------------------
+    # 5) Delete only what was successfully sent
+    # -------------------------
     if ok:
         deleted_total = 0
 
@@ -212,6 +240,7 @@ def _northbound_upload_once() -> Dict[str, Any]:
             "status": "ok",
             "sent_items": len(selected_items),
             "sent_iperf3_sessions": len(selected_iperf3_sessions),
+            "sent_ap_traffic_reports": len(ap_traffic_reports),
             "deleted": deleted_total,
             "bad_json_deleted": bad_json_deleted,
             "iperf3_bad_json_deleted": iperf3_bad_json_deleted,
@@ -226,6 +255,7 @@ def _northbound_upload_once() -> Dict[str, Any]:
         "status": "fail",
         "sent_items": len(selected_items),
         "sent_iperf3_sessions": len(selected_iperf3_sessions),
+        "sent_ap_traffic_reports": len(ap_traffic_reports),
         "bad_json_deleted": bad_json_deleted,
         "iperf3_bad_json_deleted": iperf3_bad_json_deleted,
         "oversize_deleted": oversize_deleted,
@@ -339,6 +369,12 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
 
 
 def _post_report_status(snapshot: Dict[str, Any]) -> Tuple[bool, str, List[Dict[str, Any]]]:
+    try:
+        config.r.set(config.KEY_NB_LAST_STATUS_PAYLOAD, json.dumps(snapshot, ensure_ascii=False))
+        config.r.expire(config.KEY_NB_LAST_STATUS_PAYLOAD, config.NB_DEBUG_TTL_SEC)
+    except Exception:
+        pass
+
     try:
         resp = requests.post(config.WEB_NMS_STATUS_URL, json=snapshot, headers=_web_headers(), timeout=10)
         resp.raise_for_status()
@@ -488,7 +524,7 @@ async def _northbound_loop():
             _northbound_upload_once()
         except Exception:
             pass
-        await asyncio.sleep(config.NORTHBOUND_EVERY_SEC)
+        await asyncio.sleep(config.NORTHBOUND_UPLOAD_EVERY_SEC)
 
 
 async def _status_loop():
@@ -497,4 +533,4 @@ async def _status_loop():
             _northbound_status_once()
         except Exception:
             pass
-        await asyncio.sleep(config.NORTHBOUND_EVERY_SEC)
+        await asyncio.sleep(config.STATUS_EVERY_SEC)

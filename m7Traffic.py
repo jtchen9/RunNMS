@@ -1,3 +1,11 @@
+# Ownership rule:
+# - m7Traffic.py is a passive producer only.
+# - It may enqueue traffic commands, execute iperf3, and write:
+#     * traffic events  -> KEY_TRAFFIC_EVENT_STREAM
+#     * iperf3 results  -> KEY_TRAFFIC_RESULT_STREAM
+# - It must NOT build or post northbound payloads.
+# - _northbound_loop() in m5Northbound.py is the sole owner of the 1-minute northbound report.
+# 
 from typing import Optional, Dict, Any, List
 from datetime import timedelta
 import json
@@ -84,9 +92,6 @@ def _release_port(scanner: str, port: str) -> None:
 
 
 def _push_event(scanner: str, session_id: str, action: str, status: str, detail: str = "") -> None:
-    """
-    Buffer a traffic on/off/error event for later 10-second northbound upload.
-    """
     config.r.xadd(
         config.KEY_TRAFFIC_EVENT_STREAM,
         {
@@ -103,9 +108,6 @@ def _push_event(scanner: str, session_id: str, action: str, status: str, detail:
 
 
 def _push_result(scanner: str, session_id: str, status: str, raw: Any, detail: str = "") -> None:
-    """
-    Buffer one completed iperf3 session result for later 1-minute northbound upload.
-    """
     config.r.xadd(
         config.KEY_TRAFFIC_RESULT_STREAM,
         {
@@ -119,7 +121,7 @@ def _push_result(scanner: str, session_id: str, status: str, raw: Any, detail: s
         maxlen=config.TRAFFIC_RESULT_MAXLEN,
         approximate=True,
     )
-
+    
 
 class TrafficCmd(BaseModel):
     scanner: str
