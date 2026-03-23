@@ -8,7 +8,8 @@ traffic.session.start/tcp:
     "session_id": "debug-tcp-300s-002",
     "ac": "be",
     "protocol": "tcp",
-    "duration_sec": 300
+    "duration_sec": 300,
+    "reverse": true
   }
 }
 
@@ -25,7 +26,8 @@ traffic.session.start/udp:
     "protocol": "udp",
     "duration_sec": 100,
     "bitrate": "1M",
-    "packet_size": 1200
+    "packet_size": 1200,
+    "reverse": true
   }
 }
 

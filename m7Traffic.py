@@ -98,6 +98,7 @@ def _push_event(
     status: str,
     detail: str = "",
     duration_sec: Optional[int] = None,
+    reverse: Optional[bool] = None,
 ) -> None:
     fields = {
         "scanner": scanner,
@@ -110,6 +111,9 @@ def _push_event(
 
     if duration_sec is not None:
         fields["duration_sec"] = str(int(duration_sec))
+
+    if reverse is not None:
+        fields["reverse"] = "1" if reverse else "0"
 
     # Operational short-lived event stream (consumed by _status_loop)
     config.r.xadd(
@@ -129,21 +133,33 @@ def _push_event(
     config.r.expire(config.KEY_TRAFFIC_EVENT_TEMP_STREAM, config.TRAFFIC_TEMP_TTL_SEC)
 
 
-def _push_result(scanner: str, session_id: str, status: str, raw: Any, detail: str = "") -> None:
+def _push_result(
+    scanner: str,
+    session_id: str,
+    status: str,
+    raw: Any,
+    detail: str = "",
+    reverse: Optional[bool] = None,
+) -> None:
+    fields = {
+        "scanner": scanner,
+        "session_id": session_id,
+        "completion_time": utility.local_ts(),
+        "status": status,
+        "detail": detail or "",
+        "raw_json": json.dumps(raw or {}, ensure_ascii=False),
+    }
+
+    if reverse is not None:
+        fields["reverse"] = "1" if reverse else "0"
+
     config.r.xadd(
         config.KEY_TRAFFIC_RESULT_STREAM,
-        {
-            "scanner": scanner,
-            "session_id": session_id,
-            "completion_time": utility.local_ts(),
-            "status": status,
-            "detail": detail or "",
-            "raw_json": json.dumps(raw or {}, ensure_ascii=False),
-        },
+        fields,
         maxlen=config.TRAFFIC_RESULT_MAXLEN,
         approximate=True,
     )
-    
+
 
 class TrafficCmd(BaseModel):
     scanner: str
@@ -175,6 +191,13 @@ class TrafficLoadCSVReq(BaseModel):
 
 def _normalize_action(action: str) -> str:
     return (action or "").strip()
+
+
+def _normalize_reverse(v: Any) -> bool:
+    if isinstance(v, bool):
+        return v
+    s = str(v or "").strip().lower()
+    return s in ("1", "true", "yes", "y", "on")
 
 
 def _validate_execute_at(raw: Optional[str]) -> str:
@@ -481,6 +504,8 @@ def _execute_start_real(scanner: str, args: Dict[str, Any]):
     protocol = str(args.get("protocol") or "udp").lower()
     ac = str(args.get("ac") or "").lower()
 
+    reverse = _normalize_reverse(args.get("reverse"))
+
     tos = AC_TO_TOS.get(ac, 0)
 
     duration = int(args.get("duration_sec") or 60)
@@ -495,6 +520,9 @@ def _execute_start_real(scanner: str, args: Dict[str, Any]):
         "--tos", str(tos),
         "-J",
     ]
+
+    if reverse:
+        cmd.append("-R")
 
     if protocol == "udp":
         bitrate = str(args.get("bitrate") or UDP_DEFAULT_BITRATE.get(ac, "1M"))
@@ -559,7 +587,7 @@ def _execute_start_real(scanner: str, args: Dict[str, Any]):
             detail = f"watcher exception: {type(e).__name__}: {e}"
         finally:
             try:
-                _push_result(scanner, session_id, status, raw, detail)
+                _push_result(scanner, session_id, status, raw, detail, reverse=reverse)
             finally:
                 _release_port(scanner, port)
                 config.r.delete(config.key_traffic_temp_running(scanner, session_id))
@@ -641,6 +669,7 @@ def _execute_due_command(xid: str, fields: Dict[str, str]) -> None:
     except Exception:
         args = {}
 
+    reverse = _normalize_reverse(args.get("reverse"))
     session_id = str(args.get("session_id") or "").strip()
 
     ok = False
@@ -661,6 +690,7 @@ def _execute_due_command(xid: str, fields: Dict[str, str]) -> None:
         status="ok" if ok else "error",
         detail=detail,
         duration_sec=duration_sec,
+        reverse=reverse if action == "traffic.session.start" else None,
     )
 
     try:

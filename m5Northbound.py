@@ -30,6 +30,11 @@ def _collect_iperf3_sessions_for_upload(
     for xid, fields in rows:
         raw_json = fields.get("raw_json", "") or "{}"
 
+        reverse_raw = fields.get("reverse", "")
+        reverse = None
+        if str(reverse_raw).strip() != "":
+            reverse = str(reverse_raw).strip() in ("1", "true", "True")
+
         try:
             raw_obj = json.loads(raw_json)
         except Exception:
@@ -49,6 +54,9 @@ def _collect_iperf3_sessions_for_upload(
             "detail": fields.get("detail", ""),
             "raw": raw_obj,
         }
+
+        if reverse is not None:
+            item["reverse"] = reverse
 
         item_bytes = utility._json_bytes(item)
         if item_bytes > budget:
@@ -278,6 +286,11 @@ def _collect_traffic_events(limit: int = 200) -> Tuple[List[Dict[str, Any]], Lis
         except Exception:
             duration_sec = None
 
+        reverse_raw = fields.get("reverse", "")
+        reverse = None
+        if str(reverse_raw).strip() != "":
+            reverse = str(reverse_raw).strip() in ("1", "true", "True")        
+
         item = {
             "scanner": fields.get("scanner", ""),
             "session_id": fields.get("session_id", ""),
@@ -290,6 +303,9 @@ def _collect_traffic_events(limit: int = 200) -> Tuple[List[Dict[str, Any]], Lis
         if duration_sec is not None:
             item["duration_sec"] = duration_sec
 
+        if reverse is not None:
+            item["reverse"] = reverse
+            
         out.append(item)
         ids.append(xid)
 
