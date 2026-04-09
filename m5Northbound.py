@@ -71,6 +71,50 @@ def _collect_iperf3_sessions_for_upload(
 
     return out, ids, bad_json_deleted
 
+def _collect_ap_traffic_reports_for_upload(
+    scanners: List[str],
+    budget: int,
+    limit_per_ap: int = 200,
+) -> Tuple[List[Dict[str, Any]], Dict[str, List[str]], int]:
+    out: List[Dict[str, Any]] = []
+    ids_by_ap: Dict[str, List[str]] = {}
+    bad_json_deleted = 0
+
+    for scanner in scanners:
+        stream_key = config.key_ap_uplink_stream(scanner)
+        rows = config.r.xrange(stream_key, count=limit_per_ap)
+
+        for xid, fields in rows:
+            payload_text = fields.get("payload_text", "") or ""
+
+            try:
+                raw_obj = json.loads(payload_text)
+            except Exception:
+                try:
+                    config.r.xdel(stream_key, xid)
+                except Exception:
+                    pass
+                bad_json_deleted += 1
+                continue
+
+            item = {
+                "scanner": scanner,
+                "time_format": config.TIME_FMT,
+                "raw": raw_obj,
+            }
+
+            item_bytes = utility._json_bytes(item)
+            if item_bytes > budget:
+                return out, ids_by_ap, bad_json_deleted
+
+            out.append(item)
+            ids_by_ap.setdefault(scanner, []).append(xid)
+            budget -= item_bytes
+
+            if budget <= 0:
+                return out, ids_by_ap, bad_json_deleted
+
+    return out, ids_by_ap, bad_json_deleted
 
 def _post_upload_scan_batch(
     items: List[Dict[str, Any]],
@@ -130,6 +174,8 @@ def _northbound_upload_once() -> Dict[str, Any]:
     selected_iperf3_ids: List[str] = []
 
     ap_traffic_reports: List[Dict[str, Any]] = []
+    selected_ap_ids_by_scanner: Dict[str, List[str]] = {}
+    ap_bad_json_deleted = 0
 
     bad_json_deleted = 0
     oversize_deleted = 0
@@ -208,10 +254,17 @@ def _northbound_upload_once() -> Dict[str, Any]:
             selected_iperf3_sessions, selected_iperf3_ids, iperf3_bad_json_deleted = [], [], 0
 
     # -------------------------
-    # 3) AP traffic reports placeholder
+    # 3) Collect AP 1-minute traffic reports
     # -------------------------
-    # Keep empty list until AP producer format is finalized.
-    ap_traffic_reports = []
+    if budget > 0:
+        try:
+            ap_traffic_reports, selected_ap_ids_by_scanner, ap_bad_json_deleted = _collect_ap_traffic_reports_for_upload(
+                scanners=robots,
+                budget=budget,
+                limit_per_ap=200,
+            )
+        except Exception:
+            ap_traffic_reports, selected_ap_ids_by_scanner, ap_bad_json_deleted = [], {}, 0
 
     # -------------------------
     # 4) POST assembled 1-minute payload
@@ -244,6 +297,14 @@ def _northbound_upload_once() -> Dict[str, Any]:
             except Exception:
                 pass
 
+        for scanner, ids in selected_ap_ids_by_scanner.items():
+            if not ids:
+                continue
+            try:
+                deleted_total += int(config.r.xdel(config.key_ap_uplink_stream(scanner), *ids))
+            except Exception:
+                pass
+
         return {
             "status": "ok",
             "sent_items": len(selected_items),
@@ -252,6 +313,7 @@ def _northbound_upload_once() -> Dict[str, Any]:
             "deleted": deleted_total,
             "bad_json_deleted": bad_json_deleted,
             "iperf3_bad_json_deleted": iperf3_bad_json_deleted,
+            "ap_bad_json_deleted": ap_bad_json_deleted,
             "oversize_deleted": oversize_deleted,
             "web_detail": detail,
             "accepted": accepted,
@@ -266,6 +328,7 @@ def _northbound_upload_once() -> Dict[str, Any]:
         "sent_ap_traffic_reports": len(ap_traffic_reports),
         "bad_json_deleted": bad_json_deleted,
         "iperf3_bad_json_deleted": iperf3_bad_json_deleted,
+        "ap_bad_json_deleted": ap_bad_json_deleted,
         "oversize_deleted": oversize_deleted,
 
         "error": detail,
@@ -330,6 +393,20 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
             except Exception:
                 ssids = []
 
+            try:
+                interfaces = json.loads(meta.get("interfaces_json", "[]") or "[]")
+                if not isinstance(interfaces, list):
+                    interfaces = []
+            except Exception:
+                interfaces = []
+
+            try:
+                associations = json.loads(meta.get("associations_json", "[]") or "[]")
+                if not isinstance(associations, list):
+                    associations = []
+            except Exception:
+                associations = []
+
             channel_val = meta.get("channel", "")
             antenna_val = meta.get("antenna_count", "")
 
@@ -342,6 +419,9 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
                 "band": meta.get("band", ""),
                 "channel": int(channel_val) if str(channel_val).isdigit() else None,
                 "antenna_count": int(antenna_val) if str(antenna_val).isdigit() else None,
+                "interfaces": interfaces,
+                "associations": associations,
+                "device_name": meta.get("device_name", ""),
                 "traffic_enabled": meta.get("traffic_enabled", ""),
                 "detail": "",
             })
