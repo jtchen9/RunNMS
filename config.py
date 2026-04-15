@@ -125,6 +125,26 @@ def key_traffic_temp_ports(scanner: str) -> str:
 KEY_TRAFFIC_EVENT_TEMP_STREAM: str = f"{KEY_PREFIX}traffic:events:temp"  # STREAM(debug mirror of traffic events)
 TRAFFIC_EVENT_TEMP_MAXLEN: int = 5000
 
+# -------------------
+# 8) Mobility
+# -------------------
+MOBILITY_STATIC_RESTRICTION_MAP_NPY = r".\\sitemap\\restriction_map.npy"
+MOBILITY_WORLD_SIZE_M = 20.0
+MOBILITY_GRID_RESOLUTION_M = 0.1
+MOBILITY_ROBOT_RESTRICT_RADIUS_M = 0.5
+
+# -------- Mobility correction thresholds --------
+
+MOBILITY_POS_IGNORE_THRESH_M = 0.05
+MOBILITY_POS_CORRECT_THRESH_M = 0.15
+MOBILITY_POS_CORRECT_MAX_M = 0.60
+
+MOBILITY_ANGLE_IGNORE_THRESH_DEG = 2.0
+MOBILITY_ANGLE_CORRECT_MAX_DEG = 20.0
+
+MOBILITY_MAX_PRECOMP_DISTANCE_DELTA_M = 0.30
+MOBILITY_TAG_STALE_TIMEOUT_SEC = 120
+
 # ==================
 # Runtime init
 # ==================

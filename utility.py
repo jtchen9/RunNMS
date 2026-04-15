@@ -73,3 +73,70 @@ def _stream_oldest_age_sec(stream_key: str) -> Tuple[int, str]:
     now_ms = int(datetime.now().timestamp() * 1000)
     age_sec = max(0, (now_ms - _xid_to_ms(oldest_id)) // 1000)
     return int(age_sec), oldest_id
+
+"""
+Mobility subsystem generic utility helpers.
+
+Division rule:
+- Project-neutral helpers only.
+- Keep this file small so it can be merged into utility.py later if desired.
+- No state transitions and no mobility policy here.
+"""
+from typing import Dict, Any
+import json
+import math
+import config
+
+# ===== numeric / angle helpers =====
+
+def _wrap_angle_deg(deg: float) -> float:
+    d = (deg + 180.0) % 360.0 - 180.0
+    return d
+
+def _deg_norm_360(deg: float) -> float:
+    x = deg % 360.0
+    return x + 360.0 if x < 0 else x
+
+def _deg_to_rad(deg: float) -> float:
+    return math.radians(deg)
+
+def _to_int(s: str, default: int = 0) -> int:
+    try:
+        return int(s)
+    except Exception:
+        return default
+
+
+# ===== generic redis hash/json wrappers =====
+
+def _hgetall(key: str) -> Dict[str, Any]:
+    return config.r.hgetall(key) or {}
+
+def _hget(key: str, field: str, default: str = "") -> str:
+    data = _hgetall(key)
+    return str(data.get(field) or default)
+
+def _hset_many(key: str, mapping: Dict[str, Any]) -> None:
+    out = {}
+    for k, v in mapping.items():
+        if isinstance(v, (dict, list)):
+            out[k] = json.dumps(v, ensure_ascii=False)
+        elif v is None:
+            out[k] = ""
+        else:
+            out[k] = str(v)
+    config.r.hset(key, mapping=out)
+
+def _hget_json(key: str, field: str) -> Dict[str, Any]:
+    raw = _hget(key, field, "")
+    if not raw.strip():
+        return {}
+    try:
+        j = json.loads(raw)
+        return j if isinstance(j, dict) else {}
+    except Exception:
+        return {}
+
+def _hset_json(key: str, field: str, value: Dict[str, Any]) -> None:
+    _hset_many(key, {field: value})
+

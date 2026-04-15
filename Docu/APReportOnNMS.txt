@@ -1,0 +1,142 @@
+restart :
+/usr/sbin/apBundle1.0/install_openwrt.sh
+
+
+check run :
+root@prplOS-7b65e0:/opt/_RunScanner# ps aux |grep ap_
+root     12652  1.3  1.1  26488 21240 ?        S    03:34   0:19 /usr/bin/python3 /opt/_RunScanner/ap_agent.py
+root     12698  0.1  1.1  26336 20728 ?        S    03:34   0:01 /usr/bin/python3 /opt/_RunScanner/ap_uploader.py
+root     13257  0.0  0.0   1380   924 ttyMSM0  S+   03:58   0:00 grep ap_
+
+
+10 sec status example (/opt/_RunScanner/ap_status_sent.json) :
+{
+  "time": "2026-03-30-03:52:46",
+  "status": {
+    "mac": "58:96:71:7b:65:e1",
+    "ip": "192.168.25.6",
+    "ssids": [
+      "prplMesh_FH_7B65E0",
+      "prplMesh_BH_7B65E0"
+    ],
+    "band": "6g",
+    "channel": 33,
+    "antenna_count": 4,
+    "interfaces": [
+      {
+        "band": "2.4g",
+        "channel": 1
+      },
+      {
+        "band": "5g",
+        "channel": 36
+      },
+      {
+        "band": "6g",
+        "channel": 33
+      }
+    ],
+    "associations": [
+      {
+        "sta_mac": "aa:7b:5c:2d:ef:eb",
+        "ssid": "prplMesh_FH_7B65E0",
+        "band": "6g",
+        "mcs": 11
+      },
+      {
+        "sta_mac": "94:18:65:51:a3:b2",
+        "ssid": "prplMesh_FH_7B65E0",
+        "band": "5g",
+        "mcs": 9
+      }
+    ],
+    "device_name": "prplOS-7b65e0.lan"
+  }
+
+
+60 sec traffic exmaple (/opt/_RunScanner/ap_traffic_sent.json) :
+{
+  "time_start": "2026-03-30-03:52:47",
+  "time_end": "2026-03-30-03:53:47",
+  "records": [
+    {
+      "sta_mac": "AP",
+      "ac": "All",
+      "avg_frame_duration_us": 0.0,
+      "frame_count": 291,
+      "download_bytes": 0,
+      "upload_bytes": 0,
+      "mcs_distribution": {
+        "5": 7,
+        "6": 14,
+        "7": 67,
+        "8": 7,
+        "9": 19,
+        "0": 158,
+        "10": 11,
+        "11": 8
+      },
+      "mcs_distribution_source": "ap_level_htt_stats"
+    },
+    {
+      "sta_mac": "aa:7b:5c:2d:ef:eb",
+      "ac": "BK",
+      "avg_frame_duration_us": 41.9,
+      "frame_count": 31,
+      "download_bytes": 358,
+      "upload_bytes": 251,
+      "mcs_distribution": {
+        "10": 31
+      },
+      "mcs_distribution_source": "background_sampler"
+    },
+    {
+      "sta_mac": "94:18:65:51:a3:b2",
+      "ac": "BK",
+      "avg_frame_duration_us": 41.9,
+      "frame_count": 298,
+      "download_bytes": 46818,
+      "upload_bytes": 1090,
+      "mcs_distribution": {
+        "5": 4,
+        "6": 8,
+        "8": 240,
+        "9": 44
+      },
+      "mcs_distribution_source": "background_sampler"
+    },
+    {
+      "sta_mac": "94:18:65:51:a3:b2",
+      "ac": "BE",
+      "avg_frame_duration_us": 42.0,
+      "frame_count": 18,
+      "download_bytes": 2096,
+      "upload_bytes": 913,
+      "mcs_distribution": {
+        "5": 1,
+        "6": 1,
+        "8": 14,
+        "9": 2
+      },
+      "mcs_distribution_source": "background_sampler"
+    },
+    {
+      "sta_mac": "94:18:65:51:a3:b2",
+      "ac": "VI",
+      "avg_frame_duration_us": 41.2,
+      "frame_count": 0,
+      "download_bytes": 78,
+      "upload_bytes": 78
+    }
+  ],
+  "device_name": "prplOS-7b65e0.lan"
+
+
+call back function : 
+1.ap.association.get 
+2.ap.sta.associate (x)
+3.ap.sta.disassociate 
+4.ap.txpower.set (x)
+5.ap.traffic.enable/disable
+
+
