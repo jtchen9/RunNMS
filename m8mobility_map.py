@@ -67,6 +67,15 @@ def _load_tag_map() -> Dict[str, Any]:
     except Exception:
         return {}
     
+def _ensure_mobility_assets_ready():
+    """
+    unfinished temporary function
+    need to check 
+    1) tag info is loaded
+    2) static robot restriction map is loaded
+    """
+    pass
+
 
 # ===== grid helpers =====
 

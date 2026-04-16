@@ -56,7 +56,19 @@ def _load_stop() -> Dict[str, Any]:
     except Exception:
         return {"stop": False, "reason": ""}
 
-
+def _save_stop(stop: bool, reason: str = "") -> None:
+    config.r.set(
+        KEY_STOP,
+        json.dumps(
+            {
+                "stop": bool(stop),
+                "reason": str(reason or "")[:300],
+                "updated_at": utility.local_ts(),
+            },
+            ensure_ascii=False,
+        ),
+    )
+    
 # ===== report / time helpers =====
 
 def _load_report_json(scanner: str) -> Dict[str, Any]:

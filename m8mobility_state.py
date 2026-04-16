@@ -12,25 +12,25 @@ Round 1 note:
 """
 from typing import Dict, Any
 import math
-import utility
-import config
+from config import MOBILITY_POS_IGNORE_THRESH_M, MOBILITY_POS_CORRECT_THRESH_M, MOBILITY_POS_CORRECT_MAX_M, MOBILITY_ANGLE_IGNORE_THRESH_DEG,MOBILITY_ANGLE_CORRECT_MAX_DEG
 
-from utility import _hget, _hset_many, _to_int, _deg_norm_360, _deg_to_rad, _angle_diff_deg, _circular_mean_deg
-from m8mobility_state_store import (
-    key_state, key_time, key_pose, _get_state, _set_state, _load_stop, _is_anchor_fresh,
-    _load_report_json, _save_policy_time, _save_pending_sequence, _clear_pending_sequence,
-    _load_pending_sequence, _save_last_issued_command, _save_outgoing_command_preview,
-    _clear_outgoing_command_preview, _reset_correction_counter, _inc_correction_counter,
-    _get_correction_counter, _update_10s_report
-)
-from m8mobility_pose import (
-    _is_loc_ok, _load_true, _load_planned, _save_true, _save_planned,
-    _apply_mobility_command_to_pose, _pose_error
-)
-from m8mobility_map import _is_path_clear, _check_motion_path, _load_tag_map
-from m8mobility_command_model import (
-    _normalize_mobility_command, _build_command_from_true_to_planned,
-    _build_turn_only_command, _build_turn_move_turn_forward_command,
+from m8mobility_command_model import _angle_diff_deg, _build_command_from_true_to_planned, _circular_mean_deg
+from utility import _hget, _hset_many, _to_int, _deg_norm_360, _deg_to_rad, local_ts
+from m8mobility_state_store import ( 
+    _get_state, _reset_correction_counter, key_state, key_time, key_pose, _set_state, _load_stop, _save_stop, _is_anchor_fresh, 
+    _load_report_json, _save_policy_time, _save_pending_sequence, _clear_pending_sequence, 
+    _load_pending_sequence, _save_last_issued_command, _save_outgoing_command_preview, 
+    _clear_outgoing_command_preview, _inc_correction_counter, 
+    _get_correction_counter, _update_10s_report 
+) 
+from m8mobility_pose import ( 
+    _is_loc_ok, _load_true, _load_planned, _save_planned, 
+    _apply_mobility_command_to_pose, _pose_error 
+) 
+from m8mobility_map import _is_path_clear, _load_tag_map 
+from m8mobility_command_model import ( 
+    _normalize_mobility_command, 
+    _build_turn_only_command, _build_turn_move_turn_forward_command, 
     _propagate_true_by_last_command, _should_propagate_true
 )
 
@@ -88,11 +88,132 @@ MULTI_TAG_HEADING_THRESH_DEG = 20.0
 def s0idle(scanner: str) -> Dict[str, Any]:
     return {"state": S0_IDLE, "status": "ok", "detail": "idle"}
 
-def enter_s0idle_on_command():
+def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """
     Unfinished temporary function
+    Need to hook up the command queue sending commands to robots between Steps 8 and 9
     """
-    pass
+    stop = _load_stop()
+    if stop.get("stop"):
+        _set_state(scanner, S7_STOPPED, stop.get("reason", ""))
+        return {
+            "status": "blocked",
+            "scanner": scanner,
+            "state_after": S7_STOPPED,
+            "reason": "experiment stopped",
+        }
+    
+    try:
+        # ---------------------------------------------------------
+        # Step 1: normalize script command
+        # ---------------------------------------------------------
+        action, args = _normalize_mobility_command(action, args)
+
+        # ---------------------------------------------------------
+        # Step 2: update planned location (script intent)
+        # ---------------------------------------------------------
+        planned = _s0_init_planned(scanner)
+        new_planned = _apply_mobility_command_to_pose(planned, action, args)
+        _save_planned(scanner, new_planned)
+
+        # ---------------------------------------------------------
+        # Step 3: build actual motion command (NEW CORE)
+        # ---------------------------------------------------------
+        issued_action, issued_args, build_debug = _build_command_from_true_to_planned(scanner)
+
+        # ---------------------------------------------------------
+        # Step 4: determine start pose (for path check)
+        # Safety rule:
+        # if true location is unavailable at S0 entry, stop immediately.    
+        # ---------------------------------------------------------
+        start = _load_true(scanner)
+        if not _is_loc_ok(start):
+            raise ValueError("true_location_json invalid at s0 entry")
+
+        # ---------------------------------------------------------
+        # Step 5: path safety check
+        # ---------------------------------------------------------
+        tx = float(start["x_m"])
+        ty = float(start["y_m"])
+        px = float(new_planned["x_m"])
+        py = float(new_planned["y_m"])
+
+        path_ok, blocked = _is_path_clear(tx, ty, px, py, exclude_scanner=scanner)
+
+        if not path_ok:
+            _set_state(scanner, S7_STOPPED, f"script command path unsafe, blocked={len(blocked)}")
+            stop_result = s7stopped(scanner)
+            stop_result.update({
+                "scanner": scanner,
+                "reason": "path unsafe",
+                "blocked_cells": len(blocked),
+                "debug": build_debug,
+            })
+            return stop_result
+        
+        # ---------------------------------------------------------
+        # Step 6: record issued command 
+        # IMPORTANT: record the modified low-level command, not the script command
+        # ---------------------------------------------------------
+        ts = local_ts()
+
+        _hset_many(
+            key_time(scanner),
+            {
+                "last_planned_command_issued_at": ts,
+            },
+        )
+
+        _hset_many(
+            key_pose(scanner),
+            {
+                "last_planned_command_action": issued_action,
+                "last_planned_command_args_json": issued_args,
+            },
+        )
+
+        # ---------------------------------------------------------
+        # Step 7: reset correction counter (new script command)
+        # ---------------------------------------------------------
+        _reset_correction_counter(scanner)
+
+        # ---------------------------------------------------------
+        # Step 8: debug info
+        # ---------------------------------------------------------
+        _hset_many(
+            key_state(scanner),
+            {
+                "last_command_build_debug": build_debug,
+                "outgoing_command_action": issued_action,
+                "outgoing_command_args_json": issued_args,
+                "outgoing_command_source": "script",
+                "outgoing_command_updated_at": ts,
+            },
+        )
+
+        # ---------------------------------------------------------
+        # Step 9: transition
+        # ---------------------------------------------------------
+        _set_state(scanner, S1_WAITING_REPORT, f"issued {issued_action}")
+
+        return {
+            "status": "ok",
+            "scanner": scanner,
+            "issued_action": issued_action,
+            "issued_args": issued_args,
+            "new_planned": new_planned,
+            "state_after": S1_WAITING_REPORT,
+            "debug": build_debug,
+        }
+
+    except Exception as e:
+        _set_state(scanner, S7_STOPPED, f"s0 stop: {e}")
+        stop_result = s7stopped(scanner)
+        stop_result.update({
+            "scanner": scanner,
+            "reason": str(e),
+        })
+        return stop_result
 
 def _s0_init_planned(scanner: str) -> Dict[str, Any]:
     planned = _load_planned(scanner)
@@ -101,11 +222,11 @@ def _s0_init_planned(scanner: str) -> Dict[str, Any]:
 
     true_loc = _load_true(scanner)
     if not _is_loc_ok(true_loc):
-        raise ValueError("true_location_json invalid")
+        raise ValueError("missing initial true location")
 
     ok, reason = _is_anchor_fresh(scanner)
     if not ok:
-        raise ValueError(reason)
+        raise ValueError(f"initial true location not usable: {reason}")
 
     planned = {
         "location_ok": True,
@@ -128,7 +249,7 @@ def s1waiting_report(scanner: str) -> Dict[str, Any]:
             key_state(scanner),
             {
                 "state_detail": f"s1 waiting: {reason}",
-                "state_updated_at": utility.local_ts(),
+                "state_updated_at": local_ts(),
             },
         )
         return {
@@ -137,18 +258,21 @@ def s1waiting_report(scanner: str) -> Dict[str, Any]:
             "detail": reason,
         }
 
-    _set_state(scanner, S2_EVALUATING_POLICY, "fresh report received")
-    return {
-        "status": "ok",
-        "state": S2_EVALUATING_POLICY,
-        "detail": "fresh report received",
-    }
+    return enter_s1waiting_report_on_report(scanner)
 
-def enter_s1waiting_report_on_report():
+def enter_s1waiting_report_on_report(scanner: str) -> Dict[str, Any]:
     """
     Unfinished temporary function
+    Entry point when a fresh mobility report is available in S1.
+    Transition to S2 and immediately chain, since there is no ticking clock.
     """
-    pass
+    report = _load_report_json(scanner)
+    if not isinstance(report, dict) or not report:
+        _set_state(scanner, S7_STOPPED, "missing mobility report at s1 entry")
+        return s7stopped(scanner)
+
+    _set_state(scanner, S2_EVALUATING_POLICY, "fresh report received")
+    return run_state_machine(scanner)
 
 def _s1_has_fresh_report(scanner: str) -> tuple[bool, str]:
     report_ts = _hget(key_time(scanner), "last_mobility_report_at", "")
@@ -165,19 +289,31 @@ def _s1_has_fresh_report(scanner: str) -> tuple[bool, str]:
 
     return True, ""
 
+
 # ===== s2evaluating_policy =====
 
 def s2evaluating_policy(scanner: str) -> Dict[str, Any]:
+    """
+    Unfinished temporary function
+    ToDo:
+    - hook the resent mobility command into the real outbound robot command queue
+    - current code only prepares the reissued command preview/state transition
+    """
     result = _s2_evaluate_policy(scanner)
 
     transition_to = result["transition_to"]
     _set_state(scanner, transition_to, result["detail"])
 
-    return {
-        "state": transition_to,
-        "status": result["status"],
-        "detail": result["detail"],
-    }
+    # boundary wait state: stop chaining here
+    if transition_to == S1_WAITING_REPORT:
+        return {
+            "state": transition_to,
+            "status": result["status"],
+            "detail": result["detail"],
+        }
+
+    # all other states should run immediately
+    return run_state_machine(scanner)
 
 def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
     report = _load_report_json(scanner)
@@ -239,6 +375,75 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
             "status": "stop",
             "transition_to": S7_STOPPED,
             "detail": f"immediate stop due to {last_error_code}",
+        }
+
+    # Busy
+    if last_error_code == "MOBILITY_BUSY":
+        busy_count = old_busy_count + 1
+
+        if busy_count >= BUSY_STOP_THRESHOLD:
+            out.update({
+                "busy_count": str(busy_count),
+                "need_location_retry": "false",
+                "stop_experiment": "true",
+                "stop_reason": "MOBILITY_BUSY_PERSISTENT",
+                "robot_safety_state": "UNSAFE_STOP",
+            })
+            _hset_many(state_hash, out)
+            _save_policy_time(scanner)
+            return {
+                "status": "stop",
+                "transition_to": S7_STOPPED,
+                "detail": f"MOBILITY_BUSY count={busy_count}",
+            }
+
+        # Reissue the previous mobility command instead of waiting forever.
+        last_action = _hget(key_pose(scanner), "last_planned_command_action", "")
+        last_args = _hget(key_pose(scanner), "last_planned_command_args_json", "")
+
+        if not last_action or not last_args:
+            out.update({
+                "busy_count": str(busy_count),
+                "need_location_retry": "false",
+                "stop_experiment": "true",
+                "stop_reason": "MOBILITY_BUSY_REISSUE_MISSING",
+                "robot_safety_state": "UNSAFE_STOP",
+            })
+            _hset_many(state_hash, out)
+            _save_policy_time(scanner)
+            return {
+                "status": "stop",
+                "transition_to": S7_STOPPED,
+                "detail": "MOBILITY_BUSY but previous command is unavailable for reissue",
+            }
+
+        out.update({
+            "busy_count": str(busy_count),
+            "need_location_retry": "false",
+            "stop_experiment": "false",
+            "stop_reason": "",
+            "robot_safety_state": "WAITING_PREVIOUS_MOTION",
+        })
+        _hset_many(state_hash, out)
+        _save_policy_time(scanner)
+
+        _save_outgoing_command_preview(
+            scanner,
+            action=last_action,
+            args_json=last_args,
+            source="retry_busy",
+        )
+
+        _save_last_issued_command(
+            scanner,
+            action=last_action,
+            args_json=last_args,
+        )
+
+        return {
+            "status": "retry",
+            "transition_to": S1_WAITING_REPORT,
+            "detail": f"MOBILITY_BUSY count={busy_count}; previous command reissued",
         }
 
     # Busy
@@ -342,6 +547,7 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
         "detail": f"unexpected status '{last_exec_status}'",
     }
 
+
 # ===== s3solving_true_location =====
 
 def s3solving_true_location(scanner: str) -> Dict[str, Any]:
@@ -352,12 +558,7 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
         _s3_save_true_location(scanner, loc)
         _update_10s_report(scanner)
         _set_state(scanner, S5_COMPUTING_CORRECTION, "true location solved")
-        return {
-            "state": S5_COMPUTING_CORRECTION,
-            "status": "ok",
-            "detail": "true location solved",
-            "true_location": loc,
-        }
+        return run_state_machine(scanner)
 
     # Case B: no AprilTag solve -> propagate true_location by LAST ISSUED command
     if _should_propagate_true(scanner):
@@ -368,7 +569,7 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
                 {
                     "true_propagation_applied": "true",
                     "true_propagation_detail": loc.get("detail", ""),
-                    "true_propagation_time": utility.local_ts(),
+                    "true_propagation_time": local_ts(),
                 },
             )
             _update_10s_report(scanner)
@@ -386,16 +587,11 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
         {
             "true_propagation_applied": "false",
             "true_propagation_detail": loc.get("detail", ""),
-            "true_propagation_time": utility.local_ts(),
+            "true_propagation_time": local_ts(),
         },
     )
     _set_state(scanner, S4_WAITING_LOCATION_RETRY, f"solve failed: {loc.get('detail', '')}")
-    return {
-        "state": S4_WAITING_LOCATION_RETRY,
-        "status": "retry",
-        "detail": loc.get("detail", ""),
-        "true_location": loc,
-    }
+    return run_state_machine(scanner)
 
 def _s3_solve_true_location(scanner: str) -> Dict[str, Any]:
     tag_map = _load_tag_map()
@@ -408,7 +604,7 @@ def _s3_solve_true_location(scanner: str) -> Dict[str, Any]:
             "tag_count": 0,
             "solver_stage": "single_tag",
             "source": "apriltag",
-            "updated_at": utility.local_ts(),
+            "updated_at": local_ts(),
         }
 
     visible = _s3_extract_visible_tags(scanner)
@@ -420,7 +616,7 @@ def _s3_solve_true_location(scanner: str) -> Dict[str, Any]:
             "tag_count": 0,
             "solver_stage": "single_tag",
             "source": "apriltag",
-            "updated_at": utility.local_ts(),
+            "updated_at": local_ts(),
         }
 
     cands = []
@@ -441,7 +637,7 @@ def _s3_solve_true_location(scanner: str) -> Dict[str, Any]:
             "tag_count": 0,
             "solver_stage": "single_tag",
             "source": "apriltag",
-            "updated_at": utility.local_ts(),
+            "updated_at": local_ts(),
         }
 
     return _s3_fuse_candidates(cands)
@@ -523,7 +719,7 @@ def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
             "tag_count": 0,
             "solver_stage": "single_tag",
             "source": "apriltag",
-            "updated_at": utility.local_ts(),
+            "updated_at": local_ts(),
         }
 
     if len(cands) == 1:
@@ -537,7 +733,7 @@ def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
             "tags_used": [c["tag_id"]],
             "tag_count": 1,
             "solver_stage": "single_tag",
-            "updated_at": utility.local_ts(),
+            "updated_at": local_ts(),
             "detail": "",
             "candidates": cands,
         }
@@ -553,7 +749,7 @@ def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
                 "tags_used": [c["tag_id"] for c in cands],
                 "tag_count": 2,
                 "solver_stage": "multi_tag",
-                "updated_at": utility.local_ts(),
+                "updated_at": local_ts(),
                 "detail": f"two-tag candidates inconsistent: pos_d={pos_d:.3f}m hdg_d={hdg_d:.3f}deg",
                 "candidates": cands,
             }
@@ -567,7 +763,7 @@ def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
             "tags_used": [c["tag_id"] for c in cands],
             "tag_count": 2,
             "solver_stage": "multi_tag",
-            "updated_at": utility.local_ts(),
+            "updated_at": local_ts(),
             "detail": "",
             "candidates": cands,
         }
@@ -604,7 +800,7 @@ def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
             "tags_used": [],
             "tag_count": 0,
             "solver_stage": "multi_tag",
-            "updated_at": utility.local_ts(),
+            "updated_at": local_ts(),
             "detail": "all multi-tag candidates rejected",
             "candidates": cands,
             "rejected_candidates": rejected,
@@ -619,7 +815,7 @@ def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
         "tags_used": [c["tag_id"] for c in kept],
         "tag_count": len(kept),
         "solver_stage": "multi_tag" if len(kept) > 1 else "single_tag_after_rejection",
-        "updated_at": utility.local_ts(),
+        "updated_at": local_ts(),
         "detail": "" if not rejected else f"rejected {len(rejected)} outlier candidate(s)",
         "candidates": cands,
         "rejected_candidates": rejected,
@@ -635,7 +831,7 @@ def _s3_save_true_location(scanner: str, loc: Dict[str, Any]) -> None:
     _hset_many(
         key_time(scanner),
         {
-            "true_location_updated_at": utility.local_ts(),
+            "true_location_updated_at": local_ts(),
         },
     )
 
@@ -682,7 +878,7 @@ def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
 
     # Retry still allowed
     if retry_count < LOCATION_RETRY_LIMIT:
-        now_ts = utility.local_ts()
+        now_ts = local_ts()
         _hset_many(
             time_hash,
             {
@@ -703,21 +899,26 @@ def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
         "detail": "location retry exhausted",
     }
 
+
 # ===== s5computing_correction =====
 
 def s5computing_correction(scanner: str) -> Dict[str, Any]:
     result = _s5_compute_correction(scanner)
 
-    _set_state(scanner, result["transition_to"], result["detail"])
+    transition_to = result["transition_to"]
+    _set_state(scanner, transition_to, result["detail"])
 
-    return {
-        "state": result["transition_to"],
-        "status": result["status"],
-        "detail": result["detail"],
-        "error": result["error"],
-        "pending_sequence": result["pending_sequence"],
-        **({"correction_detail": result["correction_detail"]} if "correction_detail" in result else {}),
-    }
+    if transition_to == S0_IDLE:
+        return {
+            "state": transition_to,
+            "status": result["status"],
+            "detail": result["detail"],
+            "error": result["error"],
+            "pending_sequence": result["pending_sequence"],
+            **({"correction_detail": result["correction_detail"]} if "correction_detail" in result else {}),
+        }
+
+    return run_state_machine(scanner)
 
 def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
     
@@ -756,12 +957,12 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
 
     err = _pose_error(true_loc, planned_loc)
 
-    pos_ignore = float(config.MOBILITY_POS_IGNORE_THRESH_M)
-    pos_correct = float(config.MOBILITY_POS_CORRECT_THRESH_M)
-    pos_max = float(config.MOBILITY_POS_CORRECT_MAX_M)
+    pos_ignore = float(MOBILITY_POS_IGNORE_THRESH_M)
+    pos_correct = float(MOBILITY_POS_CORRECT_THRESH_M)
+    pos_max = float(MOBILITY_POS_CORRECT_MAX_M)
 
-    ang_ignore = float(config.MOBILITY_ANGLE_IGNORE_THRESH_DEG)
-    ang_max = float(config.MOBILITY_ANGLE_CORRECT_MAX_DEG)
+    ang_ignore = float(MOBILITY_ANGLE_IGNORE_THRESH_DEG)
+    ang_max = float(MOBILITY_ANGLE_CORRECT_MAX_DEG)
 
     dpos = abs(float(err["dpos_m"]))
     dhead = abs(float(err["dhead_deg"]))
@@ -856,18 +1057,20 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
 def s6issuing_correction(scanner: str) -> Dict[str, Any]:
     result = _s6_issue_correction(scanner)
 
-    _set_state(scanner, result["transition_to"], result["detail"])
+    transition_to = result["transition_to"]
+    _set_state(scanner, transition_to, result["detail"])
 
-    return {
-        "state": result["transition_to"],
-        "status": result["status"],
-        "detail": result["detail"],
-        "issued_command": result["issued_command"],
-        **({"remaining_count": result["remaining_count"]} if "remaining_count" in result else {}),
-        **({"issued_at": result["issued_at"]} if "issued_at" in result else {}),
-        **({"new_planned": result["new_planned"]} if "new_planned" in result else {}),
-        **({"new_true": result["new_true"]} if "new_true" in result else {}),
-    }
+    if transition_to in (S0_IDLE, S1_WAITING_REPORT):
+        return {
+            "state": transition_to,
+            "status": result["status"],
+            "detail": result["detail"],
+            "issued_command": result["issued_command"],
+            **({"remaining_count": result["remaining_count"]} if "remaining_count" in result else {}),
+            **({"issued_at": result["issued_at"]} if "issued_at" in result else {}),
+        }
+
+    return run_state_machine(scanner)
 
 def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
     seq = _load_pending_sequence(scanner)
@@ -911,40 +1114,24 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
         }
 
     # ---------------------------------------------------------
-    # Update planned immediately (correct behavior)
+    # S6 issues the correction command only.
+    # It must NOT update planned_location_json or true_location_json.
+    # planned_location_json belongs only to S0 script intent.
+    # true_location_json is updated later in S3 after report processing.
     # ---------------------------------------------------------
-    planned = _load_planned(scanner)
-    if not _is_loc_ok(planned):
-        _clear_pending_sequence(scanner)
-        _clear_outgoing_command_preview(scanner)
-        return {
-            "status": "stop",
-            "transition_to": S7_STOPPED,
-            "detail": "planned_location_json invalid while issuing correction",
-            "issued_command": {},
-        }
-
-    new_planned = _apply_mobility_command_to_pose(planned, action, args)
-    _save_planned(scanner, new_planned)
 
     # ---------------------------------------------------------
-    # ❌ DO NOT update true_location here anymore
-    # true_location will be updated AFTER report in s3
-    # ---------------------------------------------------------
-    new_true = {}
-
-    # ---------------------------------------------------------
-    # Save queue-preview (for debug)
+    # Save queue-preview (for debug / future queue hookup)
     # ---------------------------------------------------------
     _save_outgoing_command_preview(scanner, action, args, "correction")
 
     # ---------------------------------------------------------
-    # Record issued command (this is what s3 will use!)
+    # Record issued command (this is what later S3 may propagate from)
     # ---------------------------------------------------------
     issued_at = _save_last_issued_command(scanner, action, args)
 
     # ---------------------------------------------------------
-    # 🔥 Increment correction counter (NEW)
+    # Increment correction counter
     # ---------------------------------------------------------
     count = _inc_correction_counter(scanner)
 
@@ -971,8 +1158,6 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
         },
         "remaining_count": len(rest),
         "issued_at": issued_at,
-        "new_planned": new_planned,
-        "new_true": new_true,  # always empty now
         "correction_count": count,
     }
 
@@ -980,20 +1165,65 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
 # ===== s7stopped =====
 
 def s7stopped(scanner: str) -> Dict[str, Any]:
-    stop = _load_stop()
-    reason = str(stop.get("reason") or "").strip()
+    """
+    Unfinished temporary function
+    Stop state for the entire experiment.
+
+    Current in-boundary responsibility:
+    1) write the global experiment stop key
+    2) mark this scanner as stopped in mobility state
+
+    TODO outside mobility subsystem:
+    - stop all non-AV command dispatch from NMS command queues
+    - switch off robot 1-minute reports
+    - switch off AP 1-minute reports
+    - stop all ongoing iperf3 traffic sessions
+    - keep AV category available for remote inspection
+    """
+    state_detail = _hget(key_state(scanner), "state_detail", "")
+    reason = str(state_detail or "").strip()
+    if not reason:
+        reason = "manual reset required"
+
+    _save_stop(True, reason)
 
     _hset_many(
         key_state(scanner),
         {
-            "state_detail": f"stopped: {reason}" if reason else "stopped",
-            "state_updated_at": utility.local_ts(),
+            "state_detail": reason,
+            "state_updated_at": local_ts(),
         },
     )
 
     return {
         "state": S7_STOPPED,
         "status": "stopped",
-        "detail": reason if reason else "manual reset required",
+        "detail": reason,
     }
+
+
+# ===== state machine =====
+
+def run_state_machine(scanner: str) -> Dict[str, Any]:
+    state = _get_state(scanner)
+
+    if state == S0_IDLE:
+        return s0idle(scanner)
+    if state == S1_WAITING_REPORT:
+        return s1waiting_report(scanner)
+    if state == S2_EVALUATING_POLICY:
+        return s2evaluating_policy(scanner)
+    if state == S3_SOLVING_TRUE_LOCATION:
+        return s3solving_true_location(scanner)
+    if state == S4_WAITING_LOCATION_RETRY:
+        return s4waiting_location_retry(scanner)
+    if state == S5_COMPUTING_CORRECTION:
+        return s5computing_correction(scanner)
+    if state == S6_ISSUING_CORRECTION:
+        return s6issuing_correction(scanner)
+    if state == S7_STOPPED:
+        return s7stopped(scanner)
+
+    _set_state(scanner, S0_IDLE, "invalid state reset")
+    return s0idle(scanner)
 
