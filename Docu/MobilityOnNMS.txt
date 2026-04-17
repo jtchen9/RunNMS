@@ -1,435 +1,264 @@
-1. New NMS interface change in the 10-second poll path
+🔧 1. Updated Mobility Commands (Replace Section 4)
+Mobility commands (current version)
+    Only the following commands are supported now:
 
-The “10-second report” is not a separate uploader. It is the payload piggybacked onto the robot’s regular command poll call. The robot agent already polls every 10 seconds through fetch_commands() in robot_agent.py, so we extended that polling interface rather than inventing a second report path.
-
-New poll parameter
-
-The robot now attaches an optional new query parameter:
-
-mobility_report_json
-
-This is sent only when there is a fresh mobility result pending.
-
-Semantics
-
-This follows Option B:
-
-robot sends the mobility report once
-after one successful poll, robot clears the pending report
-if the NMS wants location again, it must explicitly ask using a mobility command
-
-This avoids stale tag data from continuing to interfere with NMS location reasoning.
-
-2. What mobility_report_json contains
-
-The robot does not send map-based robot location.
-It sends only robot-side, tag-centered results.
-
-Suggested content:
-
+A. mobility.turn_move_turn.forward
+Args:
 {
-  "last_command": "mobility.move.forward",
-  "last_command_args": {"distance_m": 1.2},
-  "last_command_received_ts": 1770000000.0,
-  "last_command_finished_ts": 1770000008.5,
-  "last_exec_status": "completed",
-  "last_error_code": "",
-  "last_error_detail": "",
-  "last_location_result": {
-    "ok": true,
-    "av_was_active": true,
-    "av_restarted": true,
-    "snapshot_path": "/tmp/robot_mobility_snapshot.jpg",
-    "apriltag": {
-      "ok": true,
-      "error": "",
-      "count": 2,
-      "tags": [
-        {
-          "id": 3,
-          "distance_m": 1.42,
-          "angle_deg": -12.5,
-          "yaw_deg": 4.1
-        },
-        {
-          "id": 4,
-          "distance_m": 2.03,
-          "angle_deg": 11.2,
-          "yaw_deg": -1.7
-        }
-      ]
-    }
-  }
+  "distance_m": 1.2,
+  "pre_angle": 30,
+  "post_angle": -20
 }
-Meaning
-last_command* tells NMS what mobility action produced this observation.
-last_exec_status tells whether the movement/location workflow completed.
-last_error_code and last_error_detail report failures.
-last_location_result.apriltag.tags[] is the crucial payload:
-id
-distance_m
-angle_deg
-yaw_deg
 
-The robot does not know the lab map, and does not compute final lab coordinates.
-
-3. NMS responsibility for localization
-
-This is the main new NMS responsibility.
-
-The robot sends tag-centered observations.
-The NMS must convert them into map-centered robot location.
-
-NMS must maintain a lab tag map
-
-For every AprilTag in the lab, NMS must know at least:
-
-tag_id
-tag position in lab coordinates
-tag orientation in lab coordinates
-
-A good internal structure would be something like:
-
+B. mobility.turn_move_turn.backward
+Args:
 {
-  "3": {"x": 4.2, "y": 1.8, "yaw_deg": 90.0},
-  "4": {"x": 6.0, "y": 1.8, "yaw_deg": 90.0}
+  "distance_m": 1.2,
+  "pre_angle": 30,
+  "post_angle": -20
 }
-NMS location logic
 
-Using the lab map plus each reported tag observation:
+C. mobility.turn
+Args:
+{
+  "angle_deg": 45
+}
 
-tag_id
-distance_m
-angle_deg
-yaw_deg
-
-the NMS should estimate robot location and heading.
-
-NMS should handle:
-Single-tag localization
-use one tag if only one is visible
-Multi-tag fusion
-if multiple tags are visible, average or otherwise merge them
-reject inconsistent/outlier tag observations
-Error memory
-use the location estimate to correct the next movement command
-the robot itself does not need to compensate immediately inside the current command
-Important architectural split
-Robot responsibility: tag-centered measurement
-NMS responsibility: map-based localization
-
-That is the key division of labor.
-
-4. Mobility commands the NMS can send
-
-The mobility category is now defined, and robot_dispatch.py is patched to route these actions through the robot mobility handler layer.
-
-A. mobility.move.forward
-Args
-{"distance_m": 1.2}
-Robot effect
-robot acknowledges command receipt
-moves forward best-effort by calibrated time-vs-distance
-after motion finishes:
-stops
-temporarily interrupts A/V if needed
-takes one snapshot
-runs AprilTag analysis
-stages mobility report for next poll
-Expected NMS use
-after seeing the mobility report, use it to update robot location before issuing next move
-B. mobility.move.backward
-Args
-{"distance_m": 0.8}
-Robot effect
-
-Same as forward, but moving backward.
-
-C. mobility.turn.left
-Args
-{"angle_deg": 90}
-Robot effect
-gyro-based left turn
-then same post-move snapshot/location workflow
-D. mobility.turn.right
-Args
-{"angle_deg": 45}
-Robot effect
-gyro-based right turn
-then same post-move snapshot/location workflow
-E. mobility.report.location
-Args
+D. mobility.location.report
+Args:
 {}
 
-or empty args
-
-Robot effect
-no movement
-if not busy:
-temporarily interrupts A/V if needed
-takes one snapshot
-runs AprilTag analysis
-stages fresh mobility report for next poll
-Expected NMS use
-recover missing or stale location info
-confirm latest robot location
-retry if previous mobility report failed or was lost
-5. Command semantics the NMS must follow
-ACK meaning
-
-For mobility commands, ACK means only:
-
-command received
-
-It does not mean the movement or location capture succeeded.
-
-Execution success/failure comes later in mobility_report_json.
-
-Command sequencing rule
-
-NMS must enforce:
-
-do not send another mobility command until the previous mobility command’s location report has been received and processed
-
-If a second mobility command is sent too early:
-
-robot will ignore/reject it
-robot will report error such as MOBILITY_BUSY
-
-This sequencing rule is important.
-
-6. Error handling the NMS should support
-
-The robot may report these kinds of errors in the mobility report:
-
-MOBILITY_BUSY
-BAD_COMMAND_ARGS
-MOVE_EXEC_FAIL
-TURN_EXEC_FAIL
-LOCATION_CAPTURE_FAIL
-NO_TAG_VISIBLE
-UNEXPECTED_EXCEPTION
-NMS should treat them differently
-If motion/location failed once
-issue mobility.report.location
-If repeated location retries fail
-raise an operational problem
-let humans inspect neighboring robot video streams
-treat it as possible lab design / camera / obstruction issue
-7. What the NMS still needs to add to bring up mobility fully
-
-Here is the NMS-side checklist still needed.
-
-A. Extend /cmd/poll/{scanner} to accept and parse:
-mobility_report_json
-B. Store or process each mobility report
-
-At minimum:
-
-attach the latest mobility report to robot state
-timestamp it
-make it visible to operators/debug tools
-C. Maintain the lab tag map
-
-Need a persistent structure for:
-
-all tag IDs
-all tag positions
-all tag orientations
-D. Implement robot location solver
-
-Using:
-
-reported tag observations
-tag map
-one-tag or multi-tag inference
-E. Enforce mobility command sequencing
-
-The NMS should not schedule the next mobility command until:
-
-it has seen and consumed the location result of the previous one
-F. Implement retry path
-
-When mobility report is missing or failed:
-
-send mobility.report.location
-G. Implement fault escalation
-
-If repeated mobility.report.location attempts still fail:
-
-mark robot location as unavailable
-request human inspection via existing video streams
-8. Recommended NMS interpretation of robot-side fields
-last_exec_status
-
-Suggested interpretations:
-
-accepted
-completed
-error
-last_error_code
-
-If empty and completed, localization can proceed.
-
-If non-empty:
-
-do not trust last_location_result unless explicitly designed otherwise
-last_location_result.apriltag.tags
-
-This is the real measurement set.
-NMS should treat this as the robot’s latest landmark observations.
-
-9. Minimal NMS-side output to the web server
-
-Once NMS converts tag observations into map location, it can report to the public web layer something like:
-
-{
-  "robot": "scanner3",
-  "ts": "...",
-  "x": 4.85,
-  "y": 2.10,
-  "heading_deg": 87.0,
-  "source": "apriltag",
-  "tags_used": [3, 4]
-}
-
-That is downstream of the robot-side work.
-
-10. What you might still be missing on the NMS side
-
-The main remaining NMS-side concerns are:
-
-how to model the lab tag map
-how to infer location from one tag vs multiple tags
-how to reject inconsistent tag observations
-how to store the latest known robot location and carry correction into the next movement command
-how to prevent NMS from issuing movement commands too early
-how to expose mobility/report failures to operators
-
-Those are the main items left to cover.
-
-====================
-
-For each issued mobility command, the NMS should process in this order:
-
-Phase A — when command is issued by script writer
-
-Immediately when the NMS issues a mobility command:
-
-update planned_location_json
-record the command issue time
-record that this robot now has a mobility follow-up pending
-
-Important:
-
-this happens on issued command, not acked command
-this preserves the script writer’s intended path
-
-------------
-Phase B — wait for next robot mobility report
-
-The robot later sends one-shot mobility_report_json on poll.
-
-When that arrives:
-
-store raw report
-run Step 5 policy evaluation
-if immediate stop condition:
-set stop state
-do not continue follow-up chain
-
-------------
-Phase C — if report is usable, compute true location
-
-If policy allows continuation:
-
-run Step 2/3 solver
-update true_location_json
-
-------------
-Phase D — compare planned vs true
-
-Once both exist:
-
-compare planned_location_json
-compare true_location_json
-measure discrepancy:
-position error
-heading error
-
-This is where future correction logic will hook in.
-
-------------
-Phase E — decide next action
-
-Depending on policy + discrepancy:
-
-If healthy and discrepancy small
-mark follow-up complete
-robot is ready for next mobility command
-If recoverable and location retry needed
-enqueue mobility.report.location
-wait again
-repeat up to retry limit
-If stop condition
-set stop state
-do not allow further command enqueuing
-stop 1-minute report
-If later correction is needed
-enqueue one or more NMS-issued correction commands
-wait for those to wrap up too
-only then mark robot ready again
-The key new concept: robot readiness for next mobility command
-
-You need one explicit NMS-side state per robot, something like:
-
-mobility_followup_state
-
-with values such as:
-
-idle
-waiting_report
-evaluating_policy
-waiting_location_retry
-waiting_correction
-stopped
-
-This will let the NMS know whether the next scripted mobility command is allowed yet.
-
-Rule
-
-A new mobility command may be enqueued only when:
-
-robot mobility_followup_state == idle
-experiment is not stopped
-
-That is how the time sequence becomes enforceable.
-
-=========================
-s0idle
-  ↓ (command issued)
-s1waiting_report
-  ↓ (report arrives)
-s2evaluating_policy
+Design change
+    All movement is now normalized into turn → move → turn
+    NMS is responsible for:
+        translating planned vs true into these commands
+    Robot is responsible for:
+        execution + measurement only
+
+
+==============
+🔧 2. Updated State Machine (Replace Entire Final Section)
+Full State Machine (current design)
+S0_IDLE
+  ↓ (script command arrives)
+S5_COMPUTING_CORRECTION
   ↓
-   ├─ ok → s3solving_true_location
-   ├─ retry → s4waiting_location_retry
-   └─ stop → s7stopped
-
-s3solving_true_location
+S6_ISSUING_COMMAND
   ↓
-s5computing_correction
+S1_WAITING_REPORT
   ↓
-s6issuing_correction
+   ├─ correct report → S2_EVALUATING_POLICY
+   ├─ irrelevant report → stay S1
+   └─ timeout → S4_WAITING_LOCATION_RETRY
+
+S2_EVALUATING_POLICY
   ↓
-   ├─ no correction → s0idle
-   ├─ correction → s1waiting_report
-   └─ unsafe → s7stopped
+   ├─ MOBILITY_BUSY → stay S2 (wait timer)
+   ├─ ok / no_tag → S3_SOLVING_TRUE_LOCATION
+   ├─ recoverable error → S4_WAITING_LOCATION_RETRY
+   └─ stop → S7_STOPPED
 
-s4waiting_location_retry
-  ↓ (retry done)
-s2evaluating_policy
+S3_SOLVING_TRUE_LOCATION
+  ↓
+   ├─ solved → S5_COMPUTING_CORRECTION
+   ├─ cannot solve but allowed → propagate → S5
+   └─ cannot solve and not allowed → S4
 
-s7stopped
-  ↓ (manual reset later)
-s0idle
+S4_WAITING_LOCATION_RETRY
+  ↓
+   ├─ issue mobility.location.report → S1
+   └─ retry exhausted → S7
+
+S5_COMPUTING_CORRECTION
+  ↓
+   ├─ no correction needed → S0_IDLE
+   ├─ correction needed → S6
+   └─ unsafe → S7
+
+S6_ISSUING_COMMAND
+  ↓
+   └─ always → S1_WAITING_REPORT
+
+S7_STOPPED
+  ↓ (manual reset / admin reset)
+S0_IDLE
+
+
+==============
+🔧 3. S1 Design (NEW — add as dedicated section)
+
+S1 — Waiting for Report
+
+Purpose
+    Wait for the exact report corresponding to last issued command
+
+Three scenarios
+    1. Correct report
+        cancel S1 timer
+        go to S2
+    2. Irrelevant / outdated report
+        ignore
+        remain in S1
+        timer unchanged
+    3. Timeout (no report)
+        dangerous condition
+        increment busy_count
+        go to S4
+        issue mobility.location.report
+
+Concurrency design
+    All S1 exits go through:
+        process_s1_event()
+    Protected by:
+        per-scanner Redis lock
+
+This prevents:
+    report vs timeout race
+    double transition
+
+Timer rule
+    S1 timer is started only when entering S1
+    never started by:
+        report arrival
+        timeout callback
+
+
+==============
+🔧 4. S2 MOBILITY_BUSY Design (NEW)
+
+Behavior
+    When robot returns:
+    last_error_code = "MOBILITY_BUSY"
+
+Policy:
+    1. Increment busy_count
+    2. Check total unexpected-event sum
+    3. If limit reached → S7
+    4. Otherwise:
+        set s2_entry_reason = "busy_retry_timer"
+        start retry timer (e.g. 5 sec)
+        stay in S2
+
+Timer callback
+    When timer fires:
+        re-enter S2
+        check marker
+        resend previous command
+        start S1 timer
+        go to S1
+
+Key design decision
+    NO sleep in NMS
+    NO lock needed
+    ONLY one Redis marker controls flow
+
+
+==============
+🔧 5. Unexpected Event Policy (NEW)
+
+Old design (removed)
+    Separate limits:
+        busy
+        collision
+        exec_fail
+
+❌ Problem:
+    allowed multiple different failures without stop
+
+New design
+    
+Define:
+"""
+unexpected_event_sum =
+    busy_count +
+    collision_veto_count +
+    exec_fail_count
+"""
+
+Rule:
+    if sum ≥ threshold → S7
+
+Additional rule
+    if sum > 0:
+        disable true-location propagation
+
+
+==============
+🔧 6. True Location Handling (UPDATED)
+
+Sources
+    AprilTag solve → authoritative
+    Propagation → fallback
+
+Propagation rule
+    Allowed only if:
+        no unexpected event occurred
+    Otherwise:
+        must go to S4 retry
+
+Important design decision
+    NO propagation in:
+        S0
+        S6
+    propagation ONLY happens in:
+        S3
+
+
+==============
+🔧 7. Planned vs True Separation (IMPORTANT)
+
+Planned location
+    updated ONLY in S0
+    represents script intent
+    never modified by execution
+
+True location
+    updated by:
+        AprilTag solve
+        propagation
+
+Key rule
+    Planned = intent
+    True = reality
+    Never mix the two
+
+
+==============
+🔧 8. S4 Retry Policy (UPDATED)
+
+When used
+    missing report (S1 timeout)
+    recoverable errors
+
+Behavior
+    issue mobility.location.report
+    go to S1
+    loop until:
+        success → S3
+        retry exhausted → S7
+
+Important update
+    NO_TAG_VISIBLE is NOT an error
+    it flows through:
+        S2 → S3 → propagation
+
+
+==============
+🔧 9. Correction Logic (UPDATED)
+
+S5 role
+    compare planned vs true
+    decide:
+        done → S0
+        correction → S6
+
+Correction limit
+    correction counter
+    if exceeded → stop
+
+S6 role
+    issue command ONLY
+    no logic
+    no propagation
+    no safety decision
+

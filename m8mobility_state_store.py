@@ -190,7 +190,7 @@ def _reset_correction_counter(scanner: str) -> None:
     _hset_many(
         key_state(scanner),
         {
-            "correction_attempt_count": "0",
+            "correction_attempt_count": "-1",
         },
     )
 

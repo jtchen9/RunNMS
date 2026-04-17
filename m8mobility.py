@@ -17,7 +17,7 @@ from m8mobility_state_store import _clear_outgoing_command_preview, _clear_pendi
 from m8mobility_state import (
     VALID_STATES, S0_IDLE, S1_WAITING_REPORT, S2_EVALUATING_POLICY, S3_SOLVING_TRUE_LOCATION,
     S4_WAITING_LOCATION_RETRY, S5_COMPUTING_CORRECTION, S6_ISSUING_CORRECTION, S7_STOPPED, 
-    enter_s0idle_on_command, enter_s1waiting_report_on_report, run_state_machine, s0idle, s1waiting_report,
+    enter_s0idle_on_command, enter_s1waiting_report_on_report, process_s1_event, run_state_machine, s0idle, s1waiting_report,
     s2evaluating_policy, s3solving_true_location, s4waiting_location_retry, s5computing_correction,
     s6issuing_correction, s7stopped
 )
@@ -79,6 +79,7 @@ def on_command_issued(scanner: str, action: str, args: Dict[str, Any]) -> Dict[s
     - m4Commands interactive enqueue
     - m4Commands CSV load
     - m4Commands CSV file upload
+    - if blocked try until success
 
     Current responsibility:
     - Only gate by current mobility state
@@ -89,7 +90,7 @@ def on_command_issued(scanner: str, action: str, args: Dict[str, Any]) -> Dict[s
         _hset_many(
             key_state(scanner),
             {
-                "state_detail": f"blocked: not idle ({state})",
+                "state_detail": f"blocked: not idle, ({state})",
                 "state_updated_at": local_ts(),
             },
         )
@@ -101,17 +102,18 @@ def on_command_issued(scanner: str, action: str, args: Dict[str, Any]) -> Dict[s
         }
 
     return enter_s0idle_on_command(scanner, action, args)
- 
+
 def on_report_received(scanner: str) -> Dict[str, Any]:
     """
     Unfinished temporary function.
 
-    ToDo: Link from outside to this entry point 
+    ToDo: Link from outside to this entry point
     when robot sends mobility report.
-    
-    Just run the state machine from s1waiting_report.
+
+    Report-arrival path for S1.
+    The actual S1 resolution is serialized inside process_s1_event(...).
     """
-    return run_state_machine(scanner)
+    return process_s1_event(scanner, source="report")
 
 
 # ===== B3) state control block =====

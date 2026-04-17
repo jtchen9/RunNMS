@@ -10,12 +10,15 @@ Round 1 note:
 - Structural extraction only; logic is copied from the old monolith as directly as practical.
 - Unfinished integration seams remain explicitly marked.
 """
-from typing import Dict, Any
+from typing import Dict, Any, Optional, OptionalS
 import math
-from config import MOBILITY_POS_IGNORE_THRESH_M, MOBILITY_POS_CORRECT_THRESH_M, MOBILITY_POS_CORRECT_MAX_M, MOBILITY_ANGLE_IGNORE_THRESH_DEG,MOBILITY_ANGLE_CORRECT_MAX_DEG
+from datetime import timedelta
+import threading
+import uuid
+from config import MOBILITY_POS_IGNORE_THRESH_M, MOBILITY_POS_CORRECT_THRESH_M, MOBILITY_POS_CORRECT_MAX_M, MOBILITY_ANGLE_IGNORE_THRESH_DEG, MOBILITY_ANGLE_CORRECT_MAX_DEG, r, KEY_PREFIX
 
 from m8mobility_command_model import _angle_diff_deg, _build_command_from_true_to_planned, _circular_mean_deg
-from utility import _hget, _hset_many, _to_int, _deg_norm_360, _deg_to_rad, local_ts
+from utility import _hget, _hset_many, _to_int, _deg_norm_360, _deg_to_rad, local_ts, parse_local_dt
 from m8mobility_state_store import ( 
     _get_state, _reset_correction_counter, key_state, key_time, key_pose, _set_state, _load_stop, _save_stop, _is_anchor_fresh, 
     _load_report_json, _save_policy_time, _save_pending_sequence, _clear_pending_sequence, 
@@ -60,9 +63,7 @@ VALID_STATES = {
 # ===== policy thresholds =====
 
 LOCATION_RETRY_LIMIT = 2
-COLLISION_VETO_STOP_THRESHOLD = 2
-BUSY_STOP_THRESHOLD = 2
-EXEC_FAIL_STOP_THRESHOLD = 2
+UNEXPECTED_EVENT_SUM_LIMIT = 2
 IMMEDIATE_STOP_ERROR_CODES = {
     "TOF_SENSOR_FAIL",
     "BAD_COMMAND_ARGS",
@@ -72,6 +73,8 @@ RECOVERABLE_ERROR_CODES = {
     "MOVE_EXEC_FAIL",
     "TURN_EXEC_FAIL",
     "LOCATION_CAPTURE_FAIL",
+}
+NO_TAG_OK_CODES = {
     "NO_TAG_VISIBLE",
 }
 COLLISION_ERROR_CODES = {
@@ -81,6 +84,15 @@ COLLISION_ERROR_CODES = {
 
 MULTI_TAG_POS_THRESH_M = 0.5
 MULTI_TAG_HEADING_THRESH_DEG = 20.0
+
+CORRECTION_ATTEMPT_LIMIT = 1
+
+S1_REPORT_TIMEOUT_SEC = 30
+S1_EVENT_LOCK_TTL_SEC = 10
+_S1_TIMERS: Dict[str, threading.Timer] = {}
+
+MOBILITY_BUSY_RETRY_WAIT_SEC = 5
+_BUSY_RETRY_TIMERS: Dict[str, threading.Timer] = {}
 
 
 # ===== s0idle =====
@@ -96,13 +108,8 @@ def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> 
     stop = _load_stop()
     if stop.get("stop"):
         _set_state(scanner, S7_STOPPED, stop.get("reason", ""))
-        return {
-            "status": "blocked",
-            "scanner": scanner,
-            "state_after": S7_STOPPED,
-            "reason": "experiment stopped",
-        }
-    
+        return s7stopped(scanner)
+
     try:
         # ---------------------------------------------------------
         # Step 1: normalize script command
@@ -110,111 +117,33 @@ def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> 
         action, args = _normalize_mobility_command(action, args)
 
         # ---------------------------------------------------------
-        # Step 2: update planned location (script intent)
+        # Step 2: update planned location (script intent only)
         # ---------------------------------------------------------
         planned = _s0_init_planned(scanner)
         new_planned = _apply_mobility_command_to_pose(planned, action, args)
         _save_planned(scanner, new_planned)
 
         # ---------------------------------------------------------
-        # Step 3: build actual motion command (NEW CORE)
-        # ---------------------------------------------------------
-        issued_action, issued_args, build_debug = _build_command_from_true_to_planned(scanner)
-
-        # ---------------------------------------------------------
-        # Step 4: determine start pose (for path check)
-        # Safety rule:
-        # if true location is unavailable at S0 entry, stop immediately.    
-        # ---------------------------------------------------------
-        start = _load_true(scanner)
-        if not _is_loc_ok(start):
-            raise ValueError("true_location_json invalid at s0 entry")
-
-        # ---------------------------------------------------------
-        # Step 5: path safety check
-        # ---------------------------------------------------------
-        tx = float(start["x_m"])
-        ty = float(start["y_m"])
-        px = float(new_planned["x_m"])
-        py = float(new_planned["y_m"])
-
-        path_ok, blocked = _is_path_clear(tx, ty, px, py, exclude_scanner=scanner)
-
-        if not path_ok:
-            _set_state(scanner, S7_STOPPED, f"script command path unsafe, blocked={len(blocked)}")
-            stop_result = s7stopped(scanner)
-            stop_result.update({
-                "scanner": scanner,
-                "reason": "path unsafe",
-                "blocked_cells": len(blocked),
-                "debug": build_debug,
-            })
-            return stop_result
-        
-        # ---------------------------------------------------------
-        # Step 6: record issued command 
-        # IMPORTANT: record the modified low-level command, not the script command
-        # ---------------------------------------------------------
-        ts = local_ts()
-
-        _hset_many(
-            key_time(scanner),
-            {
-                "last_planned_command_issued_at": ts,
-            },
-        )
-
-        _hset_many(
-            key_pose(scanner),
-            {
-                "last_planned_command_action": issued_action,
-                "last_planned_command_args_json": issued_args,
-            },
-        )
-
-        # ---------------------------------------------------------
-        # Step 7: reset correction counter (new script command)
+        # Step 3: reset correction counter for this new script command
+        # Counter semantics:
+        #   -1 : no command issued yet
+        #    0 : initial modified command already issued
+        #   >=1: true correction attempts
         # ---------------------------------------------------------
         _reset_correction_counter(scanner)
 
         # ---------------------------------------------------------
-        # Step 8: debug info
+        # Step 4: transition to S5
+        # S0 does NOT issue commands anymore.
+        # S5/S6 now own command computation + issuance.
         # ---------------------------------------------------------
-        _hset_many(
-            key_state(scanner),
-            {
-                "last_command_build_debug": build_debug,
-                "outgoing_command_action": issued_action,
-                "outgoing_command_args_json": issued_args,
-                "outgoing_command_source": "script",
-                "outgoing_command_updated_at": ts,
-            },
-        )
-
-        # ---------------------------------------------------------
-        # Step 9: transition
-        # ---------------------------------------------------------
-        _set_state(scanner, S1_WAITING_REPORT, f"issued {issued_action}")
-
-        return {
-            "status": "ok",
-            "scanner": scanner,
-            "issued_action": issued_action,
-            "issued_args": issued_args,
-            "new_planned": new_planned,
-            "state_after": S1_WAITING_REPORT,
-            "debug": build_debug,
-        }
-
+        _set_state(scanner, S5_COMPUTING_CORRECTION, f"script accepted: {action}")
+        return run_state_machine(scanner)
+    
     except Exception as e:
         _set_state(scanner, S7_STOPPED, f"s0 stop: {e}")
-        stop_result = s7stopped(scanner)
-        stop_result.update({
-            "scanner": scanner,
-            "reason": str(e),
-        })
-        return stop_result
-
+        return s7stopped(scanner)
+    
 def _s0_init_planned(scanner: str) -> Dict[str, Any]:
     planned = _load_planned(scanner)
     if _is_loc_ok(planned):
@@ -242,28 +171,114 @@ def _s0_init_planned(scanner: str) -> Dict[str, Any]:
 # ===== s1waiting_report =====
 
 def s1waiting_report(scanner: str) -> Dict[str, Any]:
-    ok, reason = _s1_has_fresh_report(scanner)
+    return {
+        "status": "waiting",
+        "state": S1_WAITING_REPORT,
+        "detail": "waiting for expected mobility report",
+    }
 
-    if not ok:
-        _hset_many(
-            key_state(scanner),
-            {
-                "state_detail": f"s1 waiting: {reason}",
-                "state_updated_at": local_ts(),
-            },
-        )
+def process_s1_event(scanner: str, source: str, timer_token: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Unified S1 event resolver.
+
+    source:
+      - "report"  : triggered by robot API report arrival
+      - "timeout" : triggered by S1 timer callback
+    """
+    owner = _acquire_s1_lock(scanner)
+    if not owner:
         return {
-            "status": "waiting",
-            "state": S1_WAITING_REPORT,
-            "detail": reason,
+            "status": "blocked",
+            "scanner": scanner,
+            "detail": "s1 event lock busy",
         }
 
-    return enter_s1waiting_report_on_report(scanner)
+    try:
+        state = _get_state(scanner)
+        if state != S1_WAITING_REPORT:
+            return {
+                "status": "blocked",
+                "scanner": scanner,
+                "state": state,
+                "detail": f"s1 event ignored in {state}",
+            }
+
+        # ---------------------------------------------------------
+        # Source A: report arrival
+        # ---------------------------------------------------------
+        if source == "report":
+            ok, reason = _s1_has_fresh_report(scanner)
+            if not ok:
+                return {
+                    "status": "waiting",
+                    "scanner": scanner,
+                    "state": S1_WAITING_REPORT,
+                    "detail": reason,
+                }
+
+            match_ok, match_reason = _s1_report_matches_expected_command(scanner)
+            if not match_ok:
+                return {
+                    "status": "waiting",
+                    "scanner": scanner,
+                    "state": S1_WAITING_REPORT,
+                    "detail": match_reason,
+                }
+
+            _cancel_s1_timer(scanner)
+            return enter_s1waiting_report_on_report(scanner)
+
+        # ---------------------------------------------------------
+        # Source B: timeout callback
+        # ---------------------------------------------------------
+        if source == "timeout":
+            current_token = _hget(key_time(scanner), "s1_timer_token", "")
+            if not current_token or str(current_token) != str(timer_token or ""):
+                return {
+                    "status": "ignored",
+                    "scanner": scanner,
+                    "detail": "stale s1 timeout token",
+                }
+
+            # If a valid report is already present, let normal path win.
+            ok, _ = _s1_has_fresh_report(scanner)
+            if ok:
+                match_ok, _ = _s1_report_matches_expected_command(scanner)
+                if match_ok:
+                    _cancel_s1_timer(scanner)
+                    return enter_s1waiting_report_on_report(scanner)
+
+            # No acceptable report has arrived in time -> dangerous.
+            state_hash = key_state(scanner)
+            old_busy_count = int(_hget(state_hash, "busy_count", "0") or "0")
+            new_busy_count = old_busy_count + 1
+
+            _hset_many(
+                state_hash,
+                {
+                    "busy_count": str(new_busy_count),
+                    "state_detail": f"s1 timeout after {S1_REPORT_TIMEOUT_SEC}s",
+                    "state_updated_at": local_ts(),
+                },
+            )
+
+            _cancel_s1_timer(scanner)
+            _set_state(scanner, S4_WAITING_LOCATION_RETRY, f"s1 timeout after {S1_REPORT_TIMEOUT_SEC}s")
+            return run_state_machine(scanner)
+
+        return {
+            "status": "error",
+            "scanner": scanner,
+            "detail": f"unknown s1 event source: {source}",
+        }
+
+    finally:
+        _release_s1_lock(scanner, owner)
 
 def enter_s1waiting_report_on_report(scanner: str) -> Dict[str, Any]:
     """
     Unfinished temporary function
-    Entry point when a fresh mobility report is available in S1.
+    Entry point when a fresh and expected mobility report is available in S1.
     Transition to S2 and immediately chain, since there is no ticking clock.
     """
     report = _load_report_json(scanner)
@@ -289,30 +304,166 @@ def _s1_has_fresh_report(scanner: str) -> tuple[bool, str]:
 
     return True, ""
 
+def _s1_has_timed_out(scanner: str) -> tuple[bool, str]:
+    issued_ts = _hget(key_time(scanner), "last_planned_command_issued_at", "")
+    if not issued_ts:
+        return False, "missing last_planned_command_issued_at"
+
+    try:
+        issued_dt = parse_local_dt(issued_ts)
+        now_dt = parse_local_dt(local_ts())
+    except Exception:
+        return False, "time parse failed"
+
+    elapsed = (now_dt - issued_dt).total_seconds()
+    if elapsed >= S1_REPORT_TIMEOUT_SEC:
+        return True, f"s1 report timeout after {int(elapsed)} sec"
+
+    return False, ""
+
+def _s1_report_matches_expected_command(scanner: str) -> tuple[bool, str]:
+    report = _load_report_json(scanner)
+    if not isinstance(report, dict) or not report:
+        return False, "missing mobility report json"
+
+    expected_action = _hget(key_pose(scanner), "last_planned_command_action", "")
+    expected_args = _hget(key_pose(scanner), "last_planned_command_args_json", "")
+
+    report_action = str(report.get("last_command") or "").strip()
+    report_args = report.get("last_command_args") or {}
+
+    if not expected_action:
+        return False, "missing expected action"
+    if report_action != expected_action:
+        return False, f"report action mismatch: expected {expected_action}, got {report_action}"
+
+    try:
+        expected_action_n, expected_args_n = _normalize_mobility_command(expected_action, expected_args)
+        report_action_n, report_args_n = _normalize_mobility_command(report_action, report_args)
+    except Exception as e:
+        return False, f"command normalization failed: {e}"
+
+    if expected_action_n != report_action_n:
+        return False, f"normalized action mismatch: expected {expected_action_n}, got {report_action_n}"
+
+    if expected_args_n != report_args_n:
+        return False, "normalized command args mismatch"
+
+    return True, ""
+
+def _s1_lock_key(scanner: str) -> str:
+    return f"{KEY_PREFIX}scanner:{scanner}:mobility:s1_event_lock"
+
+def _acquire_s1_lock(scanner: str) -> str:
+    owner = uuid.uuid4().hex
+    ok = r.set(_s1_lock_key(scanner), owner, nx=True, ex=S1_EVENT_LOCK_TTL_SEC)
+    return owner if ok else ""
+
+def _release_s1_lock(scanner: str, owner: str) -> None:
+    key = _s1_lock_key(scanner)
+    try:
+        cur = r.get(key) or ""
+        if isinstance(cur, bytes):
+            cur = cur.decode("utf-8", errors="ignore")
+        if str(cur) == str(owner):
+            r.delete(key)
+    except Exception:
+        pass
+
+def _start_s1_timer(scanner: str) -> None:
+    _cancel_s1_timer(scanner)
+
+    token = uuid.uuid4().hex
+    _hset_many(
+        key_time(scanner),
+        {
+            "s1_timer_token": token,
+            "s1_timer_started_at": local_ts(),
+        },
+    )
+
+    t = threading.Timer(S1_REPORT_TIMEOUT_SEC, _s1_timeout_callback, args=(scanner, token))
+    t.daemon = True
+    _S1_TIMERS[scanner] = t
+    t.start()
+
+def _cancel_s1_timer(scanner: str) -> None:
+    t = _S1_TIMERS.pop(scanner, None)
+    if t is not None:
+        try:
+            t.cancel()
+        except Exception:
+            pass
+
+    _hset_many(
+        key_time(scanner),
+        {
+            "s1_timer_token": "",
+            "s1_timer_started_at": "",
+        },
+    )
+
+def _s1_timeout_callback(scanner: str, token: str) -> None:
+    process_s1_event(scanner, source="timeout", timer_token=token)
+
 
 # ===== s2evaluating_policy =====
 
 def s2evaluating_policy(scanner: str) -> Dict[str, Any]:
-    """
-    Unfinished temporary function
-    ToDo:
-    - hook the resent mobility command into the real outbound robot command queue
-    - current code only prepares the reissued command preview/state transition
-    """
+    entry_reason = _get_s2_entry_reason(scanner)
+
+    # ---------------------------------------------------------
+    # Special entry: busy retry timer fired
+    # ---------------------------------------------------------
+    if entry_reason == "busy_retry_timer":
+        _clear_s2_entry_reason(scanner)
+
+        last_action = _hget(key_pose(scanner), "last_planned_command_action", "")
+        last_args = _hget(key_pose(scanner), "last_planned_command_args_json", "")
+
+        if not last_action or not last_args:
+            _cancel_busy_retry_timer(scanner)
+            _set_state(scanner, S7_STOPPED, "MOBILITY_BUSY retry missing previous command")
+            return s7stopped(scanner)
+
+        _save_outgoing_command_preview(
+            scanner,
+            action=last_action,
+            args=last_args,
+            source="retry_busy",
+        )
+
+        _save_last_issued_command(
+            scanner,
+            action=last_action,
+            args=last_args,
+        )
+
+        _cancel_busy_retry_timer(scanner)
+        _set_state(scanner, S1_WAITING_REPORT, "busy retry command reissued")
+        _start_s1_timer(scanner)
+
+        return {
+            "state": S1_WAITING_REPORT,
+            "status": "retry",
+            "detail": "busy retry command reissued",
+        }
+
+    # ---------------------------------------------------------
+    # Normal entry: evaluate latest report policy
+    # ---------------------------------------------------------
     result = _s2_evaluate_policy(scanner)
 
     transition_to = result["transition_to"]
     _set_state(scanner, transition_to, result["detail"])
 
-    # boundary wait state: stop chaining here
-    if transition_to == S1_WAITING_REPORT:
+    if transition_to in (S0_IDLE, S1_WAITING_REPORT, S2_EVALUATING_POLICY):
         return {
             "state": transition_to,
             "status": result["status"],
             "detail": result["detail"],
         }
 
-    # all other states should run immediately
     return run_state_machine(scanner)
 
 def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
@@ -361,6 +512,25 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
             "detail": "healthy mobility report",
         }
 
+    # No-tag-visible path
+    # This is treated as normal operation for sparse-tag deployment.
+    # Allow S3 to decide whether propagation is safe.
+    if last_error_code in NO_TAG_OK_CODES:
+        out.update({
+            "need_location_retry": "false",
+            "stop_experiment": "false",
+            "stop_reason": "",
+            "robot_safety_state": "NORMAL_NO_TAG",
+            "retry_count": "0",
+        })
+        _hset_many(state_hash, out)
+        _save_policy_time(scanner)
+        return {
+            "status": "ok",
+            "transition_to": S3_SOLVING_TRUE_LOCATION,
+            "detail": f"{last_error_code}: continue to s3 for propagation decision",
+        }
+
     # Immediate stop
     if last_error_code in IMMEDIATE_STOP_ERROR_CODES:
         out.update({
@@ -380,41 +550,28 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
     # Busy
     if last_error_code == "MOBILITY_BUSY":
         busy_count = old_busy_count + 1
+        unexpected_sum = _unexpected_event_sum(
+            busy_count=busy_count,
+            collision_veto_count=old_collision_veto_count,
+            exec_fail_count=old_exec_fail_count,
+        )
 
-        if busy_count >= BUSY_STOP_THRESHOLD:
+        if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT:
             out.update({
                 "busy_count": str(busy_count),
                 "need_location_retry": "false",
                 "stop_experiment": "true",
-                "stop_reason": "MOBILITY_BUSY_PERSISTENT",
+                "stop_reason": "UNEXPECTED_EVENT_SUM_LIMIT",
                 "robot_safety_state": "UNSAFE_STOP",
             })
             _hset_many(state_hash, out)
             _save_policy_time(scanner)
+            _cancel_busy_retry_timer(scanner)
+            _clear_s2_entry_reason(scanner)
             return {
                 "status": "stop",
                 "transition_to": S7_STOPPED,
-                "detail": f"MOBILITY_BUSY count={busy_count}",
-            }
-
-        # Reissue the previous mobility command instead of waiting forever.
-        last_action = _hget(key_pose(scanner), "last_planned_command_action", "")
-        last_args = _hget(key_pose(scanner), "last_planned_command_args_json", "")
-
-        if not last_action or not last_args:
-            out.update({
-                "busy_count": str(busy_count),
-                "need_location_retry": "false",
-                "stop_experiment": "true",
-                "stop_reason": "MOBILITY_BUSY_REISSUE_MISSING",
-                "robot_safety_state": "UNSAFE_STOP",
-            })
-            _hset_many(state_hash, out)
-            _save_policy_time(scanner)
-            return {
-                "status": "stop",
-                "transition_to": S7_STOPPED,
-                "detail": "MOBILITY_BUSY but previous command is unavailable for reissue",
+                "detail": f"MOBILITY_BUSY sum={unexpected_sum}",
             }
 
         out.update({
@@ -427,59 +584,37 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
         _hset_many(state_hash, out)
         _save_policy_time(scanner)
 
-        _save_outgoing_command_preview(
-            scanner,
-            action=last_action,
-            args_json=last_args,
-            source="retry_busy",
-        )
-
-        _save_last_issued_command(
-            scanner,
-            action=last_action,
-            args_json=last_args,
-        )
+        _set_s2_entry_reason(scanner, "busy_retry_timer")
+        _start_busy_retry_timer(scanner)
 
         return {
-            "status": "retry",
-            "transition_to": S1_WAITING_REPORT,
-            "detail": f"MOBILITY_BUSY count={busy_count}; previous command reissued",
-        }
-
-    # Busy
-    if last_error_code == "MOBILITY_BUSY":
-        busy_count = old_busy_count + 1
-        out.update({
-            "busy_count": str(busy_count),
-            "need_location_retry": "false",
-            "stop_experiment": "true" if busy_count >= BUSY_STOP_THRESHOLD else "false",
-            "stop_reason": "MOBILITY_BUSY_PERSISTENT" if busy_count >= BUSY_STOP_THRESHOLD else "",
-            "robot_safety_state": "UNSAFE_STOP" if busy_count >= BUSY_STOP_THRESHOLD else "WAITING_PREVIOUS_MOTION",
-        })
-        _hset_many(state_hash, out)
-        _save_policy_time(scanner)
-        return {
-            "status": "stop" if busy_count >= BUSY_STOP_THRESHOLD else "wait",
-            "transition_to": S7_STOPPED if busy_count >= BUSY_STOP_THRESHOLD else S1_WAITING_REPORT,
-            "detail": f"MOBILITY_BUSY count={busy_count}",
+            "status": "wait",
+            "transition_to": S2_EVALUATING_POLICY,
+            "detail": f"MOBILITY_BUSY sum={unexpected_sum}; busy retry timer started",
         }
 
     # Collision vetoes
     if last_error_code in COLLISION_ERROR_CODES:
         veto_count = old_collision_veto_count + 1
+        unexpected_sum = _unexpected_event_sum(
+            busy_count=old_busy_count,
+            collision_veto_count=veto_count,
+            exec_fail_count=old_exec_fail_count,
+        )
+
         out.update({
             "collision_veto_count": str(veto_count),
             "need_location_retry": "true",
-            "stop_experiment": "true" if veto_count >= COLLISION_VETO_STOP_THRESHOLD else "false",
-            "stop_reason": f"{last_error_code}_PERSISTENT" if veto_count >= COLLISION_VETO_STOP_THRESHOLD else "",
-            "robot_safety_state": "UNSAFE_STOP" if veto_count >= COLLISION_VETO_STOP_THRESHOLD else "COLLISION_BLOCKED",
+            "stop_experiment": "true" if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT else "false",
+            "stop_reason": "UNEXPECTED_EVENT_SUM_LIMIT" if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT else "",
+            "robot_safety_state": "UNSAFE_STOP" if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT else "COLLISION_BLOCKED",
         })
         _hset_many(state_hash, out)
         _save_policy_time(scanner)
         return {
-            "status": "stop" if veto_count >= COLLISION_VETO_STOP_THRESHOLD else "retry",
-            "transition_to": S7_STOPPED if veto_count >= COLLISION_VETO_STOP_THRESHOLD else S4_WAITING_LOCATION_RETRY,
-            "detail": f"{last_error_code} count={veto_count}",
+            "status": "stop" if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT else "retry",
+            "transition_to": S7_STOPPED if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT else S4_WAITING_LOCATION_RETRY,
+            "detail": f"{last_error_code} sum={unexpected_sum}",
         }
 
     # Recoverable failures
@@ -490,18 +625,20 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
         if last_error_code in ("MOVE_EXEC_FAIL", "TURN_EXEC_FAIL"):
             exec_fail_count += 1
 
-        stop = (retry_count >= LOCATION_RETRY_LIMIT) or (exec_fail_count >= EXEC_FAIL_STOP_THRESHOLD)
+        unexpected_sum = _unexpected_event_sum(
+            busy_count=old_busy_count,
+            collision_veto_count=old_collision_veto_count,
+            exec_fail_count=exec_fail_count,
+        )
+
+        stop = unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT
 
         out.update({
             "retry_count": str(retry_count),
             "exec_fail_count": str(exec_fail_count),
             "need_location_retry": "true",
             "stop_experiment": "true" if stop else "false",
-            "stop_reason": (
-                f"{last_error_code}_REPEATED" if exec_fail_count >= EXEC_FAIL_STOP_THRESHOLD
-                else f"{last_error_code}_RETRY_EXCEEDED" if retry_count >= LOCATION_RETRY_LIMIT
-                else ""
-            ),
+            "stop_reason": "UNEXPECTED_EVENT_SUM_LIMIT" if stop else "",
             "robot_safety_state": "UNSAFE_STOP" if stop else "LOCATION_RECOVERY_NEEDED",
         })
         _hset_many(state_hash, out)
@@ -509,9 +646,9 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
         return {
             "status": "stop" if stop else "retry",
             "transition_to": S7_STOPPED if stop else S4_WAITING_LOCATION_RETRY,
-            "detail": f"{last_error_code} retry_count={retry_count} exec_fail_count={exec_fail_count}",
+            "detail": f"{last_error_code} sum={unexpected_sum}",
         }
-
+    
     # Unknown error code -> conservative stop
     if last_error_code:
         out.update({
@@ -547,21 +684,112 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
         "detail": f"unexpected status '{last_exec_status}'",
     }
 
+def _unexpected_event_sum(
+    busy_count: int,
+    collision_veto_count: int,
+    exec_fail_count: int,
+) -> int:
+    return int(busy_count) + int(collision_veto_count) + int(exec_fail_count)
+
+def _start_busy_retry_timer(scanner: str) -> None:
+    _cancel_busy_retry_timer(scanner)
+
+    token = uuid.uuid4().hex
+    _hset_many(
+        key_time(scanner),
+        {
+            "busy_retry_token": token,
+            "busy_retry_started_at": local_ts(),
+        },
+    )
+
+    t = threading.Timer(MOBILITY_BUSY_RETRY_WAIT_SEC, _busy_retry_timeout_callback, args=(scanner, token))
+    t.daemon = True
+    _BUSY_RETRY_TIMERS[scanner] = t
+    t.start()
+
+def _cancel_busy_retry_timer(scanner: str) -> None:
+    t = _BUSY_RETRY_TIMERS.pop(scanner, None)
+    if t is not None:
+        try:
+            t.cancel()
+        except Exception:
+            pass
+
+    _hset_many(
+        key_time(scanner),
+        {
+            "busy_retry_token": "",
+            "busy_retry_started_at": "",
+        },
+    )
+
+def _busy_retry_timeout_callback(scanner: str, token: str) -> None:
+    current_state = _get_state(scanner)
+    current_token = _hget(key_time(scanner), "busy_retry_token", "")
+    entry_reason = _get_s2_entry_reason(scanner)
+
+    # ---------------------------------------------------------
+    # Validate ownership
+    # ---------------------------------------------------------
+    if current_state != S2_EVALUATING_POLICY:
+        return
+    if str(current_token or "") != str(token):
+        return
+    if entry_reason != "busy_retry_timer":
+        return
+
+    # ---------------------------------------------------------
+    # This timer owns the retry → clean up FIRST
+    # ---------------------------------------------------------
+    _cancel_busy_retry_timer(scanner)
+    _clear_s2_entry_reason(scanner)
+
+    # ---------------------------------------------------------
+    # Re-enter S2 in retry mode
+    # ---------------------------------------------------------
+    run_state_machine(scanner)
+
+def _set_s2_entry_reason(scanner: str, reason: str) -> None:
+    _hset_many(
+        key_state(scanner),
+        {
+            "s2_entry_reason": str(reason or ""),
+        },
+    )
+
+def _get_s2_entry_reason(scanner: str) -> str:
+    return str(_hget(key_state(scanner), "s2_entry_reason", "") or "").strip()
+
+def _clear_s2_entry_reason(scanner: str) -> None:
+    _hset_many(
+        key_state(scanner),
+        {
+            "s2_entry_reason": "",
+        },
+    )
+
 
 # ===== s3solving_true_location =====
 
 def s3solving_true_location(scanner: str) -> Dict[str, Any]:
     loc = _s3_solve_true_location(scanner)
 
-    # Case A: AprilTag solve succeeds -> trust it fully
+    # ---------------------------------------------------------
+    # Case A: AprilTag solve succeeds -> update true and continue to S5
+    # ---------------------------------------------------------
     if loc.get("location_ok") is True:
         _s3_save_true_location(scanner, loc)
         _update_10s_report(scanner)
         _set_state(scanner, S5_COMPUTING_CORRECTION, "true location solved")
         return run_state_machine(scanner)
 
-    # Case B: no AprilTag solve -> propagate true_location by LAST ISSUED command
-    if _should_propagate_true(scanner):
+    # ---------------------------------------------------------
+    # Case B: no AprilTag solve -> propagate true by last issued command
+    # If propagation succeeds, continue to S5 as well.
+    # S3 no longer decides "done"; S5 owns that responsibility now.
+    # ---------------------------------------------------------
+    if _propagation_allowed(scanner) and _should_propagate_true(scanner):
         propagated = _propagate_true_by_last_command(scanner)
         if _is_loc_ok(propagated):
             _hset_many(
@@ -573,24 +801,27 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
                 },
             )
             _update_10s_report(scanner)
-            _set_state(scanner, S0_IDLE, "no apriltag update, true propagated")
-            return {
-                "state": S0_IDLE,
-                "status": "ok",
-                "detail": f"no apriltag update, true propagated: {loc.get('detail', '')}",
-                "true_location": propagated,
-            }
+            _set_state(scanner, S5_COMPUTING_CORRECTION, "true propagated, continue to s5")
+            return run_state_machine(scanner)
 
+    # ---------------------------------------------------------
     # Case C: cannot solve and cannot propagate -> retry path
+    # ---------------------------------------------------------
+    propagation_reason = loc.get("detail", "")
+    if not _propagation_allowed(scanner):
+        propagation_reason = f"{propagation_reason}; propagation disabled by unexpected-event history"
+    elif not _should_propagate_true(scanner):
+        propagation_reason = f"{propagation_reason}; propagation precondition failed"
+
     _hset_many(
         key_state(scanner),
         {
             "true_propagation_applied": "false",
-            "true_propagation_detail": loc.get("detail", ""),
+            "true_propagation_detail": propagation_reason,
             "true_propagation_time": local_ts(),
         },
     )
-    _set_state(scanner, S4_WAITING_LOCATION_RETRY, f"solve failed: {loc.get('detail', '')}")
+    _set_state(scanner, S4_WAITING_LOCATION_RETRY, f"solve failed: {propagation_reason}")
     return run_state_machine(scanner)
 
 def _s3_solve_true_location(scanner: str) -> Dict[str, Any]:
@@ -835,6 +1066,19 @@ def _s3_save_true_location(scanner: str, loc: Dict[str, Any]) -> None:
         },
     )
 
+def _propagation_allowed(scanner: str) -> bool:
+    state_hash = key_state(scanner)
+
+    busy_count = int(_hget(state_hash, "busy_count", "0") or "0")
+    collision_veto_count = int(_hget(state_hash, "collision_veto_count", "0") or "0")
+    exec_fail_count = int(_hget(state_hash, "exec_fail_count", "0") or "0")
+
+    return _unexpected_event_sum(
+        busy_count=busy_count,
+        collision_veto_count=collision_veto_count,
+        exec_fail_count=exec_fail_count,
+    ) == 0
+
 
 # ===== s4waiting_location_retry =====
 
@@ -844,12 +1088,25 @@ def s4waiting_location_retry(scanner: str) -> Dict[str, Any]:
     transition_to = result["transition_to"]
     _set_state(scanner, transition_to, result["detail"])
 
-    return {
-        "state": transition_to,
-        "status": result["status"],
-        "detail": result["detail"],
-        **({"last_retry_requested_at": result["last_retry_requested_at"]} if "last_retry_requested_at" in result else {}),
-    }
+    if transition_to == S1_WAITING_REPORT:
+        _start_s1_timer(scanner)
+        out = {
+            "state": transition_to,
+            "status": result["status"],
+            "detail": result["detail"],
+        }
+        if "last_retry_requested_at" in result:
+            out["last_retry_requested_at"] = result["last_retry_requested_at"]
+        return out
+
+    if transition_to == S0_IDLE:
+        return {
+            "state": transition_to,
+            "status": result["status"],
+            "detail": result["detail"],
+        }
+
+    return run_state_machine(scanner)
 
 def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
     state_hash = key_state(scanner)
@@ -900,7 +1157,7 @@ def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
     }
 
 
-# ===== s5computing_correction =====
+# ===== s5computing_correction/ compute-next-command =====
 
 def s5computing_correction(scanner: str) -> Dict[str, Any]:
     result = _s5_compute_correction(scanner)
@@ -921,135 +1178,245 @@ def s5computing_correction(scanner: str) -> Dict[str, Any]:
     return run_state_machine(scanner)
 
 def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
-    
-    if _get_correction_counter(scanner) >= 1:
-        _clear_pending_sequence(scanner)
-        return {
-            "status": "ok",
-            "transition_to": S0_IDLE,
-            "detail": "correction already attempted, skip further correction",
-            "error": {},
-            "pending_sequence": [],
-        }
-
     true_loc = _load_true(scanner)
     planned_loc = _load_planned(scanner)
 
-    if not _is_loc_ok(true_loc):
-        _clear_pending_sequence(scanner)
+    if not _is_loc_ok(planned_loc):
         return {
-            "status": "ok",
-            "transition_to": S0_IDLE,
-            "detail": "true_location unavailable, skip correction",
+            "status": "stop",
+            "transition_to": S7_STOPPED,
+            "detail": "planned location invalid in s5",
             "error": {},
             "pending_sequence": [],
         }
 
-    if not _is_loc_ok(planned_loc):
-        _clear_pending_sequence(scanner)
+    if not _is_loc_ok(true_loc):
         return {
             "status": "stop",
             "transition_to": S7_STOPPED,
-            "detail": "planned_location_json invalid",
+            "detail": "true location invalid in s5",
             "error": {},
             "pending_sequence": [],
         }
 
     err = _pose_error(true_loc, planned_loc)
-
-    pos_ignore = float(MOBILITY_POS_IGNORE_THRESH_M)
-    pos_correct = float(MOBILITY_POS_CORRECT_THRESH_M)
-    pos_max = float(MOBILITY_POS_CORRECT_MAX_M)
-
-    ang_ignore = float(MOBILITY_ANGLE_IGNORE_THRESH_DEG)
-    ang_max = float(MOBILITY_ANGLE_CORRECT_MAX_DEG)
-
-    dpos = abs(float(err["dpos_m"]))
+    dpos = float(err["dpos_m"])
     dhead = abs(float(err["dhead_deg"]))
 
-    # Case 1: no correction needed
-    if dpos <= pos_ignore and dhead <= ang_ignore:
+    # ---------------------------------------------------------
+    # If already close enough, no command is needed.
+    # ---------------------------------------------------------
+    if dpos <= MOBILITY_POS_IGNORE_THRESH_M and dhead <= MOBILITY_ANGLE_IGNORE_THRESH_DEG:
         _clear_pending_sequence(scanner)
+        _clear_outgoing_command_preview(scanner)
         return {
             "status": "ok",
             "transition_to": S0_IDLE,
-            "detail": "correction not needed",
+            "detail": "already close enough to planned location",
             "error": err,
             "pending_sequence": [],
         }
 
-    # Case 2: heading-only correction
-    if dpos <= pos_ignore and dhead > ang_ignore:
-        if dhead > ang_max:
-            _clear_pending_sequence(scanner)
-            return {
-                "status": "stop",
-                "transition_to": S7_STOPPED,
-                "detail": f"heading correction too large: {dhead:.3f} deg",
-                "error": err,
-                "pending_sequence": [],
-            }
-
-        seq = _build_turn_only_command(true_loc, planned_loc)
-        _save_pending_sequence(scanner, seq, "heading_only")
+    # ---------------------------------------------------------
+    # Correction / command issue limit
+    # Counter semantics:
+    #   -1 : no command issued yet
+    #    0 : initial modified command already issued
+    #   >=1: true correction attempts
+    # ---------------------------------------------------------
+    if _get_correction_counter(scanner) >= CORRECTION_ATTEMPT_LIMIT:
+        _clear_pending_sequence(scanner)
+        _clear_outgoing_command_preview(scanner)
         return {
             "status": "ok",
-            "transition_to": S6_ISSUING_CORRECTION,
-            "detail": "heading-only correction prepared",
+            "transition_to": S0_IDLE,
+            "detail": f"correction limit reached ({CORRECTION_ATTEMPT_LIMIT})",
             "error": err,
-            "pending_sequence": seq,
+            "pending_sequence": [],
         }
 
-    # Case 3: full correction
-    if dpos > pos_correct:
-        if dpos > pos_max:
-            _clear_pending_sequence(scanner)
-            return {
-                "status": "stop",
-                "transition_to": S7_STOPPED,
-                "detail": f"position correction too large: {dpos:.3f} m",
-                "error": err,
-                "pending_sequence": [],
-            }
+    # ---------------------------------------------------------
+    # Build next command from current true -> current planned
+    # ---------------------------------------------------------
+    action, args, correction_detail = _build_command_from_true_to_planned(scanner)
 
-        seq, corr_detail = _build_turn_move_turn_forward_command(true_loc, planned_loc)
-
-        tx = float(true_loc["x_m"])
-        ty = float(true_loc["y_m"])
-        px = float(planned_loc["x_m"])
-        py = float(planned_loc["y_m"])
-
-        path_clear, blocked = _is_path_clear(tx, ty, px, py, exclude_scanner=scanner)
-
-        if not path_clear:
-            _clear_pending_sequence(scanner)
-            return {
-                "status": "stop",
-                "transition_to": S7_STOPPED,
-                "detail": f"correction path unsafe, blocked_cells={len(blocked)}",
-                "error": err,
-                "pending_sequence": [],
-            }
-
-        _save_pending_sequence(scanner, seq, "full_correction")
+    if not action:
+        _clear_pending_sequence(scanner)
+        _clear_outgoing_command_preview(scanner)
         return {
             "status": "ok",
-            "transition_to": S6_ISSUING_CORRECTION,
-            "detail": "full correction prepared",
+            "transition_to": S0_IDLE,
+            "detail": "no command needed",
             "error": err,
-            "pending_sequence": seq,
-            "correction_detail": corr_detail,
+            "pending_sequence": [],
+            "correction_detail": correction_detail,
         }
 
-    # Case 4: small residual error not worth correcting
-    _clear_pending_sequence(scanner)
+    # ---------------------------------------------------------
+    # Path safety belongs to S5 now
+    # ---------------------------------------------------------
+    tx = float(true_loc["x_m"])
+    ty = float(true_loc["y_m"])
+
+    simulated_target = _apply_mobility_command_to_pose(true_loc, action, args)
+    px = float(simulated_target["x_m"])
+    py = float(simulated_target["y_m"])
+
+    path_ok, blocked = _is_path_clear(tx, ty, px, py, exclude_scanner=scanner)
+    if not path_ok:
+        _clear_pending_sequence(scanner)
+        _clear_outgoing_command_preview(scanner)
+        return {
+            "status": "stop",
+            "transition_to": S7_STOPPED,
+            "detail": f"path unsafe in s5, blocked={len(blocked)}",
+            "error": err,
+            "pending_sequence": [],
+            "correction_detail": correction_detail,
+        }
+
+    seq = [{"action": action, "args": args}]
+    _save_pending_sequence(scanner, seq, "computed_by_s5")
+
     return {
         "status": "ok",
-        "transition_to": S0_IDLE,
-        "detail": "correction not needed (small residual error)",
+        "transition_to": S6_ISSUING_CORRECTION,
+        "detail": f"computed command {action}",
         "error": err,
-        "pending_sequence": [],
+        "pending_sequence": seq,
+        "correction_detail": correction_detail,
     }
+
+# def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
+    
+#     if _get_correction_counter(scanner) >= CORRECTION_ATTEMPT_LIMIT:
+#         _clear_pending_sequence(scanner)
+#         return {
+#             "status": "ok",
+#             "transition_to": S0_IDLE,
+#             "detail": "correction already attempted, skip further correction",
+#             "error": {},
+#             "pending_sequence": [],
+#         }
+
+#     true_loc = _load_true(scanner)
+#     planned_loc = _load_planned(scanner)
+
+#     if not _is_loc_ok(true_loc):
+#         _clear_pending_sequence(scanner)
+#         return {
+#             "status": "ok",
+#             "transition_to": S0_IDLE,
+#             "detail": "true_location unavailable, skip correction",
+#             "error": {},
+#             "pending_sequence": [],
+#         }
+
+#     if not _is_loc_ok(planned_loc):
+#         _clear_pending_sequence(scanner)
+#         return {
+#             "status": "stop",
+#             "transition_to": S7_STOPPED,
+#             "detail": "planned_location_json invalid",
+#             "error": {},
+#             "pending_sequence": [],
+#         }
+
+#     err = _pose_error(true_loc, planned_loc)
+
+#     pos_ignore = float(MOBILITY_POS_IGNORE_THRESH_M)
+#     pos_correct = float(MOBILITY_POS_CORRECT_THRESH_M)
+#     pos_max = float(MOBILITY_POS_CORRECT_MAX_M)
+
+#     ang_ignore = float(MOBILITY_ANGLE_IGNORE_THRESH_DEG)
+#     ang_max = float(MOBILITY_ANGLE_CORRECT_MAX_DEG)
+
+#     dpos = abs(float(err["dpos_m"]))
+#     dhead = abs(float(err["dhead_deg"]))
+
+#     # Case 1: no correction needed
+#     if dpos <= pos_ignore and dhead <= ang_ignore:
+#         _clear_pending_sequence(scanner)
+#         return {
+#             "status": "ok",
+#             "transition_to": S0_IDLE,
+#             "detail": "correction not needed",
+#             "error": err,
+#             "pending_sequence": [],
+#         }
+
+#     # Case 2: heading-only correction
+#     if dpos <= pos_ignore and dhead > ang_ignore:
+#         if dhead > ang_max:
+#             _clear_pending_sequence(scanner)
+#             return {
+#                 "status": "stop",
+#                 "transition_to": S7_STOPPED,
+#                 "detail": f"heading correction too large: {dhead:.3f} deg",
+#                 "error": err,
+#                 "pending_sequence": [],
+#             }
+
+#         seq = _build_turn_only_command(true_loc, planned_loc)
+#         _save_pending_sequence(scanner, seq, "heading_only")
+#         return {
+#             "status": "ok",
+#             "transition_to": S6_ISSUING_CORRECTION,
+#             "detail": "heading-only correction prepared",
+#             "error": err,
+#             "pending_sequence": seq,
+#         }
+
+#     # Case 3: full correction
+#     if dpos > pos_correct:
+#         if dpos > pos_max:
+#             _clear_pending_sequence(scanner)
+#             return {
+#                 "status": "stop",
+#                 "transition_to": S7_STOPPED,
+#                 "detail": f"position correction too large: {dpos:.3f} m",
+#                 "error": err,
+#                 "pending_sequence": [],
+#             }
+
+#         seq, corr_detail = _build_turn_move_turn_forward_command(true_loc, planned_loc)
+
+#         tx = float(true_loc["x_m"])
+#         ty = float(true_loc["y_m"])
+#         px = float(planned_loc["x_m"])
+#         py = float(planned_loc["y_m"])
+
+#         path_clear, blocked = _is_path_clear(tx, ty, px, py, exclude_scanner=scanner)
+
+#         if not path_clear:
+#             _clear_pending_sequence(scanner)
+#             return {
+#                 "status": "stop",
+#                 "transition_to": S7_STOPPED,
+#                 "detail": f"correction path unsafe, blocked_cells={len(blocked)}",
+#                 "error": err,
+#                 "pending_sequence": [],
+#             }
+
+#         _save_pending_sequence(scanner, seq, "full_correction")
+#         return {
+#             "status": "ok",
+#             "transition_to": S6_ISSUING_CORRECTION,
+#             "detail": "full correction prepared",
+#             "error": err,
+#             "pending_sequence": seq,
+#             "correction_detail": corr_detail,
+#         }
+
+#     # Case 4: small residual error not worth correcting
+#     _clear_pending_sequence(scanner)
+#     return {
+#         "status": "ok",
+#         "transition_to": S0_IDLE,
+#         "detail": "correction not needed (small residual error)",
+#         "error": err,
+#         "pending_sequence": [],
+#     }
 
 
 # ===== s6issuing_correction =====
@@ -1060,7 +1427,8 @@ def s6issuing_correction(scanner: str) -> Dict[str, Any]:
     transition_to = result["transition_to"]
     _set_state(scanner, transition_to, result["detail"])
 
-    if transition_to in (S0_IDLE, S1_WAITING_REPORT):
+    if transition_to == S1_WAITING_REPORT:
+        _start_s1_timer(scanner)
         return {
             "state": transition_to,
             "status": result["status"],
@@ -1068,6 +1436,18 @@ def s6issuing_correction(scanner: str) -> Dict[str, Any]:
             "issued_command": result["issued_command"],
             **({"remaining_count": result["remaining_count"]} if "remaining_count" in result else {}),
             **({"issued_at": result["issued_at"]} if "issued_at" in result else {}),
+            **({"correction_count": result["correction_count"]} if "correction_count" in result else {}),
+        }
+
+    if transition_to == S0_IDLE:
+        return {
+            "state": transition_to,
+            "status": result["status"],
+            "detail": result["detail"],
+            "issued_command": result["issued_command"],
+            **({"remaining_count": result["remaining_count"]} if "remaining_count" in result else {}),
+            **({"issued_at": result["issued_at"]} if "issued_at" in result else {}),
+            **({"correction_count": result["correction_count"]} if "correction_count" in result else {}),
         }
 
     return run_state_machine(scanner)
@@ -1081,7 +1461,7 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
         return {
             "status": "ok",
             "transition_to": S0_IDLE,
-            "detail": "no pending correction command",
+            "detail": "no pending command to issue",
             "issued_command": {},
         }
 
@@ -1094,7 +1474,7 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
         return {
             "status": "stop",
             "transition_to": S7_STOPPED,
-            "detail": "invalid pending correction command",
+            "detail": "invalid pending command",
             "issued_command": {},
         }
 
@@ -1109,29 +1489,42 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
         return {
             "status": "stop",
             "transition_to": S7_STOPPED,
-            "detail": f"invalid correction command: {e}",
+            "detail": f"invalid command at s6: {e}",
             "issued_command": {},
         }
 
     # ---------------------------------------------------------
-    # S6 issues the correction command only.
+    # S6 is the sole command-issuance state.
     # It must NOT update planned_location_json or true_location_json.
-    # planned_location_json belongs only to S0 script intent.
-    # true_location_json is updated later in S3 after report processing.
     # ---------------------------------------------------------
 
     # ---------------------------------------------------------
-    # Save queue-preview (for debug / future queue hookup)
+    # Save outgoing preview
     # ---------------------------------------------------------
-    _save_outgoing_command_preview(scanner, action, args, "correction")
+    _save_outgoing_command_preview(
+        scanner,
+        action=action,
+        args=args,
+        source="mobility",
+    )
 
     # ---------------------------------------------------------
-    # Record issued command (this is what later S3 may propagate from)
+    # Record last issued command
+    # This is the command that later S3 may propagate from
+    # if AprilTag verification is unavailable.
     # ---------------------------------------------------------
-    issued_at = _save_last_issued_command(scanner, action, args)
+    issued_at = _save_last_issued_command(
+        scanner,
+        action=action,
+        args=args,
+    )
 
     # ---------------------------------------------------------
-    # Increment correction counter
+    # Increment command/correction counter
+    # Counter semantics:
+    #   -1 : before any issued command
+    #    0 : initial modified command issued
+    #   >=1: true correction attempts
     # ---------------------------------------------------------
     count = _inc_correction_counter(scanner)
 
@@ -1151,7 +1544,7 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
     return {
         "status": "ok",
         "transition_to": S1_WAITING_REPORT,
-        "detail": f"issued correction command {action}",
+        "detail": f"issued command {action}",
         "issued_command": {
             "action": action,
             "args": args,
