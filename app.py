@@ -10,7 +10,7 @@ import m4Commands
 import m5Northbound
 import m6AP
 import m7Traffic
-import m8Mobility
+import m8mobility
 import m9Admin
 
 # ==========================
@@ -34,7 +34,7 @@ app.include_router(m3Ingest.router)
 app.include_router(m4Commands.router)
 app.include_router(m6AP.router)
 app.include_router(m7Traffic.router)
-app.include_router(m8Mobility.router)
+app.include_router(m8mobility.router)
 app.include_router(m9Admin.router)
 
 # =============================

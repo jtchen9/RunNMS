@@ -9,10 +9,11 @@ Division rule:
 from typing import Dict, Any
 import json
 import config
-from m8mobility_pose import _is_loc_ok, _load_true
-from m8mobility_state import S0_IDLE, VALID_STATES
-import utility
-from utility import _hget, _hget_json, _hset_many
+
+from utility import _hget, _hget_json, _hset_many, local_ts
+
+from m8mobility_pose import _is_loc_ok
+
 
 # ===== redis key helpers =====
 
@@ -31,18 +32,50 @@ def key_pose(scanner: str) -> str:
 KEY_STOP = f"{config.KEY_PREFIX}mobility:experiment_stop_state_json"
 
 
-# ===== state / stop helpers =====
+# ===== load/save pose =====
 
-def _get_state(scanner: str) -> str:
-    s = _hget(key_state(scanner), "state", S0_IDLE)
-    return s if s in VALID_STATES else S0_IDLE
+def _load_true(scanner: str) -> Dict[str, Any]:
+    return _hget_json(key_pose(scanner), "true_location_json")
+
+def _load_planned(scanner: str) -> Dict[str, Any]:
+    return _hget_json(key_pose(scanner), "planned_location_json")
+
+def _save_true(scanner: str, loc: Dict[str, Any]) -> None:
+    _hset_many(
+        key_pose(scanner),
+        {
+            "true_location_json": loc,
+        },
+    )
+    _hset_many(
+        key_time(scanner),
+        {
+            "true_location_updated_at": local_ts(),
+        },
+    )
+
+def _save_planned(scanner: str, loc: Dict[str, Any]) -> None:
+    _hset_many(
+        key_pose(scanner),
+        {
+            "planned_location_json": loc,
+        },
+    )
+    _hset_many(
+        key_time(scanner),
+        {
+            "planned_location_updated_at": local_ts(),
+        },
+    )
+
+# ===== state / stop helpers =====
 
 def _set_state(scanner: str, state: str, detail: str = "") -> None:
     _hset_many(
         key_state(scanner),
         {
             "state": state,
-            "state_updated_at": utility.local_ts(),
+            "state_updated_at": local_ts(),
             "state_detail": detail[:300],
         },
     )
@@ -63,7 +96,7 @@ def _save_stop(stop: bool, reason: str = "") -> None:
             {
                 "stop": bool(stop),
                 "reason": str(reason or "")[:300],
-                "updated_at": utility.local_ts(),
+                "updated_at": local_ts(),
             },
             ensure_ascii=False,
         ),
@@ -78,7 +111,7 @@ def _save_policy_time(scanner: str) -> None:
     _hset_many(
         key_time(scanner),
         {
-            "policy_updated_at": utility.local_ts(),
+            "policy_updated_at": local_ts(),
         },
     )
 
@@ -131,7 +164,7 @@ def _clear_pending_sequence(scanner: str) -> None:
 # ===== issued-command tracking helpers =====
 
 def _save_last_issued_command(scanner: str, action: str, args: Dict[str, Any]) -> str:
-    ts = utility.local_ts()
+    ts = local_ts()
 
     _hset_many(
         key_time(scanner),
@@ -159,7 +192,7 @@ def _save_outgoing_command_preview(scanner: str, action: str, args: Dict[str, An
     Temporary placeholder before full queue abstraction.
     For Phase 1, save preview AND enqueue the command to the normal robot command stream.
     """
-    now_ts = utility.local_ts()
+    now_ts = local_ts()
 
     _hset_many(
         key_state(scanner),
@@ -242,7 +275,7 @@ def _update_10s_report(scanner: str) -> None:
 
     payload = {
         "scanner": scanner,
-        "time": utility.local_ts(),
+        "time": local_ts(),
         "true_location": true_loc if _is_loc_ok(true_loc) else {},
     }
 

@@ -13,13 +13,13 @@ Phase 1 rule:
 """
 from typing import Dict, Any
 from fastapi import APIRouter
-from m8mobility_state_store import _clear_outgoing_command_preview, _clear_pending_sequence, _get_state, _load_stop, _reset_correction_counter, _set_state, key_pose, key_state, key_time
+from m8mobility_state_store import _clear_outgoing_command_preview, _clear_pending_sequence, _load_stop, _reset_correction_counter, _set_state, key_pose, key_state, key_time
 from m8mobility_state import (
     VALID_STATES, S0_IDLE, S1_WAITING_REPORT, S2_EVALUATING_POLICY, S3_SOLVING_TRUE_LOCATION,
     S4_WAITING_LOCATION_RETRY, S5_COMPUTING_CORRECTION, S6_ISSUING_CORRECTION, S7_STOPPED, 
     enter_s0idle_on_command, enter_s1waiting_report_on_report, process_s1_event, run_state_machine, s0idle, s1waiting_report,
     s2evaluating_policy, s3solving_true_location, s4waiting_location_retry, s5computing_correction,
-    s6issuing_correction, s7stopped
+    s6issuing_correction, s7stopped, _get_state
 )
 from utility import _hset_many
 from utility import local_ts

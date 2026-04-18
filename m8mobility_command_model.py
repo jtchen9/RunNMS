@@ -7,10 +7,12 @@ Division rule:
 """
 from typing import Dict, Any
 import math
-from m8mobility_map import _is_path_clear
-from m8mobility_state_store import key_pose, key_time
+
 from utility import _hget, _hget_json, _wrap_angle_deg, _deg_norm_360
-from m8mobility_pose import _apply_mobility_command_to_pose, _load_true, _load_planned, _is_loc_ok, _save_true
+
+from m8mobility_map import _is_path_clear
+from m8mobility_state_store import key_pose, key_time, _load_true, _load_planned, _save_true
+from m8mobility_pose import _apply_mobility_command_to_pose, _is_loc_ok
 
 # ===== command normalization =====
 
@@ -206,7 +208,7 @@ def _propagate_true_by_last_command(scanner: str) -> Dict[str, Any]:
         action, args = _normalize_mobility_command(action, args)
     except Exception:
         return {}
-
+    
     new_true = _apply_mobility_command_to_pose(true_loc, action, args)
     _save_true(scanner, new_true)
 

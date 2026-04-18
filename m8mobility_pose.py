@@ -7,46 +7,8 @@ Division rule:
 """
 from typing import Dict, Any
 import math
-from m8mobility_command_model import _normalize_mobility_command
-import utility
-from utility import _deg_norm_360, _deg_to_rad, _wrap_angle_deg, _hget_json, _hset_many
-from m8mobility_state_store import key_pose, key_time
 
-# ===== load/save pose =====
-
-def _load_true(scanner: str) -> Dict[str, Any]:
-    return _hget_json(key_pose(scanner), "true_location_json")
-
-def _load_planned(scanner: str) -> Dict[str, Any]:
-    return _hget_json(key_pose(scanner), "planned_location_json")
-
-def _save_true(scanner: str, loc: Dict[str, Any]) -> None:
-    _hset_many(
-        key_pose(scanner),
-        {
-            "true_location_json": loc,
-        },
-    )
-    _hset_many(
-        key_time(scanner),
-        {
-            "true_location_updated_at": utility.local_ts(),
-        },
-    )
-
-def _save_planned(scanner: str, loc: Dict[str, Any]) -> None:
-    _hset_many(
-        key_pose(scanner),
-        {
-            "planned_location_json": loc,
-        },
-    )
-    _hset_many(
-        key_time(scanner),
-        {
-            "planned_location_updated_at": utility.local_ts(),
-        },
-    )
+from utility import _deg_norm_360, _deg_to_rad, _wrap_angle_deg, _hget_json, _hset_many, local_ts
 
 
 # ===== pose validity check =====
@@ -110,8 +72,6 @@ def _apply_turn_move_turn(loc: Dict[str, Any], pre_angle: float, distance_m: flo
 def _apply_mobility_command_to_pose(loc: Dict[str, Any], action: str, args: Dict[str, Any]) -> Dict[str, Any]:
     if not _is_loc_ok(loc):
         raise ValueError("location is not usable")
-
-    action, args = _normalize_mobility_command(action, args)
 
     if action == "mobility.turn":
         return _apply_turn(loc, args["angle_deg"])

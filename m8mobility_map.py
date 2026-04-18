@@ -11,7 +11,9 @@ import json
 import math
 import numpy as np
 import config
+
 from utility import _hget_json
+
 from m8mobility_state_store import key_pose
 from m8mobility_pose import _is_loc_ok
 

@@ -16,19 +16,18 @@ from datetime import timedelta
 import threading
 import uuid
 from config import MOBILITY_POS_IGNORE_THRESH_M, MOBILITY_POS_CORRECT_THRESH_M, MOBILITY_POS_CORRECT_MAX_M, MOBILITY_ANGLE_IGNORE_THRESH_DEG, MOBILITY_ANGLE_CORRECT_MAX_DEG, r, KEY_PREFIX
+from utility import _hget, _hset_many, _to_int, _deg_norm_360, _deg_to_rad, local_ts, parse_local_dt
 
 from m8mobility_command_model import _angle_diff_deg, _build_command_from_true_to_planned, _circular_mean_deg
-from utility import _hget, _hset_many, _to_int, _deg_norm_360, _deg_to_rad, local_ts, parse_local_dt
 from m8mobility_state_store import ( 
-    _get_state, _reset_correction_counter, key_state, key_time, key_pose, _set_state, _load_stop, _save_stop, _is_anchor_fresh, 
+    _reset_correction_counter, key_state, key_time, key_pose, _set_state, _load_stop, _save_stop, _is_anchor_fresh, 
     _load_report_json, _save_policy_time, _save_pending_sequence, _clear_pending_sequence, 
     _load_pending_sequence, _save_last_issued_command, _save_outgoing_command_preview, 
     _clear_outgoing_command_preview, _inc_correction_counter, 
-    _get_correction_counter, _update_10s_report 
+    _get_correction_counter, _update_10s_report, _load_true, _load_planned, _save_planned  
 ) 
 from m8mobility_pose import ( 
-    _is_loc_ok, _load_true, _load_planned, _save_planned, 
-    _apply_mobility_command_to_pose, _pose_error 
+    _is_loc_ok, _apply_mobility_command_to_pose, _pose_error 
 ) 
 from m8mobility_map import _is_path_clear, _load_tag_map 
 from m8mobility_command_model import ( 
@@ -93,6 +92,13 @@ _S1_TIMERS: Dict[str, threading.Timer] = {}
 
 MOBILITY_BUSY_RETRY_WAIT_SEC = 5
 _BUSY_RETRY_TIMERS: Dict[str, threading.Timer] = {}
+
+
+# ===== helper =====
+
+def _get_state(scanner: str) -> str:
+    s = _hget(key_state(scanner), "state", S0_IDLE)
+    return s if s in VALID_STATES else S0_IDLE
 
 
 # ===== s0idle =====
@@ -1258,6 +1264,7 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
     tx = float(true_loc["x_m"])
     ty = float(true_loc["y_m"])
 
+    action, args = _normalize_mobility_command(action, args)
     simulated_target = _apply_mobility_command_to_pose(true_loc, action, args)
     px = float(simulated_target["x_m"])
     py = float(simulated_target["y_m"])
