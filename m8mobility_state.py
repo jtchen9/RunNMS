@@ -10,7 +10,7 @@ Round 1 note:
 - Structural extraction only; logic is copied from the old monolith as directly as practical.
 - Unfinished integration seams remain explicitly marked.
 """
-from typing import Dict, Any, Optional, OptionalS
+from typing import Dict, Any, Optional
 import math
 from datetime import timedelta
 import threading

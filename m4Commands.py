@@ -11,6 +11,8 @@ import config
 import utility
 import m1Registry
 import m7Traffic
+import m8mobility
+from m8mobility_state_store import key_report, key_time
 
 router = APIRouter()
 
@@ -129,6 +131,15 @@ def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
         args_json = raw
     else:
         args_json = json.dumps(cmd.args or {}, ensure_ascii=False)
+
+    category_n = (cmd.category or "").strip().lower()
+    action_n = (cmd.action or "").strip()
+    args_obj = json.loads(args_json)
+
+    if category_n == "mobility":
+        if (cmd.execute_at or "").strip() not in ("", created_at):
+            raise HTTPException(status_code=400, detail="Phase 1 mobility testing only supports immediate execution")
+        return m8mobility.on_command_issued(scanner, action_n, args_obj)
 
     fields = {
         "category": cmd.category,
@@ -310,6 +321,20 @@ def cmd_poll(
                 meta_updates["last_mobility_error_code"] = str(mob.get("last_error_code") or "")
                 meta_updates["last_mobility_error_detail"] = str(mob.get("last_error_detail") or "")[:500]
 
+                config.r.hset(
+                    key_report(scanner),
+                    mapping={
+                        "last_mobility_report_json": json.dumps(mob, ensure_ascii=False),
+                    },
+                )
+
+                config.r.hset(
+                    key_time(scanner),
+                    mapping={
+                        "last_mobility_report_at": server_now_str,
+                    },
+                )
+
                 # Keep expected/true location placeholders if absent.
                 # Step 1 only establishes storage slots; no solving yet.
                 if not config.r.hexists(config.key_scanner_meta(scanner), "expected_location_json"):
@@ -338,6 +363,13 @@ def cmd_poll(
                 meta_updates["true_location_json"] = "{}"
 
         config.r.hset(config.key_scanner_meta(scanner), mapping=meta_updates)
+        if raw_mobility != "" and meta_updates.get("last_mobility_parse_error", "") == "":
+            try:
+                m8mobility.on_report_received(scanner)
+            except Exception:
+                # Never fail poll because mobility state-machine follow-up fails.
+                pass
+
         config.r.sadd(config.KEY_REGISTRY, scanner)
 
         if av_streaming is not None:

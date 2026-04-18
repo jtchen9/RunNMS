@@ -156,19 +156,34 @@ def _save_last_issued_command(scanner: str, action: str, args: Dict[str, Any]) -
 def _save_outgoing_command_preview(scanner: str, action: str, args: Dict[str, Any], source: str) -> None:
     """
     Unfinished temporary function
-    Temporary placeholder before real queue hookup.
-    Lets you inspect in RedisInsight what command s6 wants to send next.
+    Temporary placeholder before full queue abstraction.
+    For Phase 1, save preview AND enqueue the command to the normal robot command stream.
     """
+    now_ts = utility.local_ts()
+
     _hset_many(
         key_state(scanner),
         {
             "outgoing_command_action": action,
             "outgoing_command_args_json": args,
             "outgoing_command_source": source,
-            "outgoing_command_updated_at": utility.local_ts(),
+            "outgoing_command_updated_at": now_ts,
         },
     )
 
+    config.r.xadd(
+        config.key_cmd_stream(scanner),
+        {
+            "category": "mobility",
+            "action": action,
+            "execute_at": now_ts,
+            "created_at": now_ts,
+            "args_json": json.dumps(args or {}, ensure_ascii=False),
+        },
+        maxlen=5000,
+        approximate=True,
+    )
+    
 def _clear_outgoing_command_preview(scanner: str) -> None:
     """
     Unfinished temporary function
