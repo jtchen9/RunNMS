@@ -71,14 +71,16 @@ def _load_tag_map() -> Dict[str, Any]:
 
 def _ensure_mobility_assets_ready() -> Dict[str, Any]:
     """
-    Unfinished temporary function
-
-    Boundary-only readiness check for mobility static assets.
-    Does NOT modify scanner runtime state.
+    Validate mobility static assets.
 
     Checks:
-    1) static restriction map is readable and shape/config are valid
-    2) AprilTag world map exists and has a non-empty "tags" dict
+    - static map file is valid
+    - tag map exists and contains non-empty "tags"
+
+    Failure:
+    - raises exception → prevents system initialization
+
+    No side effects.
     """
     static_map = _load_static_map()
     tag_map = _load_tag_map()

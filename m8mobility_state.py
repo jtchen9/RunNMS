@@ -5,10 +5,6 @@ Division rule:
 - State orchestration lives here, in state order.
 - Shared services are imported from mobility-specific service files.
 - No wildcard imports.
-
-Round 1 note:
-- Structural extraction only; logic is copied from the old monolith as directly as practical.
-- Unfinished integration seams remain explicitly marked.
 """
 from typing import Dict, Any, Optional
 import math
@@ -108,8 +104,16 @@ def s0idle(scanner: str) -> Dict[str, Any]:
 
 def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Unfinished temporary function
-    Need to hook up the command queue sending commands to robots between Steps 8 and 9
+    Entry point for script command (mobility category).
+
+    Responsibilities:
+    1) initialize planned location from current true location
+    2) reset correction counter
+    3) enter S5 → S6 to construct and issue command
+
+    Notes:
+    - command emission is handled in S6 via normal command stream
+    - no direct queue logic here
     """
     stop = _load_stop()
     if stop.get("stop"):
@@ -283,9 +287,16 @@ def process_s1_event(scanner: str, source: str, timer_token: Optional[str] = Non
 
 def enter_s1waiting_report_on_report(scanner: str) -> Dict[str, Any]:
     """
-    Unfinished temporary function
-    Entry point when a fresh and expected mobility report is available in S1.
-    Transition to S2 and immediately chain, since there is no ticking clock.
+    Handle mobility report in S1.
+
+    Responsibilities:
+    - validate report matches expected command
+    - reject irrelevant or outdated reports
+    - cancel S1 timer on valid report
+    - transition to S2
+
+    Note:
+    - timeout path is handled separately by timer callback
     """
     report = _load_report_json(scanner)
     if not isinstance(report, dict) or not report:
@@ -1294,137 +1305,6 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         "correction_detail": correction_detail,
     }
 
-# def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
-    
-#     if _get_correction_counter(scanner) >= CORRECTION_ATTEMPT_LIMIT:
-#         _clear_pending_sequence(scanner)
-#         return {
-#             "status": "ok",
-#             "transition_to": S0_IDLE,
-#             "detail": "correction already attempted, skip further correction",
-#             "error": {},
-#             "pending_sequence": [],
-#         }
-
-#     true_loc = _load_true(scanner)
-#     planned_loc = _load_planned(scanner)
-
-#     if not _is_loc_ok(true_loc):
-#         _clear_pending_sequence(scanner)
-#         return {
-#             "status": "ok",
-#             "transition_to": S0_IDLE,
-#             "detail": "true_location unavailable, skip correction",
-#             "error": {},
-#             "pending_sequence": [],
-#         }
-
-#     if not _is_loc_ok(planned_loc):
-#         _clear_pending_sequence(scanner)
-#         return {
-#             "status": "stop",
-#             "transition_to": S7_STOPPED,
-#             "detail": "planned_location_json invalid",
-#             "error": {},
-#             "pending_sequence": [],
-#         }
-
-#     err = _pose_error(true_loc, planned_loc)
-
-#     pos_ignore = float(MOBILITY_POS_IGNORE_THRESH_M)
-#     pos_correct = float(MOBILITY_POS_CORRECT_THRESH_M)
-#     pos_max = float(MOBILITY_POS_CORRECT_MAX_M)
-
-#     ang_ignore = float(MOBILITY_ANGLE_IGNORE_THRESH_DEG)
-#     ang_max = float(MOBILITY_ANGLE_CORRECT_MAX_DEG)
-
-#     dpos = abs(float(err["dpos_m"]))
-#     dhead = abs(float(err["dhead_deg"]))
-
-#     # Case 1: no correction needed
-#     if dpos <= pos_ignore and dhead <= ang_ignore:
-#         _clear_pending_sequence(scanner)
-#         return {
-#             "status": "ok",
-#             "transition_to": S0_IDLE,
-#             "detail": "correction not needed",
-#             "error": err,
-#             "pending_sequence": [],
-#         }
-
-#     # Case 2: heading-only correction
-#     if dpos <= pos_ignore and dhead > ang_ignore:
-#         if dhead > ang_max:
-#             _clear_pending_sequence(scanner)
-#             return {
-#                 "status": "stop",
-#                 "transition_to": S7_STOPPED,
-#                 "detail": f"heading correction too large: {dhead:.3f} deg",
-#                 "error": err,
-#                 "pending_sequence": [],
-#             }
-
-#         seq = _build_turn_only_command(true_loc, planned_loc)
-#         _save_pending_sequence(scanner, seq, "heading_only")
-#         return {
-#             "status": "ok",
-#             "transition_to": S6_ISSUING_CORRECTION,
-#             "detail": "heading-only correction prepared",
-#             "error": err,
-#             "pending_sequence": seq,
-#         }
-
-#     # Case 3: full correction
-#     if dpos > pos_correct:
-#         if dpos > pos_max:
-#             _clear_pending_sequence(scanner)
-#             return {
-#                 "status": "stop",
-#                 "transition_to": S7_STOPPED,
-#                 "detail": f"position correction too large: {dpos:.3f} m",
-#                 "error": err,
-#                 "pending_sequence": [],
-#             }
-
-#         seq, corr_detail = _build_turn_move_turn_forward_command(true_loc, planned_loc)
-
-#         tx = float(true_loc["x_m"])
-#         ty = float(true_loc["y_m"])
-#         px = float(planned_loc["x_m"])
-#         py = float(planned_loc["y_m"])
-
-#         path_clear, blocked = _is_path_clear(tx, ty, px, py, exclude_scanner=scanner)
-
-#         if not path_clear:
-#             _clear_pending_sequence(scanner)
-#             return {
-#                 "status": "stop",
-#                 "transition_to": S7_STOPPED,
-#                 "detail": f"correction path unsafe, blocked_cells={len(blocked)}",
-#                 "error": err,
-#                 "pending_sequence": [],
-#             }
-
-#         _save_pending_sequence(scanner, seq, "full_correction")
-#         return {
-#             "status": "ok",
-#             "transition_to": S6_ISSUING_CORRECTION,
-#             "detail": "full correction prepared",
-#             "error": err,
-#             "pending_sequence": seq,
-#             "correction_detail": corr_detail,
-#         }
-
-#     # Case 4: small residual error not worth correcting
-#     _clear_pending_sequence(scanner)
-#     return {
-#         "status": "ok",
-#         "transition_to": S0_IDLE,
-#         "detail": "correction not needed (small residual error)",
-#         "error": err,
-#         "pending_sequence": [],
-#     }
-
 
 # ===== s6issuing_correction =====
 
@@ -1566,19 +1446,17 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
 
 def s7stopped(scanner: str) -> Dict[str, Any]:
     """
-    Unfinished temporary function
     Stop state for the entire experiment.
 
-    Current in-boundary responsibility:
-    1) write the global experiment stop key
-    2) mark this scanner as stopped in mobility state
+    Mobility-subsystem responsibility:
+    1) write global stop key
+    2) mark scanner as stopped
+    3) clear mobility-local transient state (timers, pending sequence, preview)
 
-    TODO outside mobility subsystem:
-    - stop all non-AV command dispatch from NMS command queues
-    - switch off robot 1-minute reports
-    - switch off AP 1-minute reports
-    - stop all ongoing iperf3 traffic sessions
-    - keep AV category available for remote inspection
+    Outside mobility (NOT implemented here):
+    - stop command dispatch
+    - stop reports
+    - stop traffic sessions
     """
     reason = _hget(key_state(scanner), "state_detail", "")
     reason = str(reason or "").strip() or "manual reset required"

@@ -15,7 +15,7 @@ from typing import Dict, Any
 from fastapi import APIRouter
 
 from config import r, KEY_REGISTRY, KEY_WHITELIST_SCANNER_META
-from utility import _hset_many, local_ts
+from utility import _hget, _hset_many, local_ts
 
 from m8mobility_state_store import (
     _clear_outgoing_command_preview, _clear_pending_sequence, _load_stop, 
@@ -36,20 +36,19 @@ router = APIRouter()
 
 def mobility_init() -> Dict[str, Any]:
     """
-    Unfinished temporary function.
+    Initialize mobility subsystem (Phase 2 scope).
 
-    Current intended boundary:
-    - Keep mobility subsystem isolated from the rest of NMS.
-    - Do not enqueue commands, poll robots, or run state transitions here.
-    - Only prepare static assets / config and leave robots waiting in S0_IDLE.
+    Responsibilities:
+    - validate static assets
+    - reset mobility runtime state
+    - set scanners to S0_IDLE
 
-    Planned responsibilities:
-    0) rely on POST /admin/reset to clean up previous experiment data
-    1) run _ensure_mobility_assets_ready()
-    2) if needed, read site AprilTag map
-    3) if needed, read static restriction map
-    4) initialize mobility state to S0_IDLE for relevant scanners
-    5) validate required mobility configuration if needed
+    Does NOT:
+    - start experiment
+    - enqueue commands
+    - run state machine
+
+    Expected to be called before experiment start.
     """
     assets = _ensure_mobility_assets_ready()
 
@@ -120,9 +119,16 @@ def mobility_init() -> Dict[str, Any]:
 
 def manual_resume(scanner: str) -> Dict[str, Any]:
     """
-    Unfinished temporary function
-    Manual recovery from s7stopped.
-    Does not reconstruct pose; only clears stop-state residue for this scanner and returns to s0idle.
+    Manual recovery from S7.
+
+    Responsibilities:
+    - clear stop-related state for this scanner
+    - clear timers and retry markers
+    - return scanner to S0_IDLE
+
+    Note:
+    - does not reconstruct pose
+    - does not restart experiment
     """
     _clear_pending_sequence(scanner)
     _clear_outgoing_command_preview(scanner)
@@ -170,17 +176,14 @@ def manual_resume(scanner: str) -> Dict[str, Any]:
 
 def on_command_issued(scanner: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Unfinished temporary function.
+    Entry point for mobility commands from NMS.
 
-    Future wiring target:
-    - m4Commands interactive enqueue
-    - m4Commands CSV load
-    - m4Commands CSV file upload
-    - if blocked try until success
+    Current scope:
+    - supports immediate execution from Swagger /cmd/_enqueue
+    - routes command into S0
 
-    Current responsibility:
-    - Only gate by current mobility state
-    - Delegate all S0 command-entry logic to enter_s0idle_on_command(...)
+    Future:
+    - will also be called by script / CSV loaders
     """
     state = _get_state(scanner)
     if state != S0_IDLE:
@@ -202,14 +205,17 @@ def on_command_issued(scanner: str, action: str, args: Dict[str, Any]) -> Dict[s
 
 def on_report_received(scanner: str) -> Dict[str, Any]:
     """
-    Unfinished temporary function.
+    Entry point when a mobility report is received from robot.
 
-    ToDo: Link from outside to this entry point
-    when robot sends mobility report.
+    Called from:
+    - cmd_poll() when mobility_report_json is present
 
-    Report-arrival path for S1.
-    The actual S1 resolution is serialized inside process_s1_event(...).
-    """
+    Behavior:
+    - only runs when state == S1_WAITING_REPORT
+    - otherwise ignored (non-blocking)
+
+    Starts state machine from S1.
+    """    
     return process_s1_event(scanner, source="report")
 
 
@@ -224,3 +230,37 @@ def should_block_command(category: str) -> bool:
 
 # ===== B4) API endpoint block for visibility =====
 
+@router.post("/mobility/init", tags=["8 Mobility"])
+def api_mobility_init() -> Dict[str, Any]:
+    return mobility_init()
+
+
+@router.post("/mobility/manual_resume/{scanner}", tags=["8 Mobility"])
+def api_mobility_manual_resume(scanner: str) -> Dict[str, Any]:
+    return manual_resume(scanner)
+
+
+@router.get("/mobility/state/{scanner}", tags=["8 Mobility"])
+def api_mobility_state(scanner: str) -> Dict[str, Any]:
+    state = _get_state(scanner)
+    stop = _load_stop()
+
+    return {
+        "scanner": scanner,
+        "state": state,
+        "state_detail": _hget(key_state(scanner), "state_detail", ""),
+        "state_updated_at": _hget(key_state(scanner), "state_updated_at", ""),
+        "stop": stop,
+        "correction_attempt_count": _hget(key_state(scanner), "correction_attempt_count", ""),
+    }
+
+
+@router.get("/mobility/debug/{scanner}", tags=["8 Mobility"])
+def api_mobility_debug(scanner: str) -> Dict[str, Any]:
+    return {
+        "scanner": scanner,
+        "state": r.hgetall(key_state(scanner)),
+        "time": r.hgetall(key_time(scanner)),
+        "report": r.hgetall(key_report(scanner)),
+        "pose": r.hgetall(key_pose(scanner)),
+    }

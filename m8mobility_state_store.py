@@ -192,9 +192,13 @@ def _save_last_issued_command(scanner: str, action: str, args: Dict[str, Any]) -
 
 def _save_outgoing_command_preview(scanner: str, action: str, args: Dict[str, Any], source: str) -> None:
     """
-    Unfinished temporary function
-    Temporary placeholder before full queue abstraction.
-    For Phase 1, save preview AND enqueue the command to the normal robot command stream.
+    Save outgoing command preview and emit to robot command stream.
+
+    Phase 1 behavior:
+    - write preview into mobility state hash
+    - push command into normal robot command stream
+
+    Acts as temporary bridge between mobility and NMS command system.
     """
     now_ts = local_ts()
 
