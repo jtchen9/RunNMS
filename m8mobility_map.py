@@ -68,15 +68,31 @@ def _load_tag_map() -> Dict[str, Any]:
         return j if isinstance(j, dict) else {}
     except Exception:
         return {}
-    
-def _ensure_mobility_assets_ready():
+
+def _ensure_mobility_assets_ready() -> Dict[str, Any]:
     """
-    unfinished temporary function
-    need to check 
-    1) tag info is loaded
-    2) static robot restriction map is loaded
+    Unfinished temporary function
+
+    Boundary-only readiness check for mobility static assets.
+    Does NOT modify scanner runtime state.
+
+    Checks:
+    1) static restriction map is readable and shape/config are valid
+    2) AprilTag world map exists and has a non-empty "tags" dict
     """
-    pass
+    static_map = _load_static_map()
+    tag_map = _load_tag_map()
+
+    tags = tag_map.get("tags") if isinstance(tag_map, dict) else None
+    if not isinstance(tags, dict) or len(tags) == 0:
+        raise ValueError("mobility tag_map_json missing or empty")
+
+    return {
+        "status": "ok",
+        "detail": "mobility assets ready",
+        "static_map_shape": [int(static_map.shape[0]), int(static_map.shape[1])],
+        "tag_count": len(tags),
+    }
 
 
 # ===== grid helpers =====

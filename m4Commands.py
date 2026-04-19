@@ -305,21 +305,13 @@ def cmd_poll(
         # Mobility report (one-shot, piggybacked on poll)
         # -------------------------
         raw_mobility = (mobility_report_json or "").strip()
-        if raw_mobility != "":
-            meta_updates["last_mobility_report_at"] = server_now_str
+        mobility_report_ok = False
 
+        if raw_mobility != "":
             try:
                 mob = json.loads(raw_mobility)
                 if not isinstance(mob, dict):
                     raise ValueError("mobility_report_json must decode to a JSON object")
-
-                meta_updates["last_mobility_report_json"] = json.dumps(mob, ensure_ascii=False)
-                meta_updates["last_mobility_parse_error"] = ""
-
-                meta_updates["last_mobility_command"] = str(mob.get("last_command") or "")
-                meta_updates["last_mobility_exec_status"] = str(mob.get("last_exec_status") or "")
-                meta_updates["last_mobility_error_code"] = str(mob.get("last_error_code") or "")
-                meta_updates["last_mobility_error_detail"] = str(mob.get("last_error_detail") or "")[:500]
 
                 config.r.hset(
                     key_report(scanner),
@@ -335,41 +327,14 @@ def cmd_poll(
                     },
                 )
 
-                # Keep expected/true location placeholders if absent.
-                # Step 1 only establishes storage slots; no solving yet.
-                if not config.r.hexists(config.key_scanner_meta(scanner), "expected_location_json"):
-                    meta_updates["expected_location_json"] = "{}"
-                if not config.r.hexists(config.key_scanner_meta(scanner), "true_location_json"):
-                    meta_updates["true_location_json"] = "{}"
+                mobility_report_ok = True
 
-            except Exception as e:
-                # Never fail the poll because of bad mobility JSON.
-                meta_updates["last_mobility_report_json"] = ""
-                meta_updates["last_mobility_parse_error"] = f"{type(e).__name__}: {e}"
-                meta_updates["last_mobility_command"] = ""
-                meta_updates["last_mobility_exec_status"] = ""
-                meta_updates["last_mobility_error_code"] = "MOBILITY_REPORT_JSON_PARSE_FAIL"
-                meta_updates["last_mobility_error_detail"] = f"{type(e).__name__}: {e}"[:500]
-
-                if not config.r.hexists(config.key_scanner_meta(scanner), "expected_location_json"):
-                    meta_updates["expected_location_json"] = "{}"
-                if not config.r.hexists(config.key_scanner_meta(scanner), "true_location_json"):
-                    meta_updates["true_location_json"] = "{}"
-        else:
-            # Ensure placeholders exist even before first mobility report.
-            if not config.r.hexists(config.key_scanner_meta(scanner), "expected_location_json"):
-                meta_updates["expected_location_json"] = "{}"
-            if not config.r.hexists(config.key_scanner_meta(scanner), "true_location_json"):
-                meta_updates["true_location_json"] = "{}"
+            except Exception:
+                # Never fail poll because of bad mobility JSON.
+                # Ignore this mobility payload for state-machine purposes.
+                mobility_report_ok = False
 
         config.r.hset(config.key_scanner_meta(scanner), mapping=meta_updates)
-        if raw_mobility != "" and meta_updates.get("last_mobility_parse_error", "") == "":
-            try:
-                m8mobility.on_report_received(scanner)
-            except Exception:
-                # Never fail poll because mobility state-machine follow-up fails.
-                pass
-
         config.r.sadd(config.KEY_REGISTRY, scanner)
 
         if av_streaming is not None:
@@ -377,6 +342,13 @@ def cmd_poll(
             config.r.hset(config.KEY_APPLIED_VIDEO, scanner, applied)
             config.r.hset(config.KEY_APPLIED_VIDEO_TS, scanner, server_now_str)
 
+        if mobility_report_ok:
+            try:
+                m8mobility.on_report_received(scanner)
+            except Exception:
+                # Never fail poll because mobility state-machine follow-up fails.
+                pass
+            
     except Exception:
         pass
 

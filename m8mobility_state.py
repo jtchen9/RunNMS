@@ -1580,20 +1580,36 @@ def s7stopped(scanner: str) -> Dict[str, Any]:
     - stop all ongoing iperf3 traffic sessions
     - keep AV category available for remote inspection
     """
-    state_detail = _hget(key_state(scanner), "state_detail", "")
-    reason = str(state_detail or "").strip()
-    if not reason:
-        reason = "manual reset required"
+    reason = _hget(key_state(scanner), "state_detail", "")
+    reason = str(reason or "").strip() or "manual reset required"
 
     _save_stop(True, reason)
+
+    _clear_pending_sequence(scanner)
+    _clear_outgoing_command_preview(scanner)
+
+    _hset_many(
+        key_time(scanner),
+        {
+            "s1_timer_token": "",
+            "s1_timer_started_at": "",
+            "busy_retry_token": "",
+            "busy_retry_started_at": "",
+        },
+    )
 
     _hset_many(
         key_state(scanner),
         {
-            "state_detail": reason,
-            "state_updated_at": local_ts(),
+            "s2_entry_reason": "",
+            "need_location_retry": "false",
+            "stop_experiment": "true",
+            "stop_reason": reason,
+            "robot_safety_state": "UNSAFE_STOP",
         },
     )
+
+    _set_state(scanner, S7_STOPPED, reason)
 
     return {
         "state": S7_STOPPED,
