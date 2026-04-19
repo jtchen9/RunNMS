@@ -8,13 +8,8 @@ Division rule:
 from typing import Dict, Any
 import math
 
+from m8mobility_state_store import _is_loc_ok
 from utility import _deg_norm_360, _deg_to_rad, _wrap_angle_deg, _hget_json, _hset_many, local_ts
-
-
-# ===== pose validity check =====
-
-def _is_loc_ok(loc: Dict[str, Any]) -> bool:
-    return isinstance(loc, dict) and loc.get("location_ok") is True
 
 
 # ===== pose comparison =====

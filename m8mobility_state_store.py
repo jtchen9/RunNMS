@@ -12,8 +12,6 @@ import config
 
 from utility import _hget, _hget_json, _hset_many, local_ts
 
-from m8mobility_pose import _is_loc_ok
-
 
 # ===== redis key helpers =====
 
@@ -30,6 +28,12 @@ def key_pose(scanner: str) -> str:
     return f"{config.KEY_PREFIX}scanner:{scanner}:mobility:pose"
 
 KEY_STOP = f"{config.KEY_PREFIX}mobility:experiment_stop_state_json"
+
+
+# ===== pose validity check =====
+
+def _is_loc_ok(loc: Dict[str, Any]) -> bool:
+    return isinstance(loc, dict) and loc.get("location_ok") is True
 
 
 # ===== load/save pose =====

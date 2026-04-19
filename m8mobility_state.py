@@ -24,10 +24,10 @@ from m8mobility_state_store import (
     _load_report_json, _save_policy_time, _save_pending_sequence, _clear_pending_sequence, 
     _load_pending_sequence, _save_last_issued_command, _save_outgoing_command_preview, 
     _clear_outgoing_command_preview, _inc_correction_counter, 
-    _get_correction_counter, _update_10s_report, _load_true, _load_planned, _save_planned  
+    _get_correction_counter, _update_10s_report, _load_true, _load_planned, _save_planned, _is_loc_ok   
 ) 
 from m8mobility_pose import ( 
-    _is_loc_ok, _apply_mobility_command_to_pose, _pose_error 
+    _apply_mobility_command_to_pose, _pose_error 
 ) 
 from m8mobility_map import _is_path_clear, _load_tag_map 
 from m8mobility_command_model import ( 

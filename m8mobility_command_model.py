@@ -11,8 +11,8 @@ import math
 from utility import _hget, _hget_json, _wrap_angle_deg, _deg_norm_360
 
 from m8mobility_map import _is_path_clear
-from m8mobility_state_store import key_pose, key_time, _load_true, _load_planned, _save_true
-from m8mobility_pose import _apply_mobility_command_to_pose, _is_loc_ok
+from m8mobility_state_store import key_pose, key_time, _load_true, _load_planned, _save_true, _is_loc_ok
+from m8mobility_pose import _apply_mobility_command_to_pose
 
 # ===== command normalization =====
 
