@@ -1,14 +1,3 @@
-restart :
-/usr/sbin/apBundle1.0/install_openwrt.sh
-
-
-check run :
-root@prplOS-7b65e0:/opt/_RunScanner# ps aux |grep ap_
-root     12652  1.3  1.1  26488 21240 ?        S    03:34   0:19 /usr/bin/python3 /opt/_RunScanner/ap_agent.py
-root     12698  0.1  1.1  26336 20728 ?        S    03:34   0:01 /usr/bin/python3 /opt/_RunScanner/ap_uploader.py
-root     13257  0.0  0.0   1380   924 ttyMSM0  S+   03:58   0:00 grep ap_
-
-
 10 sec status example (/opt/_RunScanner/ap_status_sent.json) :
 {
   "time": "2026-03-30-03:52:46",
