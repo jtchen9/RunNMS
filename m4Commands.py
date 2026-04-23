@@ -206,7 +206,8 @@ def _enqueue_script_or_csv_item(
     """
     Dispatch one scheduled row to the correct internal queue.
 
-    - traffic rows -> NMS traffic command stream
+    - traffic rows  -> NMS traffic command stream
+    - mobility rows -> NMS mobility scheduled-command stream
     - everything else -> existing robot/AP command stream
     """
     category_n = (category or "").strip().lower()
@@ -218,6 +219,16 @@ def _enqueue_script_or_csv_item(
             action=action_n,
             execute_at=execute_at,
             args_json=json.dumps(args or {}, ensure_ascii=False),
+        )
+        return
+
+    if category_n == "mobility":
+        _mobility_enqueue_core(
+            scanner=scanner,
+            action=action_n,
+            execute_at=execute_at,
+            args=args or {},
+            source="script_or_csv",
         )
         return
 
@@ -233,6 +244,43 @@ def _enqueue_script_or_csv_item(
         maxlen=5000,
         approximate=True,
     )
+
+
+def _mobility_enqueue_core(
+    *,
+    scanner: str,
+    action: str,
+    execute_at: str,
+    args: Dict[str, Any],
+    source: str,
+) -> Dict[str, Any]:
+    m1Registry.require_whitelisted(scanner)
+
+    created_at = utility.local_ts()
+
+    xid = config.r.xadd(
+        config.KEY_MOBILITY_CMD_STREAM,
+        {
+            "scanner": scanner,
+            "action": action,
+            "execute_at": execute_at,
+            "created_at": created_at,
+            "args_json": json.dumps(args or {}, ensure_ascii=False),
+            "source": source,
+        },
+        maxlen=20000,
+        approximate=True,
+    )
+
+    return {
+        "status": "ok",
+        "scanner": scanner,
+        "action": action,
+        "cmd_id": xid,
+        "created_at": created_at,
+        "execute_at": execute_at,
+        "time_format": config.TIME_FMT,
+    }
 
 
 @router.post("/cmd/_enqueue/{scanner}", tags=["4 Commands (Polling)"])

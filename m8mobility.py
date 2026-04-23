@@ -13,6 +13,8 @@ Phase 1 rule:
 """
 from typing import Dict, Any
 from fastapi import APIRouter
+import json
+import asyncio
 
 import config
 import utility
@@ -21,13 +23,7 @@ from m8mobility_state_store import (
     _clear_outgoing_command_preview, _clear_pending_sequence, _load_stop, 
     _reset_correction_counter, _set_state, key_state, key_time, key_report, key_pose
 )
-from m8mobility_state import (
-    VALID_STATES, S0_IDLE, S1_WAITING_REPORT, S2_EVALUATING_POLICY, S3_SOLVING_TRUE_LOCATION,
-    S4_WAITING_LOCATION_RETRY, S5_COMPUTING_CORRECTION, S6_ISSUING_CORRECTION, S7_STOPPED, 
-    enter_s0idle_on_command, enter_s1waiting_report_on_report, process_s1_event, run_state_machine, s0idle, s1waiting_report,
-    s2evaluating_policy, s3solving_true_location, s4waiting_location_retry, s5computing_correction,
-    s6issuing_correction, s7stopped, _get_state
-)
+from m8mobility_state import S0_IDLE, enter_s0idle_on_command, process_s1_event, _get_state
 from m8mobility_map import _ensure_mobility_assets_ready
 
 router = APIRouter()
@@ -218,7 +214,74 @@ def on_report_received(scanner: str) -> Dict[str, Any]:
     """    
     return process_s1_event(scanner, source="report")
 
+def _collect_due_mobility_commands(server_now_str: str):
+    server_now = utility.parse_local_dt(server_now_str)
+    raw = config.r.xrange(config.KEY_MOBILITY_CMD_STREAM, count=5000)
 
+    due = []
+
+    for xid, fields in raw:
+        exec_at_s = fields.get("execute_at", "")
+        if not exec_at_s:
+            continue
+
+        try:
+            exec_at = utility.parse_local_dt(exec_at_s)
+        except Exception:
+            continue
+
+        if exec_at > server_now:
+            continue
+
+        f2 = dict(fields)
+        f2["cmd_id"] = xid
+        due.append((xid, f2))
+
+        if len(due) >= config.MOBILITY_LOOP_BATCH_LIMIT:
+            break
+
+    return due
+
+def _dispatch_due_mobility_command(xid: str, fields: Dict[str, str]) -> None:
+    scanner = (fields.get("scanner") or "").strip()
+    action = (fields.get("action") or "").strip()
+
+    try:
+        args = json.loads(fields.get("args_json") or "{}")
+        if not isinstance(args, dict):
+            args = {}
+    except Exception:
+        args = {}
+
+    result = on_command_issued(scanner, action, args)
+
+    # Delete only if accepted or conclusively blocked by non-idle state handling choice.
+    # For now, keep simple:
+    # - delete on ok
+    # - keep if blocked, so it can retry later
+    if str(result.get("status") or "") == "ok":
+        try:
+            config.r.xdel(config.KEY_MOBILITY_CMD_STREAM, xid)
+        except Exception:
+            pass
+
+async def _mobility_loop() -> None:
+    while True:
+        try:
+            server_now_str = utility.local_ts()
+            due = _collect_due_mobility_commands(server_now_str)
+
+            for xid, fields in due:
+                try:
+                    _dispatch_due_mobility_command(xid, fields)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        await asyncio.sleep(config.MOBILITY_LOOP_EVERY_SEC)
+        
+                
 # ===== B3) state control block =====
 
 def should_block_command(category: str) -> bool:

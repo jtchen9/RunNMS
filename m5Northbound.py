@@ -73,6 +73,7 @@ def _collect_iperf3_sessions_for_upload(
 
     return out, ids, bad_json_deleted
 
+
 def _collect_ap_traffic_reports_for_upload(
     scanners: List[str],
     budget: int,
@@ -117,6 +118,7 @@ def _collect_ap_traffic_reports_for_upload(
                 return out, ids_by_ap, bad_json_deleted
 
     return out, ids_by_ap, bad_json_deleted
+
 
 def _post_upload_scan_batch(
     items: List[Dict[str, Any]],
@@ -497,9 +499,11 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
 
             channel_val = meta.get("channel", "")
             antenna_val = meta.get("antenna_count", "")
+            ap_state = _freshness_state(last_seen, config.AP_STALE_TIMEOUT_SEC)
 
             ap_states.append({
                 "ap_id": rid,
+                "state": ap_state,
                 "last_seen": last_seen,
                 "mac": meta.get("mac", ""),
                 "ip": meta.get("ip", ""),
@@ -721,6 +725,22 @@ async def _status_loop():
         except Exception:
             pass
         await asyncio.sleep(config.STATUS_EVERY_SEC)
+
+
+def _freshness_state(last_seen: str, timeout_sec: int) -> str:
+    if not str(last_seen or "").strip():
+        return "offline"
+
+    try:
+        last_dt = utility.parse_local_dt(last_seen)
+        now_dt = utility.parse_local_dt(utility.local_ts())
+    except Exception:
+        return "offline"
+
+    age = (now_dt - last_dt).total_seconds()
+    if age <= timeout_sec:
+        return "active"
+    return "stale"
 
 
 @router.get("/northbound/_list_experiment", tags=["5 Northbound"])

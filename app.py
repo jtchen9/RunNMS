@@ -46,6 +46,7 @@ async def _startup():
     asyncio.create_task(m5Northbound._northbound_loop())
     asyncio.create_task(m5Northbound._status_loop())
     asyncio.create_task(m7Traffic._traffic_loop())
+    asyncio.create_task(m8mobility._mobility_loop())
     
 
 if __name__ == "__main__":

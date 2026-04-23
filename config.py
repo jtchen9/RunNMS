@@ -52,6 +52,10 @@ def key_cmd_stream(scanner: str) -> str:
 def key_cmdack_stream(scanner: str) -> str:
     return f"{KEY_PREFIX}cmdack:{scanner}"  # STREAM(acks)
 
+KEY_MOBILITY_CMD_STREAM: str = f"{KEY_PREFIX}mobility:cmd"
+MOBILITY_LOOP_EVERY_SEC: int = 1
+MOBILITY_LOOP_BATCH_LIMIT: int = 50
+
 # ------------------
 # 5) Northbound (NMS → Web Server)
 # ------------------
@@ -86,9 +90,10 @@ NB_DEBUG_TTL_SEC: int = 48 * 3600
 KEY_EXPERIMENT_REGISTRY: str = f"{KEY_PREFIX}experiment:registry"
 
 # -------------------
-# 6) AP performance upload
+# 6) AP command poll, status and performance upload
 # -------------------
 AP_UPLINK_MAXLEN: int = 20000
+AP_STALE_TIMEOUT_SEC: int = 30
 
 def key_ap_uplink_stream(scanner: str) -> str:
     return f"{KEY_PREFIX}ap_uplink:{scanner}"  # STREAM(AP performance payloads)

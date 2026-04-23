@@ -1,0 +1,44 @@
+Experiment CSV template notes
+
+Current operator workflow for POST /cmd/_load_csv_file
+
+1) Experiment name
+- Use the uploaded CSV filename as the experiment/scenario name.
+- Example filename:
+  office_demo_01.csv
+
+2) Experiment start time
+- Fill t0 in the API form field, not inside the CSV.
+- Format:
+  YYYY-MM-DD-HH:MM:SS
+- Example:
+  2026-04-23-15:30:00
+
+3) CSV columns
+- scanner
+- t_offset_sec
+- category
+- action
+- args_json
+
+4) Meaning
+- scanner:
+  target robot/AP name
+- t_offset_sec:
+  seconds after t0
+- category:
+  command category, such as mobility or scan
+- action:
+  command action string
+- args_json:
+  JSON object encoded as one CSV cell
+
+5) Included examples
+- Example 1:
+  mobility.turn_move_turn.forward
+- Example 2:
+  scan.start
+
+6) Important current note
+- This template matches the current NMS-side CSV loader format.
+- A complete authoritative command catalog should still be summarized from the current robot/AP code before large-scale scripted testing.

@@ -1,0 +1,3 @@
+scanner,t_offset_sec,category,action,args_json
+twin-scout-julia,0,mobility,mobility.turn_move_turn.forward,"{""distance_m"": 1.0, ""pre_angle"": 0, ""post_angle"": 0}"
+twin-scout-julia,15,scan,scan.start,{}
