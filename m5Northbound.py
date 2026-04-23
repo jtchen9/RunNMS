@@ -2,10 +2,12 @@ from typing import Dict, Any, List, Optional, Tuple
 import json
 import asyncio
 import requests
+from fastapi import APIRouter
 
 import config
 import utility
 
+router = APIRouter()
 
 # ==================
 # 5) Northbound (NMS -> Web Server)
@@ -375,6 +377,92 @@ def _collect_traffic_events(limit: int = 200) -> Tuple[List[Dict[str, Any]], Lis
     return out, ids
 
 
+def _build_experiment_snapshot() -> Dict[str, Any]:
+    rows = config.r.xrange(config.KEY_EXPERIMENT_REGISTRY, count=200)
+
+    if not rows:
+        return {
+            "state": "idle",
+            "session_id": None,
+            "scenario_name": None,
+            "started_at": None,
+            "elapsed_sec": 0,
+            "next_scheduled_at": None,
+            "idle_duration_sec": 0,
+        }
+
+    now_dt = utility.parse_local_dt(utility.local_ts())
+
+    current = None
+    future = None
+    past_latest = None
+
+    for _, fields in rows:
+        try:
+            t0_dt = utility.parse_local_dt(str(fields.get("t0") or "").strip())
+            last_dt = utility.parse_local_dt(str(fields.get("last_execute_at") or "").strip())
+        except Exception:
+            continue
+
+        if t0_dt <= now_dt <= last_dt:
+            current = (fields, t0_dt, last_dt)
+            break
+
+        if now_dt < t0_dt:
+            if future is None or t0_dt < future[1]:
+                future = (fields, t0_dt)
+
+        if now_dt > last_dt:
+            if past_latest is None or last_dt > past_latest[1]:
+                past_latest = (fields, last_dt)
+
+    if current is not None:
+        fields, t0_dt, _ = current
+        return {
+            "state": "running",
+            "session_id": fields.get("session_id"),
+            "scenario_name": fields.get("scenario_name") or None,
+            "started_at": fields.get("t0"),
+            "elapsed_sec": max(0, int((now_dt - t0_dt).total_seconds())),
+            "next_scheduled_at": None,
+            "idle_duration_sec": 0,
+        }
+
+    if future is not None:
+        fields, _ = future
+        return {
+            "state": "scheduled",
+            "session_id": fields.get("session_id"),
+            "scenario_name": fields.get("scenario_name") or None,
+            "started_at": None,
+            "elapsed_sec": 0,
+            "next_scheduled_at": fields.get("t0"),
+            "idle_duration_sec": 0,
+        }
+
+    if past_latest is not None:
+        fields, last_dt = past_latest
+        return {
+            "state": "idle",
+            "session_id": fields.get("session_id"),
+            "scenario_name": fields.get("scenario_name") or None,
+            "started_at": None,
+            "elapsed_sec": 0,
+            "next_scheduled_at": None,
+            "idle_duration_sec": max(0, int((now_dt - last_dt).total_seconds())),
+        }
+
+    return {
+        "state": "idle",
+        "session_id": None,
+        "scenario_name": None,
+        "started_at": None,
+        "elapsed_sec": 0,
+        "next_scheduled_at": None,
+        "idle_duration_sec": 0,
+    }
+
+
 def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     scanners = sorted(list(config.r.smembers(config.KEY_REGISTRY)))
     robot_states: List[Dict[str, Any]] = []
@@ -452,15 +540,7 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
         "nms_id": config.NMS_ID,
         "time_local": utility.local_ts(),
         "time_format": config.TIME_FMT,
-        "experiment": {
-            "state": "idle",
-            "session_id": None,
-            "scenario_name": None,
-            "started_at": None,
-            "elapsed_sec": 0,
-            "next_scheduled_at": None,
-            "idle_duration_sec": 0,
-        },
+        "experiment": _build_experiment_snapshot(),        
         "nms_status": {
             "online": True,
             "detail": "",
@@ -641,3 +721,35 @@ async def _status_loop():
         except Exception:
             pass
         await asyncio.sleep(config.STATUS_EVERY_SEC)
+
+
+@router.get("/northbound/_list_experiment", tags=["5 Northbound"])
+def list_experiments(limit: int = 50) -> Dict[str, Any]:
+    """
+    List registered experiments from Redis stream.
+
+    Returns newest first.
+    """
+    rows = config.r.xrevrange(config.KEY_EXPERIMENT_REGISTRY, count=limit)
+
+    items: List[Dict[str, Any]] = []
+
+    for xid, fields in rows:
+        item = {
+            "stream_id": xid,
+            "session_id": fields.get("session_id"),
+            "scenario_name": fields.get("scenario_name") or "",
+            "registered_at": fields.get("registered_at"),
+            "t0": fields.get("t0"),
+            "last_execute_at": fields.get("last_execute_at"),
+            "item_count": int(fields.get("item_count") or 0),
+            "source": fields.get("source") or "",
+            "time_format": fields.get("time_format") or config.TIME_FMT,
+        }
+        items.append(item)
+
+    return {
+        "status": "ok",
+        "count": len(items),
+        "experiments": items,
+    }

@@ -160,6 +160,41 @@ def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
     }
 
 
+def _register_experiment_status(
+    *,
+    t0_str: str,
+    last_execute_at_str: str,
+    item_count: int,
+    source: str,
+    scenario_name: str = "",
+) -> Dict[str, Any]:
+    now = utility.local_ts()
+    session_id = f"exp-{now}"
+
+    fields = {
+        "session_id": session_id,
+        "scenario_name": str(scenario_name or ""),
+        "registered_at": now,
+        "t0": t0_str,
+        "last_execute_at": last_execute_at_str,
+        "item_count": str(int(item_count)),
+        "source": str(source or ""),
+        "time_format": config.TIME_FMT,
+    }
+
+    xid = config.r.xadd(
+        config.KEY_EXPERIMENT_REGISTRY,
+        fields,
+        maxlen=200,
+        approximate=True,
+    )
+
+    return {
+        "stream_id": xid,
+        **fields,
+    }
+
+
 def _enqueue_script_or_csv_item(
     *,
     scanner: str,
@@ -428,12 +463,30 @@ def cmd_load_script(script: ScriptLoad) -> Dict[str, Any]:
         )
         added += 1
 
+    last_execute_at = t0_dt
+    for it in script.items:
+        try:
+            cand = t0_dt + timedelta(seconds=int(it.t_offset_sec))
+            if cand > last_execute_at:
+                last_execute_at = cand
+        except Exception:
+            pass
+
+    exp = _register_experiment_status(
+        t0_str=t0_dt.strftime(config.TIME_FMT),
+        last_execute_at_str=last_execute_at.strftime(config.TIME_FMT),
+        item_count=added,
+        source="load_script",
+        scenario_name="",
+    )
+
     return {
         "status": "ok",
         "added": added,
         "skipped_not_whitelisted": skipped_not_whitelisted,
         "t0": t0_dt.strftime(config.TIME_FMT),
         "time_format": config.TIME_FMT,
+        "experiment": exp,
     }
 
 
@@ -496,6 +549,27 @@ def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
         )
         added += 1
 
+    last_execute_at = t0_dt
+    f2 = io.StringIO(req.csv_text)
+    reader2 = csv.DictReader(f2)
+
+    for row in reader2:
+        try:
+            offset = int((row.get("t_offset_sec") or "0").strip())
+            cand = t0_dt + timedelta(seconds=offset)
+            if cand > last_execute_at:
+                last_execute_at = cand
+        except Exception:
+            continue
+
+    exp = _register_experiment_status(
+        t0_str=t0_dt.strftime(config.TIME_FMT),
+        last_execute_at_str=last_execute_at.strftime(config.TIME_FMT),
+        item_count=added,
+        source="load_csv",
+        scenario_name="",
+    )
+
     return {
         "status": "ok",
         "t0": t0_dt.strftime(config.TIME_FMT),
@@ -503,6 +577,7 @@ def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
         "added": added,
         "skipped_not_whitelisted": skipped_not_whitelisted,
         "bad_rows": bad_rows,
+        "experiment": exp,
     }
 
 @router.post("/cmd/_load_csv_file", tags=["4 Commands (Polling)"])
@@ -595,6 +670,27 @@ async def cmd_load_csv_file(
         )
         added += 1
 
+    f2 = io.StringIO(text)
+    reader2 = csv.DictReader(f2)
+
+    last_execute_at = t0_dt
+    for row in reader2:
+        try:
+            offset = int((row.get("t_offset_sec") or "0").strip())
+            cand = t0_dt + timedelta(seconds=offset)
+            if cand > last_execute_at:
+                last_execute_at = cand
+        except Exception:
+            continue
+
+    exp = _register_experiment_status(
+        t0_str=t0_dt.strftime(config.TIME_FMT),
+        last_execute_at_str=last_execute_at.strftime(config.TIME_FMT),
+        item_count=added,
+        source="load_csv_file",
+        scenario_name=csv_file.filename or "",
+    )
+
     return {
         "status": "ok",
         "t0": t0_dt.strftime(config.TIME_FMT),
@@ -603,4 +699,5 @@ async def cmd_load_csv_file(
         "added": added,
         "skipped_not_whitelisted": skipped_not_whitelisted,
         "bad_rows": bad_rows,
+        "experiment": exp,
     }

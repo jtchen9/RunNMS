@@ -7,9 +7,9 @@ Division rule:
 """
 from typing import Dict, Any
 import math
+import utility
 
 from m8mobility_state_store import _is_loc_ok
-from utility import _deg_norm_360, _deg_to_rad, _wrap_angle_deg, _hget_json, _hset_many, local_ts
 
 
 # ===== pose comparison =====
@@ -21,7 +21,7 @@ def _pose_error(true_loc: Dict[str, Any], planned_loc: Dict[str, Any]) -> Dict[s
 
     true_h = float(true_loc["heading_deg"])
     planned_h = float(planned_loc["heading_deg"])
-    dhead = _wrap_angle_deg(planned_h - true_h)
+    dhead = utility._wrap_angle_deg(planned_h - true_h)
 
     return {
         "dx_m": dx,
@@ -38,7 +38,7 @@ def _apply_turn(loc: Dict[str, Any], angle_deg: float) -> Dict[str, Any]:
         "location_ok": True,
         "x_m": float(loc["x_m"]),
         "y_m": float(loc["y_m"]),
-        "heading_deg": _deg_norm_360(float(loc["heading_deg"]) + float(angle_deg)),
+        "heading_deg": utility._deg_norm_360(float(loc["heading_deg"]) + float(angle_deg)),
     }
 
 def _apply_turn_move_turn(loc: Dict[str, Any], pre_angle: float, distance_m: float, post_angle: float, forward: bool) -> Dict[str, Any]:
@@ -46,8 +46,8 @@ def _apply_turn_move_turn(loc: Dict[str, Any], pre_angle: float, distance_m: flo
     y0 = float(loc["y_m"])
     h0 = float(loc["heading_deg"])
 
-    h1 = _deg_norm_360(h0 + float(pre_angle))
-    rad = _deg_to_rad(h1)
+    h1 = utility._deg_norm_360(h0 + float(pre_angle))
+    rad = utility._deg_to_rad(h1)
 
     direction = 1.0 if forward else -1.0
     dx = direction * float(distance_m) * math.cos(rad)
@@ -55,7 +55,7 @@ def _apply_turn_move_turn(loc: Dict[str, Any], pre_angle: float, distance_m: flo
 
     x1 = x0 + dx
     y1 = y0 + dy
-    h2 = _deg_norm_360(h1 + float(post_angle))
+    h2 = utility._deg_norm_360(h1 + float(post_angle))
 
     return {
         "location_ok": True,

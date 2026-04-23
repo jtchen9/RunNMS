@@ -9,8 +9,7 @@ Division rule:
 from typing import Dict, Any
 import json
 import config
-
-from utility import _hget, _hget_json, _hset_many, local_ts
+import utility 
 
 
 # ===== redis key helpers =====
@@ -39,47 +38,47 @@ def _is_loc_ok(loc: Dict[str, Any]) -> bool:
 # ===== load/save pose =====
 
 def _load_true(scanner: str) -> Dict[str, Any]:
-    return _hget_json(key_pose(scanner), "true_location_json")
+    return utility._hget_json(key_pose(scanner), "true_location_json")
 
 def _load_planned(scanner: str) -> Dict[str, Any]:
-    return _hget_json(key_pose(scanner), "planned_location_json")
+    return utility._hget_json(key_pose(scanner), "planned_location_json")
 
 def _save_true(scanner: str, loc: Dict[str, Any]) -> None:
-    _hset_many(
+    utility._hset_many(
         key_pose(scanner),
         {
             "true_location_json": loc,
         },
     )
-    _hset_many(
+    utility._hset_many(
         key_time(scanner),
         {
-            "true_location_updated_at": local_ts(),
+            "true_location_updated_at": utility.local_ts(),
         },
     )
 
 def _save_planned(scanner: str, loc: Dict[str, Any]) -> None:
-    _hset_many(
+    utility._hset_many(
         key_pose(scanner),
         {
             "planned_location_json": loc,
         },
     )
-    _hset_many(
+    utility._hset_many(
         key_time(scanner),
         {
-            "planned_location_updated_at": local_ts(),
+            "planned_location_updated_at": utility.local_ts(),
         },
     )
 
 # ===== state / stop helpers =====
 
 def _set_state(scanner: str, state: str, detail: str = "") -> None:
-    _hset_many(
+    utility._hset_many(
         key_state(scanner),
         {
             "state": state,
-            "state_updated_at": local_ts(),
+            "state_updated_at": utility.local_ts(),
             "state_detail": detail[:300],
         },
     )
@@ -100,7 +99,7 @@ def _save_stop(stop: bool, reason: str = "") -> None:
             {
                 "stop": bool(stop),
                 "reason": str(reason or "")[:300],
-                "updated_at": local_ts(),
+                "updated_at": utility.local_ts(),
             },
             ensure_ascii=False,
         ),
@@ -109,19 +108,19 @@ def _save_stop(stop: bool, reason: str = "") -> None:
 # ===== report / time helpers =====
 
 def _load_report_json(scanner: str) -> Dict[str, Any]:
-    return _hget_json(key_report(scanner), "last_mobility_report_json")
+    return utility._hget_json(key_report(scanner), "last_mobility_report_json")
 
 def _save_policy_time(scanner: str) -> None:
-    _hset_many(
+    utility._hset_many(
         key_time(scanner),
         {
-            "policy_updated_at": local_ts(),
+            "policy_updated_at": utility.local_ts(),
         },
     )
 
 def _is_anchor_fresh(scanner: str) -> tuple[bool, str]:
-    report_ts = _hget(key_time(scanner), "last_mobility_report_at", "")
-    issued_ts = _hget(key_time(scanner), "last_planned_command_issued_at", "")
+    report_ts = utility._hget(key_time(scanner), "last_mobility_report_at", "")
+    issued_ts = utility._hget(key_time(scanner), "last_planned_command_issued_at", "")
 
     if not report_ts:
         return False, "missing last_mobility_report_at"
@@ -135,7 +134,7 @@ def _is_anchor_fresh(scanner: str) -> tuple[bool, str]:
 # ===== pending sequence / command preview =====
 
 def _save_pending_sequence(scanner: str, seq: list[Dict[str, Any]], reason: str = "") -> None:
-    _hset_many(
+    utility._hset_many(
         key_state(scanner),
         {
             "pending_sequence_json": seq,
@@ -145,7 +144,7 @@ def _save_pending_sequence(scanner: str, seq: list[Dict[str, Any]], reason: str 
     )
 
 def _load_pending_sequence(scanner: str) -> list[Dict[str, Any]]:
-    raw = _hget(key_state(scanner), "pending_sequence_json", "")
+    raw = utility._hget(key_state(scanner), "pending_sequence_json", "")
     if not raw.strip():
         return []
     try:
@@ -155,7 +154,7 @@ def _load_pending_sequence(scanner: str) -> list[Dict[str, Any]]:
         return []
 
 def _clear_pending_sequence(scanner: str) -> None:
-    _hset_many(
+    utility._hset_many(
         key_state(scanner),
         {
             "pending_sequence_json": "",
@@ -168,16 +167,16 @@ def _clear_pending_sequence(scanner: str) -> None:
 # ===== issued-command tracking helpers =====
 
 def _save_last_issued_command(scanner: str, action: str, args: Dict[str, Any]) -> str:
-    ts = local_ts()
+    ts = utility.local_ts()
 
-    _hset_many(
+    utility._hset_many(
         key_time(scanner),
         {
             "last_planned_command_issued_at": ts,
         },
     )
 
-    _hset_many(
+    utility._hset_many(
         key_pose(scanner),
         {
             "last_planned_command_action": action,
@@ -200,9 +199,9 @@ def _save_outgoing_command_preview(scanner: str, action: str, args: Dict[str, An
 
     Acts as temporary bridge between mobility and NMS command system.
     """
-    now_ts = local_ts()
+    now_ts = utility.local_ts()
 
-    _hset_many(
+    utility._hset_many(
         key_state(scanner),
         {
             "outgoing_command_action": action,
@@ -229,7 +228,7 @@ def _clear_outgoing_command_preview(scanner: str) -> None:
     """
     Unfinished temporary function
     """
-    _hset_many(
+    utility._hset_many(
         key_state(scanner),
         {
             "outgoing_command_action": "",
@@ -243,7 +242,7 @@ def _clear_outgoing_command_preview(scanner: str) -> None:
 # ===== correction counter helpers =====
 
 def _reset_correction_counter(scanner: str) -> None:
-    _hset_many(
+    utility._hset_many(
         key_state(scanner),
         {
             "correction_attempt_count": "-1",
@@ -251,7 +250,7 @@ def _reset_correction_counter(scanner: str) -> None:
     )
 
 def _inc_correction_counter(scanner: str) -> int:
-    val = _hget(key_state(scanner), "correction_attempt_count", "0")
+    val = utility._hget(key_state(scanner), "correction_attempt_count", "0")
     try:
         n = int(val)
     except Exception:
@@ -259,7 +258,7 @@ def _inc_correction_counter(scanner: str) -> int:
 
     n += 1
 
-    _hset_many(
+    utility._hset_many(
         key_state(scanner),
         {
             "correction_attempt_count": str(n),
@@ -269,7 +268,7 @@ def _inc_correction_counter(scanner: str) -> int:
     return n
 
 def _get_correction_counter(scanner: str) -> int:
-    val = _hget(key_state(scanner), "correction_attempt_count", "0")
+    val = utility._hget(key_state(scanner), "correction_attempt_count", "0")
     try:
         return int(val)
     except Exception:
@@ -283,11 +282,11 @@ def _update_10s_report(scanner: str) -> None:
 
     payload = {
         "scanner": scanner,
-        "time": local_ts(),
+        "time": utility.local_ts(),
         "true_location": true_loc if _is_loc_ok(true_loc) else {},
     }
 
-    _hset_many(
+    utility._hset_many(
         key_report(scanner),
         {
             "last_10s_report_json": payload,

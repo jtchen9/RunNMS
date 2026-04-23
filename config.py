@@ -83,6 +83,8 @@ KEY_NB_LAST_UPLOAD_PAYLOAD: str = f"{KEY_PREFIX}nb:last_upload_payload"
 KEY_NB_LAST_STATUS_PAYLOAD: str = f"{KEY_PREFIX}nb:last_status_payload"
 NB_DEBUG_TTL_SEC: int = 48 * 3600
 
+KEY_EXPERIMENT_REGISTRY: str = f"{KEY_PREFIX}experiment:registry"
+
 # -------------------
 # 6) AP performance upload
 # -------------------

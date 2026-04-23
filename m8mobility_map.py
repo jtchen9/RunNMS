@@ -12,7 +12,7 @@ import math
 import numpy as np
 import config
 
-from utility import _hget_json
+import utility
 
 from m8mobility_state_store import key_pose, _is_loc_ok
 
@@ -169,8 +169,8 @@ def _build_dynamic_map(exclude_scanner: str = "") -> np.ndarray:
 
         pose_key = key_pose(scanner)
 
-        true_loc = _hget_json(pose_key, "true_location_json")
-        planned_loc = _hget_json(pose_key, "planned_location_json")
+        true_loc = utility._hget_json(pose_key, "true_location_json")
+        planned_loc = utility._hget_json(pose_key, "planned_location_json")
 
         if _is_loc_ok(true_loc):
             _rasterize_circle(

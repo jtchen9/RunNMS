@@ -8,11 +8,10 @@ Division rule:
 """
 from typing import Dict, Any, Optional
 import math
-from datetime import timedelta
 import threading
 import uuid
-from config import MOBILITY_POS_IGNORE_THRESH_M, MOBILITY_POS_CORRECT_THRESH_M, MOBILITY_POS_CORRECT_MAX_M, MOBILITY_ANGLE_IGNORE_THRESH_DEG, MOBILITY_ANGLE_CORRECT_MAX_DEG, r, KEY_PREFIX
-from utility import _hget, _hset_many, _to_int, _deg_norm_360, _deg_to_rad, local_ts, parse_local_dt
+import config
+import utility
 
 from m8mobility_command_model import _angle_diff_deg, _build_command_from_true_to_planned, _circular_mean_deg
 from m8mobility_state_store import ( 
@@ -93,7 +92,7 @@ _BUSY_RETRY_TIMERS: Dict[str, threading.Timer] = {}
 # ===== helper =====
 
 def _get_state(scanner: str) -> str:
-    s = _hget(key_state(scanner), "state", S0_IDLE)
+    s = utility._hget(key_state(scanner), "state", S0_IDLE)
     return s if s in VALID_STATES else S0_IDLE
 
 
@@ -171,7 +170,7 @@ def _s0_init_planned(scanner: str) -> Dict[str, Any]:
         "location_ok": True,
         "x_m": float(true_loc["x_m"]),
         "y_m": float(true_loc["y_m"]),
-        "heading_deg": _deg_norm_360(float(true_loc["heading_deg"])),
+        "heading_deg": utility._deg_norm_360(float(true_loc["heading_deg"])),
     }
 
     _save_planned(scanner, planned)
@@ -242,7 +241,7 @@ def process_s1_event(scanner: str, source: str, timer_token: Optional[str] = Non
         # Source B: timeout callback
         # ---------------------------------------------------------
         if source == "timeout":
-            current_token = _hget(key_time(scanner), "s1_timer_token", "")
+            current_token = utility._hget(key_time(scanner), "s1_timer_token", "")
             if not current_token or str(current_token) != str(timer_token or ""):
                 return {
                     "status": "ignored",
@@ -260,15 +259,15 @@ def process_s1_event(scanner: str, source: str, timer_token: Optional[str] = Non
 
             # No acceptable report has arrived in time -> dangerous.
             state_hash = key_state(scanner)
-            old_busy_count = int(_hget(state_hash, "busy_count", "0") or "0")
+            old_busy_count = int(utility._hget(state_hash, "busy_count", "0") or "0")
             new_busy_count = old_busy_count + 1
 
-            _hset_many(
+            utility._hset_many(
                 state_hash,
                 {
                     "busy_count": str(new_busy_count),
                     "state_detail": f"s1 timeout after {S1_REPORT_TIMEOUT_SEC}s",
-                    "state_updated_at": local_ts(),
+                    "state_updated_at": utility.utility.local_ts(),
                 },
             )
 
@@ -307,8 +306,8 @@ def enter_s1waiting_report_on_report(scanner: str) -> Dict[str, Any]:
     return run_state_machine(scanner)
 
 def _s1_has_fresh_report(scanner: str) -> tuple[bool, str]:
-    report_ts = _hget(key_time(scanner), "last_mobility_report_at", "")
-    issued_ts = _hget(key_time(scanner), "last_planned_command_issued_at", "")
+    report_ts = utility._hget(key_time(scanner), "last_mobility_report_at", "")
+    issued_ts = utility._hget(key_time(scanner), "last_planned_command_issued_at", "")
 
     if not issued_ts:
         return False, "missing last_planned_command_issued_at"
@@ -322,13 +321,13 @@ def _s1_has_fresh_report(scanner: str) -> tuple[bool, str]:
     return True, ""
 
 def _s1_has_timed_out(scanner: str) -> tuple[bool, str]:
-    issued_ts = _hget(key_time(scanner), "last_planned_command_issued_at", "")
+    issued_ts = utility._hget(key_time(scanner), "last_planned_command_issued_at", "")
     if not issued_ts:
         return False, "missing last_planned_command_issued_at"
 
     try:
-        issued_dt = parse_local_dt(issued_ts)
-        now_dt = parse_local_dt(local_ts())
+        issued_dt = utility.parse_local_dt(issued_ts)
+        now_dt = utility.parse_local_dt(utility.local_ts())
     except Exception:
         return False, "time parse failed"
 
@@ -343,8 +342,8 @@ def _s1_report_matches_expected_command(scanner: str) -> tuple[bool, str]:
     if not isinstance(report, dict) or not report:
         return False, "missing mobility report json"
 
-    expected_action = _hget(key_pose(scanner), "last_planned_command_action", "")
-    expected_args = _hget(key_pose(scanner), "last_planned_command_args_json", "")
+    expected_action = utility._hget(key_pose(scanner), "last_planned_command_action", "")
+    expected_args = utility._hget(key_pose(scanner), "last_planned_command_args_json", "")
 
     report_action = str(report.get("last_command") or "").strip()
     report_args = report.get("last_command_args") or {}
@@ -369,21 +368,21 @@ def _s1_report_matches_expected_command(scanner: str) -> tuple[bool, str]:
     return True, ""
 
 def _s1_lock_key(scanner: str) -> str:
-    return f"{KEY_PREFIX}scanner:{scanner}:mobility:s1_event_lock"
+    return f"{config.KEY_PREFIX}scanner:{scanner}:mobility:s1_event_lock"
 
 def _acquire_s1_lock(scanner: str) -> str:
     owner = uuid.uuid4().hex
-    ok = r.set(_s1_lock_key(scanner), owner, nx=True, ex=S1_EVENT_LOCK_TTL_SEC)
+    ok = config.r.set(_s1_lock_key(scanner), owner, nx=True, ex=S1_EVENT_LOCK_TTL_SEC)
     return owner if ok else ""
 
 def _release_s1_lock(scanner: str, owner: str) -> None:
     key = _s1_lock_key(scanner)
     try:
-        cur = r.get(key) or ""
+        cur = config.r.get(key) or ""
         if isinstance(cur, bytes):
             cur = cur.decode("utf-8", errors="ignore")
         if str(cur) == str(owner):
-            r.delete(key)
+            config.r.delete(key)
     except Exception:
         pass
 
@@ -391,11 +390,11 @@ def _start_s1_timer(scanner: str) -> None:
     _cancel_s1_timer(scanner)
 
     token = uuid.uuid4().hex
-    _hset_many(
+    utility._hset_many(
         key_time(scanner),
         {
             "s1_timer_token": token,
-            "s1_timer_started_at": local_ts(),
+            "s1_timer_started_at": utility.local_ts(),
         },
     )
 
@@ -412,7 +411,7 @@ def _cancel_s1_timer(scanner: str) -> None:
         except Exception:
             pass
 
-    _hset_many(
+    utility._hset_many(
         key_time(scanner),
         {
             "s1_timer_token": "",
@@ -435,8 +434,8 @@ def s2evaluating_policy(scanner: str) -> Dict[str, Any]:
     if entry_reason == "busy_retry_timer":
         _clear_s2_entry_reason(scanner)
 
-        last_action = _hget(key_pose(scanner), "last_planned_command_action", "")
-        last_args = _hget(key_pose(scanner), "last_planned_command_args_json", "")
+        last_action = utility._hget(key_pose(scanner), "last_planned_command_action", "")
+        last_args = utility._hget(key_pose(scanner), "last_planned_command_args_json", "")
 
         if not last_action or not last_args:
             _cancel_busy_retry_timer(scanner)
@@ -491,10 +490,10 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
     last_error_detail = str(report.get("last_error_detail") or "").strip()
 
     state_hash = key_state(scanner)
-    old_retry_count = int(_hget(state_hash, "retry_count", "0") or "0")
-    old_collision_veto_count = int(_hget(state_hash, "collision_veto_count", "0") or "0")
-    old_busy_count = int(_hget(state_hash, "busy_count", "0") or "0")
-    old_exec_fail_count = int(_hget(state_hash, "exec_fail_count", "0") or "0")
+    old_retry_count = int(utility._hget(state_hash, "retry_count", "0") or "0")
+    old_collision_veto_count = int(utility._hget(state_hash, "collision_veto_count", "0") or "0")
+    old_busy_count = int(utility._hget(state_hash, "busy_count", "0") or "0")
+    old_exec_fail_count = int(utility._hget(state_hash, "exec_fail_count", "0") or "0")
 
     out = {
         "last_error_code": last_error_code,
@@ -521,7 +520,7 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
             "busy_count": "0",
             "exec_fail_count": "0",
         })
-        _hset_many(state_hash, out)
+        utility._hset_many(state_hash, out)
         _save_policy_time(scanner)
         return {
             "status": "ok",
@@ -540,7 +539,7 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
             "robot_safety_state": "NORMAL_NO_TAG",
             "retry_count": "0",
         })
-        _hset_many(state_hash, out)
+        utility._hset_many(state_hash, out)
         _save_policy_time(scanner)
         return {
             "status": "ok",
@@ -556,7 +555,7 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
             "stop_reason": last_error_code,
             "robot_safety_state": "UNSAFE_STOP",
         })
-        _hset_many(state_hash, out)
+        utility._hset_many(state_hash, out)
         _save_policy_time(scanner)
         return {
             "status": "stop",
@@ -581,7 +580,7 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
                 "stop_reason": "UNEXPECTED_EVENT_SUM_LIMIT",
                 "robot_safety_state": "UNSAFE_STOP",
             })
-            _hset_many(state_hash, out)
+            utility._hset_many(state_hash, out)
             _save_policy_time(scanner)
             _cancel_busy_retry_timer(scanner)
             _clear_s2_entry_reason(scanner)
@@ -598,7 +597,7 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
             "stop_reason": "",
             "robot_safety_state": "WAITING_PREVIOUS_MOTION",
         })
-        _hset_many(state_hash, out)
+        utility._hset_many(state_hash, out)
         _save_policy_time(scanner)
 
         _set_s2_entry_reason(scanner, "busy_retry_timer")
@@ -626,7 +625,7 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
             "stop_reason": "UNEXPECTED_EVENT_SUM_LIMIT" if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT else "",
             "robot_safety_state": "UNSAFE_STOP" if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT else "COLLISION_BLOCKED",
         })
-        _hset_many(state_hash, out)
+        utility._hset_many(state_hash, out)
         _save_policy_time(scanner)
         return {
             "status": "stop" if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT else "retry",
@@ -658,7 +657,7 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
             "stop_reason": "UNEXPECTED_EVENT_SUM_LIMIT" if stop else "",
             "robot_safety_state": "UNSAFE_STOP" if stop else "LOCATION_RECOVERY_NEEDED",
         })
-        _hset_many(state_hash, out)
+        utility._hset_many(state_hash, out)
         _save_policy_time(scanner)
         return {
             "status": "stop" if stop else "retry",
@@ -674,7 +673,7 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
             "stop_reason": f"UNKNOWN_ERROR_CODE:{last_error_code}",
             "robot_safety_state": "UNSAFE_STOP",
         })
-        _hset_many(state_hash, out)
+        utility._hset_many(state_hash, out)
         _save_policy_time(scanner)
         return {
             "status": "stop",
@@ -693,7 +692,7 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
         "stop_reason": "STATUS_RETRY_EXCEEDED" if stop else "",
         "robot_safety_state": "UNSAFE_STOP" if stop else "LOCATION_RECOVERY_NEEDED",
     })
-    _hset_many(state_hash, out)
+    utility._hset_many(state_hash, out)
     _save_policy_time(scanner)
     return {
         "status": "stop" if stop else "retry",
@@ -712,11 +711,11 @@ def _start_busy_retry_timer(scanner: str) -> None:
     _cancel_busy_retry_timer(scanner)
 
     token = uuid.uuid4().hex
-    _hset_many(
+    utility._hset_many(
         key_time(scanner),
         {
             "busy_retry_token": token,
-            "busy_retry_started_at": local_ts(),
+            "busy_retry_started_at": utility.local_ts(),
         },
     )
 
@@ -733,7 +732,7 @@ def _cancel_busy_retry_timer(scanner: str) -> None:
         except Exception:
             pass
 
-    _hset_many(
+    utility._hset_many(
         key_time(scanner),
         {
             "busy_retry_token": "",
@@ -743,7 +742,7 @@ def _cancel_busy_retry_timer(scanner: str) -> None:
 
 def _busy_retry_timeout_callback(scanner: str, token: str) -> None:
     current_state = _get_state(scanner)
-    current_token = _hget(key_time(scanner), "busy_retry_token", "")
+    current_token = utility._hget(key_time(scanner), "busy_retry_token", "")
     entry_reason = _get_s2_entry_reason(scanner)
 
     # ---------------------------------------------------------
@@ -768,7 +767,7 @@ def _busy_retry_timeout_callback(scanner: str, token: str) -> None:
     run_state_machine(scanner)
 
 def _set_s2_entry_reason(scanner: str, reason: str) -> None:
-    _hset_many(
+    utility._hset_many(
         key_state(scanner),
         {
             "s2_entry_reason": str(reason or ""),
@@ -776,10 +775,10 @@ def _set_s2_entry_reason(scanner: str, reason: str) -> None:
     )
 
 def _get_s2_entry_reason(scanner: str) -> str:
-    return str(_hget(key_state(scanner), "s2_entry_reason", "") or "").strip()
+    return str(utility._hget(key_state(scanner), "s2_entry_reason", "") or "").strip()
 
 def _clear_s2_entry_reason(scanner: str) -> None:
-    _hset_many(
+    utility._hset_many(
         key_state(scanner),
         {
             "s2_entry_reason": "",
@@ -809,12 +808,12 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
     if _propagation_allowed(scanner) and _should_propagate_true(scanner):
         propagated = _propagate_true_by_last_command(scanner)
         if _is_loc_ok(propagated):
-            _hset_many(
+            utility._hset_many(
                 key_state(scanner),
                 {
                     "true_propagation_applied": "true",
                     "true_propagation_detail": loc.get("detail", ""),
-                    "true_propagation_time": local_ts(),
+                    "true_propagation_time": utility.local_ts(),
                 },
             )
             _update_10s_report(scanner)
@@ -830,12 +829,12 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
     elif not _should_propagate_true(scanner):
         propagation_reason = f"{propagation_reason}; propagation precondition failed"
 
-    _hset_many(
+    utility._hset_many(
         key_state(scanner),
         {
             "true_propagation_applied": "false",
             "true_propagation_detail": propagation_reason,
-            "true_propagation_time": local_ts(),
+            "true_propagation_time": utility.local_ts(),
         },
     )
     _set_state(scanner, S4_WAITING_LOCATION_RETRY, f"solve failed: {propagation_reason}")
@@ -852,7 +851,7 @@ def _s3_solve_true_location(scanner: str) -> Dict[str, Any]:
             "tag_count": 0,
             "solver_stage": "single_tag",
             "source": "apriltag",
-            "updated_at": local_ts(),
+            "updated_at": utility.local_ts(),
         }
 
     visible = _s3_extract_visible_tags(scanner)
@@ -864,7 +863,7 @@ def _s3_solve_true_location(scanner: str) -> Dict[str, Any]:
             "tag_count": 0,
             "solver_stage": "single_tag",
             "source": "apriltag",
-            "updated_at": local_ts(),
+            "updated_at": utility.local_ts(),
         }
 
     cands = []
@@ -885,7 +884,7 @@ def _s3_solve_true_location(scanner: str) -> Dict[str, Any]:
             "tag_count": 0,
             "solver_stage": "single_tag",
             "source": "apriltag",
-            "updated_at": local_ts(),
+            "updated_at": utility.local_ts(),
         }
 
     return _s3_fuse_candidates(cands)
@@ -933,11 +932,11 @@ def _s3_solve_single_tag(obs: Dict[str, Any], tag_world: Dict[str, Any]) -> Dict
     bearing_robot_to_tag_deg_ccw = -angle_deg_cw
 
     # heading estimate
-    heading_deg = _deg_norm_360(tag_yaw_world + 180.0 - yaw_deg)
+    heading_deg = utility._deg_norm_360(tag_yaw_world + 180.0 - yaw_deg)
 
     # world bearing robot -> tag
-    world_bearing_deg = _deg_norm_360(heading_deg + bearing_robot_to_tag_deg_ccw)
-    world_bearing_rad = _deg_to_rad(world_bearing_deg)
+    world_bearing_deg = utility._deg_norm_360(heading_deg + bearing_robot_to_tag_deg_ccw)
+    world_bearing_rad = utility._deg_to_rad(world_bearing_deg)
 
     robot_x = tag_x - distance_m * math.cos(world_bearing_rad)
     robot_y = tag_y - distance_m * math.sin(world_bearing_rad)
@@ -967,7 +966,7 @@ def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
             "tag_count": 0,
             "solver_stage": "single_tag",
             "source": "apriltag",
-            "updated_at": local_ts(),
+            "updated_at": utility.local_ts(),
         }
 
     if len(cands) == 1:
@@ -976,12 +975,12 @@ def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
             "location_ok": True,
             "x_m": c["x_m"],
             "y_m": c["y_m"],
-            "heading_deg": _deg_norm_360(c["heading_deg"]),
+            "heading_deg": utility._deg_norm_360(c["heading_deg"]),
             "source": "apriltag",
             "tags_used": [c["tag_id"]],
             "tag_count": 1,
             "solver_stage": "single_tag",
-            "updated_at": local_ts(),
+            "updated_at": utility.local_ts(),
             "detail": "",
             "candidates": cands,
         }
@@ -997,7 +996,7 @@ def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
                 "tags_used": [c["tag_id"] for c in cands],
                 "tag_count": 2,
                 "solver_stage": "multi_tag",
-                "updated_at": local_ts(),
+                "updated_at": utility.local_ts(),
                 "detail": f"two-tag candidates inconsistent: pos_d={pos_d:.3f}m hdg_d={hdg_d:.3f}deg",
                 "candidates": cands,
             }
@@ -1011,7 +1010,7 @@ def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
             "tags_used": [c["tag_id"] for c in cands],
             "tag_count": 2,
             "solver_stage": "multi_tag",
-            "updated_at": local_ts(),
+            "updated_at": utility.local_ts(),
             "detail": "",
             "candidates": cands,
         }
@@ -1048,7 +1047,7 @@ def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
             "tags_used": [],
             "tag_count": 0,
             "solver_stage": "multi_tag",
-            "updated_at": local_ts(),
+            "updated_at": utility.local_ts(),
             "detail": "all multi-tag candidates rejected",
             "candidates": cands,
             "rejected_candidates": rejected,
@@ -1063,32 +1062,32 @@ def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
         "tags_used": [c["tag_id"] for c in kept],
         "tag_count": len(kept),
         "solver_stage": "multi_tag" if len(kept) > 1 else "single_tag_after_rejection",
-        "updated_at": local_ts(),
+        "updated_at": utility.local_ts(),
         "detail": "" if not rejected else f"rejected {len(rejected)} outlier candidate(s)",
         "candidates": cands,
         "rejected_candidates": rejected,
     }
 
 def _s3_save_true_location(scanner: str, loc: Dict[str, Any]) -> None:
-    _hset_many(
+    utility._hset_many(
         key_pose(scanner),
         {
             "true_location_json": loc,
         },
     )
-    _hset_many(
+    utility._hset_many(
         key_time(scanner),
         {
-            "true_location_updated_at": local_ts(),
+            "true_location_updated_at": utility.local_ts(),
         },
     )
 
 def _propagation_allowed(scanner: str) -> bool:
     state_hash = key_state(scanner)
 
-    busy_count = int(_hget(state_hash, "busy_count", "0") or "0")
-    collision_veto_count = int(_hget(state_hash, "collision_veto_count", "0") or "0")
-    exec_fail_count = int(_hget(state_hash, "exec_fail_count", "0") or "0")
+    busy_count = int(utility._hget(state_hash, "busy_count", "0") or "0")
+    collision_veto_count = int(utility._hget(state_hash, "collision_veto_count", "0") or "0")
+    exec_fail_count = int(utility._hget(state_hash, "exec_fail_count", "0") or "0")
 
     return _unexpected_event_sum(
         busy_count=busy_count,
@@ -1129,10 +1128,10 @@ def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
     state_hash = key_state(scanner)
     time_hash = key_time(scanner)
 
-    retry_count = _to_int(_hget(state_hash, "retry_count", "0"), 0)
-    stop_experiment = (_hget(state_hash, "stop_experiment", "false").lower() == "true")
-    stop_reason = _hget(state_hash, "stop_reason", "")
-    need_location_retry = (_hget(state_hash, "need_location_retry", "false").lower() == "true")
+    retry_count = utility._to_int(utility._hget(state_hash, "retry_count", "0"), 0)
+    stop_experiment = (utility._hget(state_hash, "stop_experiment", "false").lower() == "true")
+    stop_reason = utility._hget(state_hash, "stop_reason", "")
+    need_location_retry = (utility._hget(state_hash, "need_location_retry", "false").lower() == "true")
 
     # If policy already says stop, go straight to stopped
     if stop_experiment:
@@ -1152,8 +1151,8 @@ def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
 
     # Retry still allowed
     if retry_count < LOCATION_RETRY_LIMIT:
-        now_ts = local_ts()
-        _hset_many(
+        now_ts = utility.local_ts()
+        utility._hset_many(
             time_hash,
             {
                 "last_retry_requested_at": now_ts,
@@ -1223,7 +1222,7 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
     # ---------------------------------------------------------
     # If already close enough, no command is needed.
     # ---------------------------------------------------------
-    if dpos <= MOBILITY_POS_IGNORE_THRESH_M and dhead <= MOBILITY_ANGLE_IGNORE_THRESH_DEG:
+    if dpos <= config.MOBILITY_POS_IGNORE_THRESH_M and dhead <= config.MOBILITY_ANGLE_IGNORE_THRESH_DEG:
         _clear_pending_sequence(scanner)
         _clear_outgoing_command_preview(scanner)
         return {
@@ -1415,7 +1414,7 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
     # ---------------------------------------------------------
     count = _inc_correction_counter(scanner)
 
-    _hset_many(
+    utility._hset_many(
         key_state(scanner),
         {
             "correction_attempt_count": str(count),
@@ -1458,7 +1457,7 @@ def s7stopped(scanner: str) -> Dict[str, Any]:
     - stop reports
     - stop traffic sessions
     """
-    reason = _hget(key_state(scanner), "state_detail", "")
+    reason = utility._hget(key_state(scanner), "state_detail", "")
     reason = str(reason or "").strip() or "manual reset required"
 
     _save_stop(True, reason)
@@ -1466,7 +1465,7 @@ def s7stopped(scanner: str) -> Dict[str, Any]:
     _clear_pending_sequence(scanner)
     _clear_outgoing_command_preview(scanner)
 
-    _hset_many(
+    utility._hset_many(
         key_time(scanner),
         {
             "s1_timer_token": "",
@@ -1476,7 +1475,7 @@ def s7stopped(scanner: str) -> Dict[str, Any]:
         },
     )
 
-    _hset_many(
+    utility._hset_many(
         key_state(scanner),
         {
             "s2_entry_reason": "",

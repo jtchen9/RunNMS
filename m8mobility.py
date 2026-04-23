@@ -14,8 +14,8 @@ Phase 1 rule:
 from typing import Dict, Any
 from fastapi import APIRouter
 
-from config import r, KEY_REGISTRY, KEY_WHITELIST_SCANNER_META
-from utility import _hget, _hset_many, local_ts
+import config
+import utility
 
 from m8mobility_state_store import (
     _clear_outgoing_command_preview, _clear_pending_sequence, _load_stop, 
@@ -52,12 +52,12 @@ def mobility_init() -> Dict[str, Any]:
     """
     assets = _ensure_mobility_assets_ready()
 
-    scanners = sorted(list(r.smembers(KEY_REGISTRY)))
+    scanners = sorted(list(config.r.smembers(config.KEY_REGISTRY)))
     initialized = []
     skipped_not_whitelisted = []
 
     for scanner in scanners:
-        if not r.hexists(KEY_WHITELIST_SCANNER_META, scanner):
+        if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
             skipped_not_whitelisted.append(scanner)
             continue
 
@@ -66,7 +66,7 @@ def mobility_init() -> Dict[str, Any]:
         _reset_correction_counter(scanner)
         _set_state(scanner, S0_IDLE, "mobility_init")
 
-        _hset_many(
+        utility._hset_many(
             key_time(scanner),
             {
                 "s1_timer_token": "",
@@ -79,7 +79,7 @@ def mobility_init() -> Dict[str, Any]:
             },
         )
 
-        _hset_many(
+        utility._hset_many(
             key_state(scanner),
             {
                 "retry_count": "0",
@@ -97,7 +97,7 @@ def mobility_init() -> Dict[str, Any]:
             },
         )
 
-        _hset_many(
+        utility._hset_many(
             key_report(scanner),
             {
                 "last_mobility_report_json": "",
@@ -134,7 +134,7 @@ def manual_resume(scanner: str) -> Dict[str, Any]:
     _clear_outgoing_command_preview(scanner)
     _reset_correction_counter(scanner)
 
-    _hset_many(
+    utility._hset_many(
         key_time(scanner),
         {
             "s1_timer_token": "",
@@ -144,7 +144,7 @@ def manual_resume(scanner: str) -> Dict[str, Any]:
         },
     )
 
-    _hset_many(
+    utility._hset_many(
         key_state(scanner),
         {
             "retry_count": "0",
@@ -187,11 +187,11 @@ def on_command_issued(scanner: str, action: str, args: Dict[str, Any]) -> Dict[s
     """
     state = _get_state(scanner)
     if state != S0_IDLE:
-        _hset_many(
+        utility._hset_many(
             key_state(scanner),
             {
                 "state_detail": f"blocked: not idle, ({state})",
-                "state_updated_at": local_ts(),
+                "state_updated_at": utility.local_ts(),
             },
         )
         return {
@@ -248,10 +248,10 @@ def api_mobility_state(scanner: str) -> Dict[str, Any]:
     return {
         "scanner": scanner,
         "state": state,
-        "state_detail": _hget(key_state(scanner), "state_detail", ""),
-        "state_updated_at": _hget(key_state(scanner), "state_updated_at", ""),
+        "state_detail": utility._hget(key_state(scanner), "state_detail", ""),
+        "state_updated_at": utility._hget(key_state(scanner), "state_updated_at", ""),
         "stop": stop,
-        "correction_attempt_count": _hget(key_state(scanner), "correction_attempt_count", ""),
+        "correction_attempt_count": utility._hget(key_state(scanner), "correction_attempt_count", ""),
     }
 
 
@@ -259,8 +259,8 @@ def api_mobility_state(scanner: str) -> Dict[str, Any]:
 def api_mobility_debug(scanner: str) -> Dict[str, Any]:
     return {
         "scanner": scanner,
-        "state": r.hgetall(key_state(scanner)),
-        "time": r.hgetall(key_time(scanner)),
-        "report": r.hgetall(key_report(scanner)),
-        "pose": r.hgetall(key_pose(scanner)),
+        "state": config.r.hgetall(key_state(scanner)),
+        "time": config.r.hgetall(key_time(scanner)),
+        "report": config.r.hgetall(key_report(scanner)),
+        "pose": config.r.hgetall(key_pose(scanner)),
     }

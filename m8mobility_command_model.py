@@ -7,8 +7,7 @@ Division rule:
 """
 from typing import Dict, Any
 import math
-
-from utility import _hget, _hget_json, _wrap_angle_deg, _deg_norm_360
+import utility
 
 from m8mobility_map import _is_path_clear
 from m8mobility_state_store import key_pose, key_time, _load_true, _load_planned, _save_true, _is_loc_ok
@@ -55,7 +54,7 @@ def _normalize_mobility_command(action: str, args: Dict[str, Any]) -> tuple[str,
 # ===== command builders from pose relations =====
 
 def _build_turn_only_command(true_loc: Dict[str, Any], planned_loc: Dict[str, Any]) -> list[Dict[str, Any]]:
-    dhead = _wrap_angle_deg(float(planned_loc["heading_deg"]) - float(true_loc["heading_deg"]))
+    dhead = utility._wrap_angle_deg(float(planned_loc["heading_deg"]) - float(true_loc["heading_deg"]))
     if abs(dhead) <= 1e-9:
         return []
 
@@ -81,9 +80,9 @@ def _build_turn_move_turn_forward_command(true_loc: Dict[str, Any], planned_loc:
     dy = py - ty
     dpos = math.hypot(dx, dy)
 
-    travel_heading = _deg_norm_360(math.degrees(math.atan2(dy, dx)))
-    pre_angle = _wrap_angle_deg(travel_heading - th)
-    post_angle = _wrap_angle_deg(ph - travel_heading)
+    travel_heading = utility._deg_norm_360(math.degrees(math.atan2(dy, dx)))
+    pre_angle = utility._wrap_angle_deg(travel_heading - th)
+    post_angle = utility._wrap_angle_deg(ph - travel_heading)
 
     cmd = {
         "action": "mobility.turn_move_turn.forward",
@@ -128,9 +127,9 @@ def _build_command_from_true_to_planned(scanner: str) -> tuple[str, Dict[str, An
 
     distance = math.hypot(dx, dy)
 
-    travel_heading = _deg_norm_360(math.degrees(math.atan2(dy, dx)))
-    pre_angle = _wrap_angle_deg(travel_heading - th)
-    post_angle = _wrap_angle_deg(ph - travel_heading)
+    travel_heading = utility._deg_norm_360(math.degrees(math.atan2(dy, dx)))
+    pre_angle = utility._wrap_angle_deg(travel_heading - th)
+    post_angle = utility._wrap_angle_deg(ph - travel_heading)
 
     debug.update({
         "distance": distance,
@@ -148,7 +147,7 @@ def _build_command_from_true_to_planned(scanner: str) -> tuple[str, Dict[str, An
             # dummy command
             return "mobility.turn", {"angle_deg": 0.0}, debug
 
-        return "mobility.turn", {"angle_deg": float(_wrap_angle_deg(ph - th))}, debug
+        return "mobility.turn", {"angle_deg": float(utility._wrap_angle_deg(ph - th))}, debug
 
     # Case 2: normal motion
     return "mobility.turn_move_turn.forward", {
@@ -176,8 +175,8 @@ def _should_propagate_true(scanner: str) -> bool:
     """
     Ensure propagation happens EXACTLY ONCE per report.
     """
-    report_ts = _hget(key_time(scanner), "last_mobility_report_at", "")
-    true_ts = _hget(key_time(scanner), "true_location_updated_at", "")
+    report_ts = utility._hget(key_time(scanner), "last_mobility_report_at", "")
+    true_ts = utility._hget(key_time(scanner), "true_location_updated_at", "")
 
     if not report_ts:
         return False
@@ -198,8 +197,8 @@ def _propagate_true_by_last_command(scanner: str) -> Dict[str, Any]:
     if not _is_loc_ok(true_loc):
         return {}
 
-    action = _hget(key_pose(scanner), "last_planned_command_action", "")
-    args = _hget_json(key_pose(scanner), "last_planned_command_args_json")
+    action = utility._hget(key_pose(scanner), "last_planned_command_action", "")
+    args = utility._hget_json(key_pose(scanner), "last_planned_command_args_json")
 
     if not action:
         return {}
@@ -231,6 +230,6 @@ def _circular_mean_deg(vals: list[float]) -> float:
         sx += math.cos(r)
         sy += math.sin(r)
     if abs(sx) < 1e-12 and abs(sy) < 1e-12:
-        return _deg_norm_360(vals[0])
-    return _deg_norm_360(math.degrees(math.atan2(sy, sx)))
+        return utility._deg_norm_360(vals[0])
+    return utility._deg_norm_360(math.degrees(math.atan2(sy, sx)))
 
