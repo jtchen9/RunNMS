@@ -255,11 +255,11 @@ def _dispatch_due_mobility_command(xid: str, fields: Dict[str, str]) -> None:
 
     result = on_command_issued(scanner, action, args)
 
-    # Delete only if accepted or conclusively blocked by non-idle state handling choice.
-    # For now, keep simple:
-    # - delete on ok
-    # - keep if blocked, so it can retry later
-    if str(result.get("status") or "") == "ok":
+    status = str(result.get("status") or "").strip().lower()
+
+    # Keep only when scanner is temporarily not ready.
+    # Any non-blocked result means the mobility subsystem consumed the row.
+    if status != "blocked":
         try:
             config.r.xdel(config.KEY_MOBILITY_CMD_STREAM, xid)
         except Exception:

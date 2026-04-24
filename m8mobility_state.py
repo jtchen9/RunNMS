@@ -6,6 +6,7 @@ Division rule:
 - Shared services are imported from mobility-specific service files.
 - No wildcard imports.
 """
+import json
 from typing import Dict, Any, Optional
 import math
 import threading
@@ -266,8 +267,10 @@ def process_s1_event(scanner: str, source: str, timer_token: Optional[str] = Non
                 state_hash,
                 {
                     "busy_count": str(new_busy_count),
+                    "need_location_retry": "true",
+                    "robot_safety_state": "WAITING_LOCATION_RETRY",
                     "state_detail": f"s1 timeout after {S1_REPORT_TIMEOUT_SEC}s",
-                    "state_updated_at": utility.utility.local_ts(),
+                    "state_updated_at": utility.local_ts(),
                 },
             )
 
@@ -343,10 +346,20 @@ def _s1_report_matches_expected_command(scanner: str) -> tuple[bool, str]:
         return False, "missing mobility report json"
 
     expected_action = utility._hget(key_pose(scanner), "last_planned_command_action", "")
-    expected_args = utility._hget(key_pose(scanner), "last_planned_command_args_json", "")
+    expected_args_raw =  utility._hget(key_pose(scanner), "last_planned_command_args_json", "")
 
     report_action = str(report.get("last_command") or "").strip()
     report_args = report.get("last_command_args") or {}
+
+    try:
+        expected_args = json.loads(expected_args_raw) if str(expected_args_raw).strip() else {}
+        if not isinstance(expected_args, dict):
+            return False, "expected command args is not a JSON object"
+    except Exception as e:
+        return False, f"expected command args decode failed: {e}"
+
+    if not isinstance(report_args, dict):
+        return False, "report command args is not a JSON object"
 
     if not expected_action:
         return False, "missing expected action"
@@ -1115,7 +1128,7 @@ def s4waiting_location_retry(scanner: str) -> Dict[str, Any]:
             out["last_retry_requested_at"] = result["last_retry_requested_at"]
         return out
 
-    if transition_to == S0_IDLE:
+    if transition_to in (S0_IDLE, S4_WAITING_LOCATION_RETRY):
         return {
             "state": transition_to,
             "status": result["status"],
@@ -1149,19 +1162,50 @@ def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
             "detail": "no location retry needed",
         }
 
-    # Retry still allowed
+    # Retry still allowed: issue mobility.location.report and wait for its report in S1
     if retry_count < LOCATION_RETRY_LIMIT:
         now_ts = utility.local_ts()
+        new_retry_count = retry_count + 1
+
+        action = "mobility.location.report"
+        args = {}
+
+        _save_outgoing_command_preview(
+            scanner,
+            action=action,
+            args=args,
+            source="location_retry",
+        )
+
+        _save_last_issued_command(
+            scanner,
+            action=action,
+            args=args,
+        )
+
+        utility._hset_many(
+            state_hash,
+            {
+                "retry_count": str(new_retry_count),
+                "need_location_retry": "false",
+                "outgoing_command_action": action,
+                "outgoing_command_args_json": args,
+                "outgoing_command_source": "location_retry",
+                "outgoing_command_updated_at": now_ts,
+            },
+        )
+
         utility._hset_many(
             time_hash,
             {
                 "last_retry_requested_at": now_ts,
             },
         )
+
         return {
             "status": "retry",
-            "transition_to": S4_WAITING_LOCATION_RETRY,
-            "detail": f"location retry allowed, retry_count={retry_count}",
+            "transition_to": S1_WAITING_REPORT,
+            "detail": f"location retry issued, retry_count={new_retry_count}",
             "last_retry_requested_at": now_ts,
         }
 
@@ -1269,28 +1313,40 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         }
 
     # ---------------------------------------------------------
-    # Path safety belongs to S5 now
+    # Path safety belongs to S5 now.
+    # Only commands with translational movement need path check.
+    # Turn-only and location-report commands do not sweep a path.
     # ---------------------------------------------------------
-    tx = float(true_loc["x_m"])
-    ty = float(true_loc["y_m"])
-
     action, args = _normalize_mobility_command(action, args)
-    simulated_target = _apply_mobility_command_to_pose(true_loc, action, args)
-    px = float(simulated_target["x_m"])
-    py = float(simulated_target["y_m"])
 
-    path_ok, blocked = _is_path_clear(tx, ty, px, py, exclude_scanner=scanner)
-    if not path_ok:
-        _clear_pending_sequence(scanner)
-        _clear_outgoing_command_preview(scanner)
-        return {
-            "status": "stop",
-            "transition_to": S7_STOPPED,
-            "detail": f"path unsafe in s5, blocked={len(blocked)}",
-            "error": err,
-            "pending_sequence": [],
-            "correction_detail": correction_detail,
-        }
+    needs_path_check = (
+        action in (
+            "mobility.turn_move_turn.forward",
+            "mobility.turn_move_turn.backward",
+        )
+        and abs(float(args.get("distance_m", 0.0) or 0.0)) > 1e-9
+    )
+
+    if needs_path_check:
+        tx = float(true_loc["x_m"])
+        ty = float(true_loc["y_m"])
+
+        simulated_target = _apply_mobility_command_to_pose(true_loc, action, args)
+        px = float(simulated_target["x_m"])
+        py = float(simulated_target["y_m"])
+
+        path_ok, blocked = _is_path_clear(tx, ty, px, py, exclude_scanner=scanner)
+        if not path_ok:
+            _clear_pending_sequence(scanner)
+            _clear_outgoing_command_preview(scanner)
+            return {
+                "status": "stop",
+                "transition_to": S7_STOPPED,
+                "detail": f"path unsafe in s5, blocked={len(blocked)}",
+                "error": err,
+                "pending_sequence": [],
+                "correction_detail": correction_detail,
+            }
 
     seq = [{"action": action, "args": args}]
     _save_pending_sequence(scanner, seq, "computed_by_s5")
