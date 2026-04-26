@@ -232,6 +232,14 @@ def _enqueue_script_or_csv_item(
         )
         return
 
+    if category_n == "ap_meta" or action_n == "ap.location.update":
+        _handle_ap_meta_row(
+            scanner=scanner,
+            action=action_n,
+            args=args or {},
+        )
+        return
+    
     config.r.xadd(
         config.key_cmd_stream(scanner),
         {
@@ -244,6 +252,7 @@ def _enqueue_script_or_csv_item(
         maxlen=5000,
         approximate=True,
     )
+
 
 
 def _mobility_enqueue_core(
@@ -280,6 +289,76 @@ def _mobility_enqueue_core(
         "created_at": created_at,
         "execute_at": execute_at,
         "time_format": config.TIME_FMT,
+    }
+
+
+def _handle_ap_meta_row(
+    *,
+    scanner: str,
+    action: str,
+    args: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Handle NMS-only AP metadata rows from experiment CSV.
+
+    Current supported action:
+    - ap.location.update
+
+    This does NOT enqueue commands to AP.
+    """
+    m1Registry.require_whitelisted(scanner)
+
+    action_n = (action or "").strip()
+    if action_n != "ap.location.update":
+        raise HTTPException(status_code=400, detail=f"unsupported ap_meta action: {action_n}")
+
+    try:
+        x_m = float(args.get("x_m"))
+        y_m = float(args.get("y_m"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="ap.location.update requires numeric x_m and y_m")
+
+    z_raw = args.get("z_m", None)
+    z_m = None
+    if z_raw is not None and str(z_raw).strip() != "":
+        try:
+            z_m = float(z_raw)
+        except Exception:
+            raise HTTPException(status_code=400, detail="z_m must be numeric if provided")
+
+    alias = str(args.get("alias") or "").strip()
+
+    now = utility.local_ts()
+    mapping = {
+        "device_type": "ap",
+        "location_mode": "fixed",
+        "location_x_m": str(x_m),
+        "location_y_m": str(y_m),
+        "location_updated_at": now,
+        "location_source": "experiment_csv",
+    }
+
+    if z_m is not None:
+        mapping["location_z_m"] = str(z_m)
+
+    if alias:
+        mapping["ap_alias"] = alias
+
+    config.r.hset(config.key_scanner_meta(scanner), mapping=mapping)
+    config.r.sadd(config.KEY_REGISTRY, scanner)
+
+    return {
+        "status": "ok",
+        "scanner": scanner,
+        "action": action_n,
+        "alias": alias,
+        "location": {
+            "mode": "fixed",
+            "x_m": x_m,
+            "y_m": y_m,
+            "z_m": z_m,
+        },
+        "updated_at": now,
     }
 
 

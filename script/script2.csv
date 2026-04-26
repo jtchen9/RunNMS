@@ -1,4 +1,6 @@
 scanner,t_offset_sec,category,action,args_json
+prplOS-fff8c8.lan,0,ap_meta,ap.location.update,"{""x_m"":2.0,""y_m"":3.5,""z_m"":1.8,""alias"":""AP0""}"
+prplOS-fff8b8.lan,0,ap_meta,ap.location.update,"{""x_m"":8.0,""y_m"":3.5,""z_m"":1.8,""alias"":""AP1""}"
 twin-scout-bravo,0,av,av.stream.start,{}
 twin-scout-bravo,170,scan,scan.start,{}
 twin-scout-bravo,30,traffic,traffic.session.start,"{""session_id"":""m2-mixed-001"",""ac"":""vi"",""protocol"":""udp"",""duration_sec"":300}"

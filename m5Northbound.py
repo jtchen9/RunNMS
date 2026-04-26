@@ -100,8 +100,14 @@ def _collect_ap_traffic_reports_for_upload(
                 bad_json_deleted += 1
                 continue
 
+            meta = config.r.hgetall(config.key_scanner_meta(scanner)) or {}
+            ap_alias = (meta.get("ap_alias") or "").strip()
+            ap_id = ap_alias or scanner
+
             item = {
-                "scanner": scanner,
+                "ap_id": ap_id,
+                "ap_real_id": scanner,
+                "scanner": scanner,   # keep for backward compatibility/debug
                 "time_format": config.TIME_FMT,
                 "raw": raw_obj,
             }
@@ -501,8 +507,33 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
             antenna_val = meta.get("antenna_count", "")
             ap_state = _freshness_state(last_seen, config.AP_STALE_TIMEOUT_SEC)
 
+            ap_alias = (meta.get("ap_alias") or "").strip()
+            loc_x = _float_or_none(meta.get("location_x_m", ""))
+            loc_y = _float_or_none(meta.get("location_y_m", ""))
+            loc_z = _float_or_none(meta.get("location_z_m", ""))
+
+            if loc_x is None or loc_y is None:
+                ap_location = {
+                    "mode": "unknown",
+                    "x": None,
+                    "y": None,
+                    "z": None,
+                    "updated_at": meta.get("location_updated_at", ""),
+                }
+            else:
+                ap_location = {
+                    "mode": meta.get("location_mode", "fixed") or "fixed",
+                    "x": loc_x,
+                    "y": loc_y,
+                    "z": loc_z,
+                    "updated_at": meta.get("location_updated_at", ""),
+                }
+
             ap_states.append({
-                "ap_id": rid,
+                "ap_id": ap_alias or rid,
+                "ap_real_id": rid,
+                "alias": ap_alias or "",
+                "location": ap_location,
                 "state": ap_state,
                 "last_seen": last_seen,
                 "mac": meta.get("mac", ""),
@@ -742,6 +773,16 @@ def _freshness_state(last_seen: str, timeout_sec: int) -> str:
         return "active"
     return "stale"
 
+
+def _float_or_none(v: Any):
+    try:
+        s = str(v or "").strip()
+        if s == "":
+            return None
+        return float(s)
+    except Exception:
+        return None
+    
 
 @router.get("/northbound/_list_experiment", tags=["5 Northbound"])
 def list_experiments(limit: int = 50) -> Dict[str, Any]:
