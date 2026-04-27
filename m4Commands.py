@@ -53,6 +53,15 @@ class CmdLoadCSVReq(BaseModel):
     csv_text: str = Field(..., description="CSV rows with columns: scanner,t_offset_sec,category,action,args_json")
 
 
+class CmdPollReq(BaseModel):
+    limit: int = 20
+    av_streaming: Optional[int] = None
+    av_detail: Optional[str] = None
+    boot_id: Optional[str] = None
+    status_report: Dict[str, Any] = Field(default_factory=dict)
+    mobility_report: Optional[Dict[str, Any]] = None
+
+
 @router.get("/cmd/_list_command_queues", tags=["4 Commands (Polling)"])
 def cmd_list_command_queues() -> Dict[str, Any]:
     scanners = sorted(list(config.r.smembers(config.KEY_REGISTRY)))
@@ -424,83 +433,83 @@ def _collect_due_commands(scanner: str, limit: int, server_now_str: str) -> Dict
     }
 
 
-@router.get("/cmd/poll/{scanner}", tags=["4 Commands (Polling)"])
+@router.post("/cmd/poll/{scanner}", tags=["4 Commands (Polling)"])
 def cmd_poll(
     scanner: str,
+    req: CmdPollReq,
     request: Request,
-    now: Optional[str] = None,
-    limit: int = Query(5, ge=1, le=50),
-    av_streaming: Optional[int] = Query(None, description="1 if AV stream currently running, else 0"),
-    av_detail: Optional[str] = Query(None, description="Optional info like 'pid=1234'"),
-    boot_id: Optional[str] = Query(None, description="Unique per boot; changes after reboot"),
-    mobility_report_json: Optional[str] = Query(None, description="Optional one-shot robot mobility report JSON"),
 ) -> Dict[str, Any]:
     m1Registry.require_whitelisted(scanner)
 
     server_now_str = utility.local_ts()
+
+    try:
+        limit = int(req.limit or 20)
+    except Exception:
+        limit = 20
+    limit = max(1, min(limit, 50))
+
     try:
         meta_updates: Dict[str, str] = {
+            "device_type": "robot",
             "last_seen": server_now_str,
             "last_poll": server_now_str,
         }
 
-        # Do NOT overwrite meta["ip"] here.
-        # The authoritative traffic IP must come only from /registry/register,
-        # where robot side reports:
-        #   wlan1 first, else wlan0, else ""
-        #
-        # Keep the poll source IP separately for debugging only.
         if request.client and request.client.host:
             meta_updates["last_poll_ip"] = request.client.host
 
-        if av_streaming is not None:
-            meta_updates["av_streaming"] = "1" if int(av_streaming) == 1 else "0"
+        if req.av_streaming is not None:
+            meta_updates["av_streaming"] = "1" if int(req.av_streaming) == 1 else "0"
             meta_updates["av_updated_at"] = server_now_str
 
-        if av_detail is not None:
-            meta_updates["av_detail"] = (av_detail or "")[:200]
+        if req.av_detail is not None:
+            meta_updates["av_detail"] = (req.av_detail or "")[:200]
 
-        if boot_id is not None:
-            meta_updates["boot_id"] = (boot_id or "")[:80]
+        if req.boot_id is not None:
+            meta_updates["boot_id"] = (req.boot_id or "")[:80]
 
-        # -------------------------
-        # Mobility report (one-shot, piggybacked on poll)
-        # -------------------------
-        raw_mobility = (mobility_report_json or "").strip()
+        status_report = req.status_report or {}
+        if isinstance(status_report, dict) and status_report:
+            wifi_status = status_report.get("wifi_status") or {}
+            scan_status = status_report.get("scan_status") or {}
+            voice_status = status_report.get("voice_status") or {}
+
+            if isinstance(wifi_status, dict):
+                meta_updates["wifi_status_json"] = json.dumps(wifi_status, ensure_ascii=False)
+
+            if isinstance(scan_status, dict):
+                meta_updates["scan_status_json"] = json.dumps(scan_status, ensure_ascii=False)
+
+            if isinstance(voice_status, dict):
+                meta_updates["voice_status_json"] = json.dumps(voice_status, ensure_ascii=False)
+
+            meta_updates["last_status_report"] = server_now_str
+
         mobility_report_ok = False
-
-        if raw_mobility != "":
+        if isinstance(req.mobility_report, dict) and req.mobility_report:
             try:
-                mob = json.loads(raw_mobility)
-                if not isinstance(mob, dict):
-                    raise ValueError("mobility_report_json must decode to a JSON object")
-
                 config.r.hset(
                     key_report(scanner),
                     mapping={
-                        "last_mobility_report_json": json.dumps(mob, ensure_ascii=False),
+                        "last_mobility_report_json": json.dumps(req.mobility_report, ensure_ascii=False),
                     },
                 )
-
                 config.r.hset(
                     key_time(scanner),
                     mapping={
                         "last_mobility_report_at": server_now_str,
                     },
                 )
-
                 mobility_report_ok = True
-
             except Exception:
-                # Never fail poll because of bad mobility JSON.
-                # Ignore this mobility payload for state-machine purposes.
                 mobility_report_ok = False
 
         config.r.hset(config.key_scanner_meta(scanner), mapping=meta_updates)
         config.r.sadd(config.KEY_REGISTRY, scanner)
 
-        if av_streaming is not None:
-            applied = "on" if int(av_streaming) == 1 else "off"
+        if req.av_streaming is not None:
+            applied = "on" if int(req.av_streaming) == 1 else "off"
             config.r.hset(config.KEY_APPLIED_VIDEO, scanner, applied)
             config.r.hset(config.KEY_APPLIED_VIDEO_TS, scanner, server_now_str)
 
@@ -508,9 +517,8 @@ def cmd_poll(
             try:
                 m8mobility.on_report_received(scanner)
             except Exception:
-                # Never fail poll because mobility state-machine follow-up fails.
                 pass
-            
+
     except Exception:
         pass
 
@@ -519,7 +527,6 @@ def cmd_poll(
     return {
         "scanner": scanner,
         "server_now": server_now_str,
-        "client_now": now,
         "cmd_expire_sec": config.CMD_EXPIRE_SEC,
         "time_format": config.TIME_FMT,
         "returned": len(collected["commands"]),

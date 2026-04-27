@@ -558,6 +558,10 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
             else:
                 stream_state = "unknown"
 
+            wifi_status = _json_dict_or_empty(meta.get("wifi_status_json", ""))
+            scan_status = _json_dict_or_empty(meta.get("scan_status_json", ""))
+            voice_status = _json_dict_or_empty(meta.get("voice_status_json", ""))
+
             robot_states.append({
                 "robot_id": rid,
                 "last_seen": last_seen,
@@ -565,6 +569,10 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
                 "stream_state": stream_state,
                 "stream_path": rid,
                 "location": {"mode": "unknown", "x": 0.0, "y": 0.0},
+                "wifi_status": wifi_status,
+                "scan_status": scan_status,
+                "voice_status": voice_status,
+                "last_status_report": meta.get("last_status_report", ""),
                 "detail": meta.get("av_detail", "")[:200],
             })
 
@@ -782,6 +790,14 @@ def _float_or_none(v: Any):
         return float(s)
     except Exception:
         return None
+    
+
+def _json_dict_or_empty(text: str) -> Dict[str, Any]:
+    try:
+        obj = json.loads(text or "{}")
+        return obj if isinstance(obj, dict) else {}
+    except Exception:
+        return {}
     
 
 @router.get("/northbound/_list_experiment", tags=["5 Northbound"])
