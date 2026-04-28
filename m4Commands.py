@@ -145,6 +145,14 @@ def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
     action_n = (cmd.action or "").strip()
     args_obj = json.loads(args_json)
 
+    if category_n == "traffic" or action_n in ("traffic.session.start", "traffic.session.stop"):
+        return m7Traffic._traffic_enqueue_core(
+            scanner=scanner,
+            action=action_n,
+            execute_at=execute_at_norm,
+            args_json=args_json,
+        )
+
     if category_n == "mobility":
         if (cmd.execute_at or "").strip() not in ("", created_at):
             raise HTTPException(status_code=400, detail="Phase 1 mobility testing only supports immediate execution")
