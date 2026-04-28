@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 import config
 import utility
+from m8mobility_state_store import key_pose
 
 router = APIRouter()
 
@@ -562,13 +563,30 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
             scan_status = _json_dict_or_empty(meta.get("scan_status_json", ""))
             voice_status = _json_dict_or_empty(meta.get("voice_status_json", ""))
 
+            true_loc = _load_true_location(rid)
+
+            if true_loc.get("location_ok"):
+                robot_location = {
+                    "mode": "estimated",
+                    "x": float(true_loc.get("x_m", 0.0)),
+                    "y": float(true_loc.get("y_m", 0.0)),
+                    "heading_deg": float(true_loc.get("heading_deg", 0.0)),
+                }
+            else:
+                robot_location = {
+                    "mode": "unknown",
+                    "x": None,
+                    "y": None,
+                    "heading_deg": None,
+                }
+
             robot_states.append({
                 "robot_id": rid,
                 "last_seen": last_seen,
                 "mode": "unknown",
                 "stream_state": stream_state,
                 "stream_path": rid,
-                "location": {"mode": "unknown", "x": 0.0, "y": 0.0},
+                "location": robot_location,
                 "wifi_status": wifi_status,
                 "scan_status": scan_status,
                 "voice_status": voice_status,
@@ -799,6 +817,18 @@ def _json_dict_or_empty(text: str) -> Dict[str, Any]:
     except Exception:
         return {}
     
+
+def _load_true_location(scanner: str) -> Dict[str, Any]:
+    try:
+        pose = config.r.hgetall(key_pose(scanner)) or {}
+        raw = pose.get("true_location_json", "") or ""
+        obj = json.loads(raw) if raw else {}
+        if isinstance(obj, dict):
+            return obj
+    except Exception:
+        pass
+    return {}
+
 
 @router.get("/northbound/_list_experiment", tags=["5 Northbound"])
 def list_experiments(limit: int = 50) -> Dict[str, Any]:
