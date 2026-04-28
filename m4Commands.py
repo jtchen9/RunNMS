@@ -338,17 +338,19 @@ def _handle_ap_meta_row(
     alias = str(args.get("alias") or "").strip()
 
     now = utility.local_ts()
-    mapping = {
-        "device_type": "ap",
-        "location_mode": "fixed",
-        "location_x_m": str(x_m),
-        "location_y_m": str(y_m),
-        "location_updated_at": now,
-        "location_source": "experiment_csv",
+    location_obj = {
+        "mode": "fixed",
+        "x": x_m,
+        "y": y_m,
+        "z": z_m,
+        "source": "experiment_csv",
+        "updated_at": now,
     }
 
-    if z_m is not None:
-        mapping["location_z_m"] = str(z_m)
+    mapping = {
+        "device_type": "ap",
+        "location_json": json.dumps(location_obj, ensure_ascii=False),
+    }
 
     if alias:
         mapping["ap_alias"] = alias

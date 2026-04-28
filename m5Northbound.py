@@ -509,27 +509,8 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
             ap_state = _freshness_state(last_seen, config.AP_STALE_TIMEOUT_SEC)
 
             ap_alias = (meta.get("ap_alias") or "").strip()
-            loc_x = _float_or_none(meta.get("location_x_m", ""))
-            loc_y = _float_or_none(meta.get("location_y_m", ""))
-            loc_z = _float_or_none(meta.get("location_z_m", ""))
-
-            if loc_x is None or loc_y is None:
-                ap_location = {
-                    "mode": "unknown",
-                    "x": None,
-                    "y": None,
-                    "z": None,
-                    "updated_at": meta.get("location_updated_at", ""),
-                }
-            else:
-                ap_location = {
-                    "mode": meta.get("location_mode", "fixed") or "fixed",
-                    "x": loc_x,
-                    "y": loc_y,
-                    "z": loc_z,
-                    "updated_at": meta.get("location_updated_at", ""),
-                }
-
+            ap_location = _load_ap_location_from_meta(meta)
+            
             ap_states.append({
                 "ap_id": ap_alias or rid,
                 "ap_real_id": rid,
@@ -816,6 +797,35 @@ def _json_dict_or_empty(text: str) -> Dict[str, Any]:
         return obj if isinstance(obj, dict) else {}
     except Exception:
         return {}
+    
+
+def _load_ap_location_from_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
+    loc = _json_dict_or_empty(meta.get("location_json", ""))
+
+    try:
+        x = loc.get("x")
+        y = loc.get("y")
+
+        if x is None or y is None:
+            raise ValueError("missing x/y")
+
+        return {
+            "mode": loc.get("mode") or "fixed",
+            "x": float(x),
+            "y": float(y),
+            "z": _float_or_none(loc.get("z")),
+            "source": loc.get("source", ""),
+            "updated_at": loc.get("updated_at", ""),
+        }
+    except Exception:
+        return {
+            "mode": "unknown",
+            "x": None,
+            "y": None,
+            "z": None,
+            "source": "",
+            "updated_at": "",
+        }
     
 
 def _load_true_location(scanner: str) -> Dict[str, Any]:
