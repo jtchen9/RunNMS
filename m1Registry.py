@@ -37,6 +37,11 @@ class WhitelistItem(BaseModel):
         description="Optional note for humans"
     )
 
+    ap_alias: Optional[str] = Field(
+        default=None,
+        description="Optional AP display alias, e.g. AP0, AP1. Used for APs only."
+    )
+    
 
 class WhitelistUpsertReq(BaseModel):
     items: List[WhitelistItem] = Field(default_factory=list)
@@ -169,6 +174,12 @@ def registry_whitelist_upsert(req: WhitelistUpsertReq) -> Dict[str, Any]:
         old_tailscaled_state_b64 = (old.get("tailscaled_state_b64", "") or "").strip() if old else ""
         old_comment = (old.get("comment", "") or "").strip() if old else ""
 
+        old_ap_alias = (old.get("ap_alias", "") or "").strip() if old else ""
+        if it.ap_alias is None:
+            new_ap_alias = old_ap_alias
+        else:
+            new_ap_alias = (it.ap_alias or "").strip()        
+
         if it.mac is None or str(it.mac).strip() == "":
             new_mac = old_mac
         else:
@@ -200,6 +211,7 @@ def registry_whitelist_upsert(req: WhitelistUpsertReq) -> Dict[str, Any]:
             "tailscaled_state_b64": new_tailscaled_state_b64,
             "comment": new_comment,
             "updated_at": now,
+            "ap_alias": new_ap_alias,
         }
 
         config.r.hset(config.KEY_WHITELIST_SCANNER_META, scanner, json.dumps(meta, ensure_ascii=False))
@@ -240,6 +252,7 @@ def register(req: RegisterReq) -> Dict[str, Any]:
     wmeta = whitelist_meta_get(scanner)
     llm = (wmeta.get("llm_weblink") or "").strip() or config.DEFAULT_LLM_WEBLINK
     tailscaled_state_b64 = (wmeta.get("tailscaled_state_b64") or "").strip()
+    ap_alias = (wmeta.get("ap_alias") or "").strip()
 
     now = utility.local_ts()
     config.r.sadd(config.KEY_REGISTRY, scanner)
@@ -267,6 +280,9 @@ def register(req: RegisterReq) -> Dict[str, Any]:
     else:
         updates["device_type"] = "robot"
 
+    if ap_alias:
+        updates["ap_alias"] = ap_alias
+
     config.r.hset(config.key_scanner_meta(scanner), mapping=updates)
 
     return {
@@ -275,6 +291,7 @@ def register(req: RegisterReq) -> Dict[str, Any]:
         "tailscaled_state_b64": tailscaled_state_b64,
         "time": now,
         "time_format": config.TIME_FMT,
+        "ap_alias": ap_alias,
     }
 
 
@@ -325,6 +342,7 @@ async def registry_tailscaled_state_upload(
         "tailscaled_state_b64": b64,
         "comment": (old.get("comment") or "").strip(),
         "updated_at": now,
+        "ap_alias": (old.get("ap_alias") or "").strip(),
     }
 
     config.r.hset(config.KEY_WHITELIST_SCANNER_META, scanner, json.dumps(meta, ensure_ascii=False))
