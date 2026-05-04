@@ -3,9 +3,15 @@ import redis
 
 # ======================
 # Constants / Config  (NO getenv; lab-only hardcoded)
+#
+# NOTE:
+# TLS verification is disabled for lab testing because backend runs HTTPS on port 80
+# with incomplete certificate chain.
+# MUST set WEB_VERIFY_TLS = True before production deployment.
 # ======================
 WEB_BASE: str = "http://localhost:80"
 # WEB_BASE: str = "https://6g-private.com:80"
+WEB_VERIFY_TLS = False
 
 REDIS_URL: str = "redis://localhost:6379/0"
 KEY_PREFIX: str = "nms:"  # Redis keyspace prefix
@@ -59,7 +65,7 @@ MOBILITY_LOOP_BATCH_LIMIT: int = 50
 # ------------------
 # 5) Northbound (NMS → Web Server)
 # ------------------
-NMS_ID: str = "nms-lab-01"
+NMS_ID: str = "DemoRoom"
 WEB_API_KEY: str = ""  # optional in early dev
 
 WEB_NMS_UPLOAD_URL: str = f"{WEB_BASE}/nms/upload_scan_batch"

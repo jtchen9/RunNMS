@@ -7,7 +7,10 @@ from fastapi import APIRouter
 import config
 import utility
 from m8mobility_state_store import key_pose
-
+import urllib3
+if not getattr(config, "WEB_VERIFY_TLS", True):
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    
 router = APIRouter()
 
 # ==================
@@ -152,7 +155,13 @@ def _post_upload_scan_batch(
         pass
 
     try:
-        resp = requests.post(config.WEB_NMS_UPLOAD_URL, json=payload, headers=_web_headers(), timeout=10)
+        resp = requests.post(
+            config.WEB_NMS_UPLOAD_URL,
+            json=payload,
+            headers=_web_headers(),
+            timeout=10,
+            verify=getattr(config, "WEB_VERIFY_TLS", True),
+        )
         resp.raise_for_status()
         j = resp.json()
         if isinstance(j, dict) and j.get("status") == "ok":
@@ -605,8 +614,13 @@ def _post_report_status(snapshot: Dict[str, Any]) -> Tuple[bool, str, List[Dict[
         pass
 
     try:
-        resp = requests.post(config.WEB_NMS_STATUS_URL, json=snapshot, headers=_web_headers(), timeout=10)
-        resp.raise_for_status()
+        resp = requests.post(
+            config.WEB_NMS_STATUS_URL,
+            json=snapshot,
+            headers=_web_headers(),
+            timeout=10,
+            verify=getattr(config, "WEB_VERIFY_TLS", True),
+        )
         j = resp.json()
         if isinstance(j, dict) and j.get("status") == "ok":
             cmds = j.get("commands") or []
