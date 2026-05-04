@@ -16,8 +16,13 @@ router = APIRouter()
 # 6) AP
 # ==================
 class APInterfaceItem(BaseModel):
-    band: str
-    channel: int
+    ifname: Optional[str] = None
+    bssid: Optional[str] = None
+    ssid: Optional[str] = None
+    band: Optional[str] = None
+    channel: Optional[int] = None
+    freq_mhz: Optional[int] = None
+    channel_width_mhz: Optional[int] = None
 
 
 class APAssociationItem(BaseModel):
