@@ -687,7 +687,7 @@ def _apply_web_cmds_as_intents(cmds: List[Dict[str, Any]]) -> Tuple[int, int, in
             "action": action,
             "execute_at": now,
             "created_at": now,
-            "args_json": "{}",
+            "args_json": json.dumps({"camera_role": "front"}, ensure_ascii=False),
             "web_cmd_id": str(c.get("cmd_id") or ""),
         }
         config.r.xadd(config.key_cmd_stream(target), cmd_fields, maxlen=5000, approximate=True)
