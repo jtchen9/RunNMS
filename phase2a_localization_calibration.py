@@ -29,19 +29,50 @@ from typing import Any, Dict, Optional
 import config
 import utility
 import m4Commands
+import argparse
 
 from m8mobility_state import _s3_solve_true_location, _s3_extract_visible_tags
 from m8mobility_state_store import key_report, key_time
 from m8mobility_map import _ensure_mobility_assets_ready
 
-ROBOT_ID = "twin-scout-bravo"
+ROBOT_ID = "twin-scout-delta"
 
-TRIAL = "P2A-001"
-NOTES = ""
+TRIAL = "P001"
 
-GT_X_M = 4.50
-GT_Y_M = 1.00
-GT_HEADING_DEG = 0.0
+
+def _parse_args():
+    p = argparse.ArgumentParser(
+        description="Phase2A localization calibration"
+    )
+
+    p.add_argument(
+        "--x",
+        type=float,
+        required=True,
+        help="Ground-truth X coordinate in meters",
+    )
+
+    p.add_argument(
+        "--y",
+        type=float,
+        required=True,
+        help="Ground-truth Y coordinate in meters",
+    )
+
+    p.add_argument(
+        "--h",
+        type=float,
+        required=True,
+        help="Ground-truth heading in degrees",
+    )
+
+    return p.parse_args()
+
+_ARGS = _parse_args()
+
+GT_X_M = float(_ARGS.x)
+GT_Y_M = float(_ARGS.y)
+GT_HEADING_DEG = float(_ARGS.h)
 
 OUT_CSV = Path(r"D:\Data\_Action\_RunNMS\Phase2A_Localization.csv")
 
@@ -193,7 +224,7 @@ def run_once() -> Dict[str, Any]:
         "observations_json": json.dumps(observations, ensure_ascii=False),
         "detail": estimate.get("detail", ""),
         "report_time": _read_report_ts(ROBOT_ID),
-        "notes": NOTES,
+        "notes": "",
     }
 
     _write_csv_row(row)
