@@ -16,7 +16,7 @@ it calls the NMS S3 localization solver and appends one CSV row comparing:
 
 Usage:
 
-    python phase2a_localization_calibration.py --x 4.5 --y 2.0 --h 270
+    python phase2a_localization_calibration.py --x 5.45 --y 2.0 --h 270
 
 Arguments:
     --x : ground-truth robot x coordinate in meters

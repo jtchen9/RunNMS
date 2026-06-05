@@ -990,7 +990,11 @@ def _s3_solve_single_tag(obs: Dict[str, Any], tag_world: Dict[str, Any]) -> Dict
     # With two cameras:
     #   front camera heading = robot heading
     #   rear camera heading  = robot heading + 180
-    camera_heading_deg = utility._deg_norm_360(tag_yaw_world + 180.0 - yaw_deg)
+    yaw_corrected_deg = yaw_deg - angle_deg_cw
+
+    camera_heading_deg = utility._deg_norm_360(
+        tag_yaw_world + 180.0 - yaw_corrected_deg
+    )
     robot_heading_deg = utility._deg_norm_360(camera_heading_deg - camera_offset_deg)
 
     # Robot-frame bearing is CCW-positive:
@@ -1016,6 +1020,7 @@ def _s3_solve_single_tag(obs: Dict[str, Any], tag_world: Dict[str, Any]) -> Dict
         "yaw_deg": yaw_deg,
         "bearing_robot_deg_ccw": bearing_robot_to_tag_deg_ccw,
         "snapshot_path": str(obs.get("snapshot_path") or ""),
+        "yaw_corrected_deg": yaw_corrected_deg,
     }
 
 def _s3_candidate_pos_distance(c0: Dict[str, Any], c1: Dict[str, Any]) -> float:
@@ -1024,14 +1029,78 @@ def _s3_candidate_pos_distance(c0: Dict[str, Any], c1: Dict[str, Any]) -> float:
 def _s3_candidate_heading_distance(c0: Dict[str, Any], c1: Dict[str, Any]) -> float:
     return abs(_angle_diff_deg(float(c0["heading_deg"]), float(c1["heading_deg"])))
 
+def _s3_candidate_weight(c: Dict[str, Any]) -> float:
+    """
+    Observation quality weight.
+
+    Higher confidence:
+      - tag near camera center
+      - shorter distance
+
+    Lower confidence:
+      - tag near FOV edge
+      - longer distance
+
+    Never returns zero for a valid candidate.
+    """
+    angle = abs(float(c.get("angle_deg_cw", 0.0)))
+    dist = max(0.2, float(c.get("distance_m", 1.0)))
+
+    angle_w = max(0.15, 1.0 - angle / 45.0)
+    dist_w = 1.0 / math.sqrt(dist)
+
+    return float(angle_w * dist_w)
+
+
+def _s3_weighted_circular_mean_deg(vals: list[float], weights: list[float]) -> float:
+    sx = 0.0
+    sy = 0.0
+
+    for v, w in zip(vals, weights):
+        rad = math.radians(float(v))
+        sx += float(w) * math.cos(rad)
+        sy += float(w) * math.sin(rad)
+
+    if abs(sx) < 1e-12 and abs(sy) < 1e-12:
+        return utility._deg_norm_360(float(vals[0]))
+
+    return utility._deg_norm_360(math.degrees(math.atan2(sy, sx)))
+
+
+def _s3_weighted_mean(vals: list[float], weights: list[float]) -> float:
+    wsum = sum(float(w) for w in weights)
+    if wsum <= 0:
+        return sum(float(v) for v in vals) / max(1, len(vals))
+    return sum(float(v) * float(w) for v, w in zip(vals, weights)) / wsum
+
+
+def _s3_candidate_residuals(cands: list[Dict[str, Any]], x: float, y: float, h: float) -> list[Dict[str, Any]]:
+    out = []
+    for c in cands:
+        d = dict(c)
+        d["position_residual_m"] = float(math.hypot(float(c["x_m"]) - x, float(c["y_m"]) - y))
+        d["heading_residual_deg"] = float(abs(_angle_diff_deg(float(c["heading_deg"]), h)))
+        out.append(d)
+    return out
+
+
 def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Best-effort AprilTag candidate fusion.
+
+    Calibration philosophy:
+    - Return the best pose estimate whenever possible.
+    - Do not fail just because candidates are noisy.
+    - Remove only hard outliers that are fundamentally inconsistent.
+    - Keep full diagnostics so calibration can reveal which tags/cameras are weak.
+    """
     if not cands:
         return {
             "location_ok": False,
             "detail": "no candidates",
             "tags_used": [],
             "tag_count": 0,
-            "solver_stage": "single_tag",
+            "solver_stage": "best_effort_fusion",
             "source": "apriltag",
             "updated_at": utility.local_ts(),
         }
@@ -1040,99 +1109,104 @@ def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
         c = cands[0]
         return {
             "location_ok": True,
-            "x_m": c["x_m"],
-            "y_m": c["y_m"],
-            "heading_deg": utility._deg_norm_360(c["heading_deg"]),
+            "x_m": float(c["x_m"]),
+            "y_m": float(c["y_m"]),
+            "heading_deg": utility._deg_norm_360(float(c["heading_deg"])),
             "source": "apriltag",
             "tags_used": [c["tag_id"]],
             "tag_count": 1,
-            "solver_stage": "single_tag",
+            "solver_stage": "single_tag_best_effort",
             "updated_at": utility.local_ts(),
-            "detail": "",
+            "detail": "single-tag estimate",
             "candidates": cands,
+            "used_candidates": cands,
+            "hard_outliers": [],
+            "soft_outliers": [],
         }
 
-    if len(cands) == 2:
-        pos_d = _s3_candidate_pos_distance(cands[0], cands[1])
-        hdg_d = _s3_candidate_heading_distance(cands[0], cands[1])
+    # ---------------------------------------------------------
+    # Pass 1: initial weighted estimate from all candidates
+    # ---------------------------------------------------------
+    weights0 = [_s3_candidate_weight(c) for c in cands]
 
-        if pos_d > MULTI_TAG_POS_THRESH_M or hdg_d > MULTI_TAG_HEADING_THRESH_DEG:
-            return {
-                "location_ok": False,
-                "source": "apriltag",
-                "tags_used": [c["tag_id"] for c in cands],
-                "tag_count": 2,
-                "solver_stage": "multi_tag",
-                "updated_at": utility.local_ts(),
-                "detail": f"two-tag candidates inconsistent: pos_d={pos_d:.3f}m hdg_d={hdg_d:.3f}deg",
-                "candidates": cands,
-            }
+    x0 = _s3_weighted_mean([float(c["x_m"]) for c in cands], weights0)
+    y0 = _s3_weighted_mean([float(c["y_m"]) for c in cands], weights0)
+    h0 = _s3_weighted_circular_mean_deg([float(c["heading_deg"]) for c in cands], weights0)
 
-        return {
-            "location_ok": True,
-            "x_m": (cands[0]["x_m"] + cands[1]["x_m"]) / 2.0,
-            "y_m": (cands[0]["y_m"] + cands[1]["y_m"]) / 2.0,
-            "heading_deg": _circular_mean_deg([cands[0]["heading_deg"], cands[1]["heading_deg"]]),
-            "source": "apriltag",
-            "tags_used": [c["tag_id"] for c in cands],
-            "tag_count": 2,
-            "solver_stage": "multi_tag",
-            "updated_at": utility.local_ts(),
-            "detail": "",
-            "candidates": cands,
-        }
+    diag0 = _s3_candidate_residuals(cands, x0, y0, h0)
 
-    # 3+ tags
-    xs = sorted(float(c["x_m"]) for c in cands)
-    ys = sorted(float(c["y_m"]) for c in cands)
-
-    def _median(vals: list[float]) -> float:
-        n = len(vals)
-        if n % 2 == 1:
-            return vals[n // 2]
-        return 0.5 * (vals[n // 2 - 1] + vals[n // 2])
-
-    med_x = _median(xs)
-    med_y = _median(ys)
-    mean_h = _circular_mean_deg([float(c["heading_deg"]) for c in cands])
+    # ---------------------------------------------------------
+    # Pass 2: remove only hard outliers.
+    #
+    # These thresholds should be loose. They mean:
+    # "This candidate is too far from the voting majority to be treated
+    #  as noisy data."
+    # ---------------------------------------------------------
+    HARD_POS_OUTLIER_M = max(1.0, 3.0 * MULTI_TAG_POS_THRESH_M)
+    HARD_HEADING_OUTLIER_DEG = max(45.0, 2.5 * MULTI_TAG_HEADING_THRESH_DEG)
 
     kept = []
-    rejected = []
+    hard_outliers = []
 
-    for c in cands:
-        pos_d = math.hypot(float(c["x_m"]) - med_x, float(c["y_m"]) - med_y)
-        hdg_d = abs(_angle_diff_deg(float(c["heading_deg"]), mean_h))
-        if pos_d <= MULTI_TAG_POS_THRESH_M and hdg_d <= MULTI_TAG_HEADING_THRESH_DEG:
-            kept.append(c)
+    for c, d in zip(cands, diag0):
+        pos_bad = float(d["position_residual_m"]) > HARD_POS_OUTLIER_M
+        heading_bad = float(d["heading_residual_deg"]) > HARD_HEADING_OUTLIER_DEG
+
+        if pos_bad and heading_bad:
+            hard_outliers.append(d)
         else:
-            rejected.append(c)
+            kept.append(c)
 
+    # Never allow hard-outlier filtering to remove everything.
     if not kept:
-        return {
-            "location_ok": False,
-            "source": "apriltag",
-            "tags_used": [],
-            "tag_count": 0,
-            "solver_stage": "multi_tag",
-            "updated_at": utility.local_ts(),
-            "detail": "all multi-tag candidates rejected",
-            "candidates": cands,
-            "rejected_candidates": rejected,
-        }
+        kept = list(cands)
+        hard_outliers = []
+
+    # ---------------------------------------------------------
+    # Pass 3: final weighted estimate from kept candidates
+    # ---------------------------------------------------------
+    weights = [_s3_candidate_weight(c) for c in kept]
+
+    x = _s3_weighted_mean([float(c["x_m"]) for c in kept], weights)
+    y = _s3_weighted_mean([float(c["y_m"]) for c in kept], weights)
+    h = _s3_weighted_circular_mean_deg([float(c["heading_deg"]) for c in kept], weights)
+
+    used_diag = _s3_candidate_residuals(kept, x, y, h)
+
+    for d, w in zip(used_diag, weights):
+        d["weight"] = float(w)
+
+    soft_outliers = []
+    for d in used_diag:
+        if (
+            float(d["position_residual_m"]) > MULTI_TAG_POS_THRESH_M
+            or float(d["heading_residual_deg"]) > MULTI_TAG_HEADING_THRESH_DEG
+        ):
+            soft_outliers.append(d)
+
+    detail_parts = []
+    if hard_outliers:
+        detail_parts.append(f"ignored {len(hard_outliers)} hard outlier(s)")
+    if soft_outliers:
+        detail_parts.append(f"{len(soft_outliers)} soft outlier(s) kept in fusion")
+    if not detail_parts:
+        detail_parts.append("best-effort fusion ok")
 
     return {
         "location_ok": True,
-        "x_m": sum(c["x_m"] for c in kept) / len(kept),
-        "y_m": sum(c["y_m"] for c in kept) / len(kept),
-        "heading_deg": _circular_mean_deg([c["heading_deg"] for c in kept]),
+        "x_m": float(x),
+        "y_m": float(y),
+        "heading_deg": float(h),
         "source": "apriltag",
         "tags_used": [c["tag_id"] for c in kept],
         "tag_count": len(kept),
-        "solver_stage": "multi_tag" if len(kept) > 1 else "single_tag_after_rejection",
+        "solver_stage": "best_effort_fusion",
         "updated_at": utility.local_ts(),
-        "detail": "" if not rejected else f"rejected {len(rejected)} outlier candidate(s)",
+        "detail": "; ".join(detail_parts),
         "candidates": cands,
-        "rejected_candidates": rejected,
+        "used_candidates": used_diag,
+        "hard_outliers": hard_outliers,
+        "soft_outliers": soft_outliers,
     }
 
 def _s3_save_true_location(scanner: str, loc: Dict[str, Any]) -> None:
