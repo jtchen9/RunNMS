@@ -27,13 +27,13 @@ Arguments:
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import math
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
+import datetime
 
 import config
 import utility
@@ -43,11 +43,12 @@ from m8mobility_state import _s3_extract_visible_tags, _s3_solve_true_location
 from m8mobility_state_store import key_report, key_time
 
 
+LOG_DIR = Path("location_data")
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
 ROBOT_ID = "twin-scout-delta"
 TRIAL = "P2A-001"
 NOTES = ""
-
-OUT_CSV = Path(r"D:\Data\_Action\_RunNMS\Phase2A_Localization.csv")
 
 WAIT_TIMEOUT_SEC = 60
 POLL_EVERY_SEC = 1.0
@@ -150,75 +151,24 @@ def _count_by_camera(obs: list[Dict[str, Any]]) -> tuple[int, int]:
     return front, rear
 
 
-def _write_csv_row(row: Dict[str, Any]) -> None:
-    fields = [
-        "trial",
-        "robot_id",
-        "gt_x_m",
-        "gt_y_m",
-        "gt_heading_deg",
-        "estimate_ok",
-        "estimated_x_m",
-        "estimated_y_m",
-        "estimated_heading_deg",
-        "pos_error_m",
-        "heading_error_deg",
-        "tag_count",
-        "front_count",
-        "rear_count",
-        "tags_used_json",
-        "observations_json",
-        "detail",
-        "report_time",
-        "direct_command_stream_id",
-        "notes",
-    ]
-
-    OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
-    exists = OUT_CSV.exists()
-
-    with OUT_CSV.open("a", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
-        if not exists:
-            w.writeheader()
-        w.writerow(row)
-
-
 def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, Any]:
     if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, ROBOT_ID):
         raise RuntimeError(f"{ROBOT_ID} is not whitelisted")
 
     assets = _ensure_mobility_assets_ready()
-    print("\nMobility assets loaded:")
-    print(json.dumps(assets, ensure_ascii=False, indent=2))
 
     old_ts = _read_report_ts(ROBOT_ID)
     direct_cmd_id = _send_direct_location_request(ROBOT_ID)
 
     report = _wait_for_new_report(ROBOT_ID, old_ts)
 
-    print("\nFresh mobility report received:")
-    print(json.dumps({
-        "last_command": report.get("last_command"),
-        "last_exec_status": report.get("last_exec_status"),
-        "last_error_code": report.get("last_error_code"),
-        "last_error_detail": report.get("last_error_detail"),
-    }, ensure_ascii=False, indent=2))
-
     observations = _s3_extract_visible_tags(ROBOT_ID)
     front_count, rear_count = _count_by_camera(observations)
-
-    print("\nParsed observations:")
-    print(json.dumps({
-        "tag_count": len(observations),
-        "front_count": front_count,
-        "rear_count": rear_count,
-        "tag_ids": [x.get("id") for x in observations],
-    }, ensure_ascii=False, indent=2))
 
     estimate = _s3_solve_true_location(ROBOT_ID)
 
     est_ok = bool(estimate.get("location_ok"))
+
     est_x = float(estimate["x_m"]) if est_ok else None
     est_y = float(estimate["y_m"]) if est_ok else None
     est_h = float(estimate["heading_deg"]) if est_ok else None
@@ -226,38 +176,91 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
     pos_err = _pos_error_m(est_x, est_y, gt_x_m, gt_y_m)
     heading_err = _angle_error_deg(est_h, gt_heading_deg)
 
-    row = {
-        "trial": TRIAL,
+    # --------------------------------------------------
+    # Save complete JSON log
+    # --------------------------------------------------
+
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    log_file = (
+        LOG_DIR /
+        f"loc_x{gt_x_m:.2f}_y{gt_y_m:.2f}_h{gt_heading_deg:.0f}_{ts}.json"
+    )
+
+    payload = {
+        "script_version": "phase2a_v1",
         "robot_id": ROBOT_ID,
-        "gt_x_m": gt_x_m,
-        "gt_y_m": gt_y_m,
-        "gt_heading_deg": gt_heading_deg,
-        "estimate_ok": est_ok,
-        "estimated_x_m": est_x,
-        "estimated_y_m": est_y,
-        "estimated_heading_deg": est_h,
-        "pos_error_m": pos_err,
-        "heading_error_deg": heading_err,
-        "tag_count": len(observations),
-        "front_count": front_count,
-        "rear_count": rear_count,
-        "tags_used_json": json.dumps(estimate.get("tags_used", []), ensure_ascii=False),
-        "observations_json": json.dumps(observations, ensure_ascii=False),
-        "detail": estimate.get("detail", ""),
-        "report_time": _read_report_ts(ROBOT_ID),
-        "direct_command_stream_id": direct_cmd_id,
-        "notes": NOTES,
+
+        "ground_truth": {
+            "x_m": gt_x_m,
+            "y_m": gt_y_m,
+            "heading_deg": gt_heading_deg,
+        },
+
+        "errors": {
+            "position_error_m": pos_err,
+            "heading_error_deg": heading_err,
+        },
+
+        "summary": {
+            "estimate_ok": est_ok,
+            "tag_count": len(observations),
+            "front_count": front_count,
+            "rear_count": rear_count,
+            "tags_used": estimate.get("tags_used", []),
+        },
+
+        "assets": assets,
+        "report": report,
+        "observations": observations,
+        "estimate": estimate,
+
+        "metadata": {
+            "report_time": _read_report_ts(ROBOT_ID),
+            "direct_command_stream_id": direct_cmd_id,
+            "trial": TRIAL,
+            "notes": NOTES,
+        },
     }
 
-    _write_csv_row(row)
+    with log_file.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
 
-    print("\nEstimate:")
-    print(json.dumps(estimate, ensure_ascii=False, indent=2))
+    # --------------------------------------------------
+    # Console output (short version)
+    # --------------------------------------------------
 
-    print("\nCSV row appended:")
-    print(json.dumps(row, ensure_ascii=False, indent=2))
+    print()
 
-    return row
+    print(
+        f"GT:        "
+        f"({gt_x_m:.3f}, {gt_y_m:.3f}, {gt_heading_deg:.1f})"
+    )
+
+    if est_ok:
+        print(
+            f"Estimate:  "
+            f"({est_x:.3f}, {est_y:.3f}, {est_h:.1f})"
+        )
+
+        print()
+        print(f"Position Error : {pos_err:.3f} m")
+        print(f"Heading Error  : {heading_err:.2f} deg")
+
+    else:
+        print("Estimate:  FAILED")
+
+        print()
+        print("Position Error : N/A")
+        print("Heading Error  : N/A")
+
+    print()
+    print(f"Tags Seen      : {len(observations)}")
+    print(f"Tags Used      : {estimate.get('tags_used', [])}")
+
+    print()
+
+    return payload
 
 
 if __name__ == "__main__":
