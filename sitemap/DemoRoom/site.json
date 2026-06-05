@@ -1,0 +1,7 @@
+{
+  "site_name": "DemoRoom",
+  "world_width_m": 11.4,
+  "world_height_m": 11.4,
+  "grid_resolution_m": 0.1,
+  "origin": "bottom_left"
+}

@@ -141,10 +141,27 @@ TRAFFIC_EVENT_TEMP_MAXLEN: int = 5000
 # -------------------
 # 8) Mobility
 # -------------------
-MOBILITY_STATIC_RESTRICTION_MAP_NPY = r".\\sitemap\\restriction_map.npy"
+MOBILITY_SITE_NAME = "DemoRoom"
+MOBILITY_SITEMAP_ROOT = Path(r".\sitemap")
+
+def mobility_site_dir() -> Path:
+    return MOBILITY_SITEMAP_ROOT / MOBILITY_SITE_NAME
+
+def mobility_site_json_path() -> Path:
+    return mobility_site_dir() / "site.json"
+
+def mobility_restriction_map_path() -> Path:
+    return mobility_site_dir() / "restriction_map.npy"
+
+def mobility_tag_location_path() -> Path:
+    return mobility_site_dir() / "tag_location.txt"
+
+# Kept only for old code references; new code should call mobility_restriction_map_path().
+MOBILITY_STATIC_RESTRICTION_MAP_NPY = str(mobility_restriction_map_path())
+
+# Fallback only. Runtime should read site.json.
 MOBILITY_WORLD_SIZE_M = 20.0
 MOBILITY_GRID_RESOLUTION_M = 0.1
-MOBILITY_ROBOT_RESTRICT_RADIUS_M = 0.5
 
 # -------- Mobility correction thresholds --------
 

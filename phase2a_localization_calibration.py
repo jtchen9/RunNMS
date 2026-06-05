@@ -32,7 +32,7 @@ import m4Commands
 
 from m8mobility_state import _s3_solve_true_location, _s3_extract_visible_tags
 from m8mobility_state_store import key_report, key_time
-
+from m8mobility_map import _ensure_mobility_assets_ready
 
 ROBOT_ID = "twin-scout-bravo"
 
@@ -142,9 +142,12 @@ def _count_by_camera(obs: list[Dict[str, Any]]) -> tuple[int, int]:
     rear = sum(1 for x in obs if x.get("camera_role") == "rear")
     return front, rear
 
-
 def run_once() -> Dict[str, Any]:
     _assert(config.r.hexists(config.KEY_WHITELIST_SCANNER_META, ROBOT_ID), f"{ROBOT_ID} not whitelisted")
+
+    assets = _ensure_mobility_assets_ready()
+    print("\nMobility assets loaded:")
+    print(json.dumps(assets, ensure_ascii=False, indent=2))
 
     old_ts = _read_report_ts(ROBOT_ID)
 

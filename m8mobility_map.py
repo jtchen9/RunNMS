@@ -11,6 +11,7 @@ import json
 import math
 import numpy as np
 import config
+import re
 
 import utility
 
@@ -18,6 +19,7 @@ from m8mobility_state_store import key_pose, _is_loc_ok
 
 
 # ===== asset loaders =====
+KEY_TAG_MAP_JSON = f"{config.KEY_PREFIX}mobility:tag_map_json"
 
 def _load_static_map() -> np.ndarray:
     """
@@ -28,7 +30,8 @@ def _load_static_map() -> np.ndarray:
     - square 2-D array
     - uint8 values 0/1
     """
-    path = Path(config.MOBILITY_STATIC_RESTRICTION_MAP_NPY)
+    site_cfg = _load_site_config()
+    path = Path(config.mobility_restriction_map_path())
     if not path.exists():
         raise FileNotFoundError(f"static restriction map not found: {path}")
 
@@ -38,29 +41,132 @@ def _load_static_map() -> np.ndarray:
         raise ValueError("static restriction map is not a numpy array")
     if arr.ndim != 2:
         raise ValueError("static restriction map must be 2-D")
-    if arr.shape[0] != arr.shape[1]:
-        raise ValueError("static restriction map must be square")
+    # Rectangular maps are allowed, but DemoRoom is currently square.
 
     if arr.dtype != np.uint8:
         arr = arr.astype(np.uint8)
 
     arr = (arr > 0).astype(np.uint8)
 
-    n = int(arr.shape[0])
-    expected_res = float(config.MOBILITY_WORLD_SIZE_M) / float(n)
-    desired_res = float(config.MOBILITY_GRID_RESOLUTION_M)
+    rows, cols = int(arr.shape[0]), int(arr.shape[1])
+    expected_res_x = float(site_cfg["world_width_m"]) / float(cols)
+    expected_res_y = float(site_cfg["world_height_m"]) / float(rows)
+    desired_res = float(site_cfg["grid_resolution_m"])
 
-    # Loose validation only; keep simple for now.
-    if abs(expected_res - desired_res) > 1e-9:
+    if abs(expected_res_x - desired_res) > 1e-9 or abs(expected_res_y - desired_res) > 1e-9:
         raise ValueError(
             f"static map resolution mismatch: "
-            f"world/grid gives {expected_res:.6f} m, config wants {desired_res:.6f} m"
+            f"x={expected_res_x:.6f} y={expected_res_y:.6f}, site.json wants {desired_res:.6f}"
         )
 
     return arr
 
+_TAG_RE = re.compile(
+    r"Tag#\s*(\d+)\s*:\s*\(\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*\)",
+    re.IGNORECASE,
+)
+
+_FACING_YAW = {
+    "right": 0.0,
+    "up": 90.0,
+    "left": 180.0,
+    "down": 270.0,
+}
+
+
+def _load_site_config() -> Dict[str, Any]:
+    path = Path(config.mobility_site_json_path())
+    if not path.exists():
+        raise FileNotFoundError(f"site config not found: {path}")
+
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise ValueError(f"failed to parse site config {path}: {e}")
+
+    if not isinstance(obj, dict):
+        raise ValueError("site.json must be a JSON object")
+
+    width = float(obj.get("world_width_m"))
+    height = float(obj.get("world_height_m"))
+    res = float(obj.get("grid_resolution_m"))
+
+    if width <= 0 or height <= 0 or res <= 0:
+        raise ValueError("site.json requires positive world_width_m, world_height_m, grid_resolution_m")
+
+    return {
+        "site_name": str(obj.get("site_name") or config.MOBILITY_SITE_NAME),
+        "world_width_m": width,
+        "world_height_m": height,
+        "grid_resolution_m": res,
+        "origin": str(obj.get("origin") or "bottom_left"),
+        "path": str(path),
+    }
+
+
+def _parse_tag_location_txt(path: Path, site_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(f"tag location file not found: {path}")
+
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    tags: Dict[str, Dict[str, Any]] = {}
+    current_facing = ""
+
+    for line_no, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line:
+            continue
+
+        lower = line.lower()
+
+        if "tags facing" in lower:
+            current_facing = ""
+            for name in _FACING_YAW:
+                if name in lower:
+                    current_facing = name
+                    break
+            continue
+
+        m = _TAG_RE.search(line)
+        if not m:
+            continue
+
+        if current_facing not in _FACING_YAW:
+            raise ValueError(f"tag line before valid facing section at line {line_no}: {line}")
+
+        tag_id = int(m.group(1))
+        tags[str(tag_id)] = {
+            "x_m": float(m.group(2)),
+            "y_m": float(m.group(3)),
+            "yaw_deg": float(_FACING_YAW[current_facing]),
+            "facing": current_facing,
+            "source_line": line_no,
+        }
+
+    if not tags:
+        raise ValueError(f"no tags parsed from {path}")
+
+    return {
+        "source": str(path),
+        "site_name": site_cfg["site_name"],
+        "loaded_at": utility.local_ts(),
+        "world_width_m": site_cfg["world_width_m"],
+        "world_height_m": site_cfg["world_height_m"],
+        "grid_resolution_m": site_cfg["grid_resolution_m"],
+        "origin": site_cfg["origin"],
+        "tag_count": len(tags),
+        "tags": tags,
+    }
+
+
+def _load_tag_location_txt_to_redis(site_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    tag_map = _parse_tag_location_txt(Path(config.mobility_tag_location_path()), site_cfg)
+    config.r.set(KEY_TAG_MAP_JSON, json.dumps(tag_map, ensure_ascii=False))
+    return tag_map
+
+
 def _load_tag_map() -> Dict[str, Any]:
-    raw = config.r.get(f"{config.KEY_PREFIX}mobility:tag_map_json") or ""
+    raw = config.r.get(KEY_TAG_MAP_JSON) or ""
     if not raw.strip():
         return {}
     try:
@@ -69,31 +175,30 @@ def _load_tag_map() -> Dict[str, Any]:
     except Exception:
         return {}
 
+
 def _ensure_mobility_assets_ready() -> Dict[str, Any]:
-    """
-    Validate mobility static assets.
-
-    Checks:
-    - static map file is valid
-    - tag map exists and contains non-empty "tags"
-
-    Failure:
-    - raises exception → prevents system initialization
-
-    No side effects.
-    """
+    site_cfg = _load_site_config()
     static_map = _load_static_map()
-    tag_map = _load_tag_map()
+    tag_map = _load_tag_location_txt_to_redis(site_cfg)
 
     tags = tag_map.get("tags") if isinstance(tag_map, dict) else None
     if not isinstance(tags, dict) or len(tags) == 0:
-        raise ValueError("mobility tag_map_json missing or empty")
+        raise ValueError("tag_location.txt parsed but produced empty tags")
 
     return {
         "status": "ok",
         "detail": "mobility assets ready",
+        "site_name": site_cfg["site_name"],
+        "site_dir": str(config.mobility_site_dir()),
+        "site_json_path": str(config.mobility_site_json_path()),
+        "static_map_path": str(config.mobility_restriction_map_path()),
+        "tag_location_path": str(config.mobility_tag_location_path()),
         "static_map_shape": [int(static_map.shape[0]), int(static_map.shape[1])],
+        "world_width_m": site_cfg["world_width_m"],
+        "world_height_m": site_cfg["world_height_m"],
+        "grid_resolution_m": site_cfg["grid_resolution_m"],
         "tag_count": len(tags),
+        "tag_map_key": KEY_TAG_MAP_JSON,
     }
 
 
@@ -103,28 +208,20 @@ def _grid_size(static_map: np.ndarray) -> int:
     return int(static_map.shape[0])
 
 def _grid_resolution_m(static_map: np.ndarray) -> float:
-    return float(config.MOBILITY_WORLD_SIZE_M) / float(_grid_size(static_map))
+    return float(_load_site_config()["grid_resolution_m"])
 
 def _world_to_grid(x_m: float, y_m: float, static_map: np.ndarray) -> tuple[int, int]:
-    """
-    World frame:
-      origin bottom-left
-      +x right
-      +y up
-
-    Grid:
-      row 0 = top
-      col 0 = left
-    """
-    n = _grid_size(static_map)
-    res = _grid_resolution_m(static_map)
+    site_cfg = _load_site_config()
+    rows = int(static_map.shape[0])
+    cols = int(static_map.shape[1])
+    res = float(site_cfg["grid_resolution_m"])
 
     col = int(math.floor(x_m / res))
     row_from_bottom = int(math.floor(y_m / res))
-    row = n - 1 - row_from_bottom
+    row = rows - 1 - row_from_bottom
 
-    col = max(0, min(n - 1, col))
-    row = max(0, min(n - 1, row))
+    col = max(0, min(cols - 1, col))
+    row = max(0, min(rows - 1, row))
     return row, col
 
 
@@ -134,7 +231,7 @@ def _rasterize_circle(mask: np.ndarray, x_m: float, y_m: float, radius_m: float)
     """
     Mark a filled circle into a uint8 map.
     """
-    n = int(mask.shape[0])
+    rows, cols = int(mask.shape[0]), int(mask.shape[1])
     res = _grid_resolution_m(mask)
 
     center_row, center_col = _world_to_grid(x_m, y_m, mask)
@@ -145,7 +242,7 @@ def _rasterize_circle(mask: np.ndarray, x_m: float, y_m: float, radius_m: float)
             rr = center_row + dr
             cc = center_col + dc
 
-            if rr < 0 or rr >= n or cc < 0 or cc >= n:
+            if rr < 0 or rr >= rows or cc < 0 or cc >= cols:
                 continue
 
             dx = dc * res
