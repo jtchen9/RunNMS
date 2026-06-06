@@ -1,0 +1,246 @@
+{
+  "mac": "2c:cf:67:3f:90:f1",
+  "ip": null,
+  "scanner_version": "0",
+  "capabilities": "scan",
+  "mobility_report_at_registration": {
+    "ok": true,
+    "capture_mode": "dual_camera",
+    "camera_roles": [
+      "front",
+      "rear"
+    ],
+    "av_was_active": false,
+    "av_restarted": false,
+    "snapshots": {
+      "front": "/tmp/location_front_1780722727432.jpg",
+      "rear": "/tmp/location_rear_1780722733706.jpg"
+    },
+    "front": {
+      "ok": false,
+      "camera_role": "front",
+      "snapshot": {
+        "ok": false,
+        "stage": "snapshot",
+        "camera_role": "front",
+        "snapshot_path": "/tmp/location_front_1780722727432.jpg",
+        "video_dev": "/dev/v4l/by-id/usb-webcamvendor_webcamproduct_YGR80PU1200.23071717-video-index0",
+        "width": 1280,
+        "height": 720,
+        "error": "[ WARN:0@0.091] global cap_gstreamer.cpp:1436 open OpenCV | GStreamer warning: Error opening bin: no source element for URI \"/dev/v4l/by-id/usb-webcamvendor_webcamproduct_YGR80PU1200.23071717-video-index0\"\n[ WARN:0@0.091] global cap_gstreamer.cpp:1173 isPipelinePlaying OpenCV | GStreamer warning: GStreamer: pipeline have not been created\n{\"ok\": false, \"error\": \"cannot_open_camera_/dev/v4l/by-id/usb-webcamvendor_webcamproduct_YGR80PU1200.23071717-video-index0\", \"output_path\": \"/tmp/location_front_1780722727432.jpg\"}"
+      },
+      "apriltag": {
+        "ok": false,
+        "stage": "apriltag",
+        "camera_role": "front",
+        "snapshot_path": "/tmp/location_front_1780722727432.jpg",
+        "error": "snapshot_failed",
+        "tags": [],
+        "count": 0
+      },
+      "snapshot_path": "/tmp/location_front_1780722727432.jpg",
+      "tags": [],
+      "count": 0,
+      "error": "[ WARN:0@0.091] global cap_gstreamer.cpp:1436 open OpenCV | GStreamer warning: Error opening bin: no source element for URI \"/dev/v4l/by-id/usb-webcamvendor_webcamproduct_YGR80PU1200.23071717-video-index0\"\n[ WARN:0@0.091] global cap_gstreamer.cpp:1173 isPipelinePlaying OpenCV | GStreamer warning: GStreamer: pipeline have not been created\n{\"ok\": false, \"error\": \"cannot_open_camera_/dev/v4l/by-id/usb-webcamvendor_webcamproduct_YGR80PU1200.23071717-video-index0\", \"output_path\": \"/tmp/location_front_1780722727432.jpg\"}"
+    },
+    "rear": {
+      "ok": true,
+      "camera_role": "rear",
+      "snapshot": {
+        "ok": true,
+        "stage": "snapshot",
+        "camera_role": "rear",
+        "snapshot_path": "/tmp/location_rear_1780722733706.jpg",
+        "video_dev": "/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_200901010001-video-index0",
+        "width": 640,
+        "height": 480,
+        "attempt": 1,
+        "detail": {
+          "ok": true,
+          "error": "",
+          "output_path": "/tmp/location_rear_1780722733706.jpg",
+          "width": 640,
+          "height": 480
+        },
+        "error": ""
+      },
+      "apriltag": {
+        "ok": true,
+        "error": "",
+        "image_path": "/tmp/location_rear_1780722733706.jpg",
+        "camera_role": "rear",
+        "image_width": 640,
+        "image_height": 480,
+        "count": 2,
+        "tags": [
+          {
+            "id": 1,
+            "library_pose": {
+              "distance_m": 0.557,
+              "angle_deg": 6.8137,
+              "yaw_deg": 0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 0.6187,
+              "angle_deg": 5.1703,
+              "yaw_deg": 0.584
+            }
+          },
+          {
+            "id": 2,
+            "library_pose": {
+              "distance_m": 0.5553,
+              "angle_deg": -12.7956,
+              "yaw_deg": 0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 0.6165,
+              "angle_deg": -10.1446,
+              "yaw_deg": 0.584
+            }
+          }
+        ],
+        "camera_params": {
+          "fx": 554.0,
+          "fy": 554.0,
+          "cx": 320.0,
+          "cy": 240.0,
+          "tag_size_m": 0.1
+        },
+        "snapshot_path": "/tmp/location_rear_1780722733706.jpg"
+      },
+      "snapshot_path": "/tmp/location_rear_1780722733706.jpg",
+      "tags": [
+        {
+          "id": 1,
+          "library_pose": {
+            "distance_m": 0.557,
+            "angle_deg": 6.8137,
+            "yaw_deg": 0.0
+          },
+          "calibrated_pose": {
+            "distance_m": 0.6187,
+            "angle_deg": 5.1703,
+            "yaw_deg": 0.584
+          }
+        },
+        {
+          "id": 2,
+          "library_pose": {
+            "distance_m": 0.5553,
+            "angle_deg": -12.7956,
+            "yaw_deg": 0.0
+          },
+          "calibrated_pose": {
+            "distance_m": 0.6165,
+            "angle_deg": -10.1446,
+            "yaw_deg": 0.584
+          }
+        }
+      ],
+      "count": 2,
+      "error": ""
+    },
+    "apriltag": {
+      "ok": true,
+      "capture_mode": "dual_camera",
+      "count": 2,
+      "unique_count": 2,
+      "unique_tag_ids": [
+        1,
+        2
+      ],
+      "tags": [
+        {
+          "id": 1,
+          "library_pose": {
+            "distance_m": 0.557,
+            "angle_deg": 6.8137,
+            "yaw_deg": 0.0
+          },
+          "calibrated_pose": {
+            "distance_m": 0.6187,
+            "angle_deg": 5.1703,
+            "yaw_deg": 0.584
+          },
+          "camera_role": "rear",
+          "snapshot_path": "/tmp/location_rear_1780722733706.jpg"
+        },
+        {
+          "id": 2,
+          "library_pose": {
+            "distance_m": 0.5553,
+            "angle_deg": -12.7956,
+            "yaw_deg": 0.0
+          },
+          "calibrated_pose": {
+            "distance_m": 0.6165,
+            "angle_deg": -10.1446,
+            "yaw_deg": 0.584
+          },
+          "camera_role": "rear",
+          "snapshot_path": "/tmp/location_rear_1780722733706.jpg"
+        }
+      ],
+      "front": {
+        "ok": false,
+        "stage": "apriltag",
+        "camera_role": "front",
+        "snapshot_path": "/tmp/location_front_1780722727432.jpg",
+        "error": "snapshot_failed",
+        "tags": [],
+        "count": 0
+      },
+      "rear": {
+        "ok": true,
+        "error": "",
+        "image_path": "/tmp/location_rear_1780722733706.jpg",
+        "camera_role": "rear",
+        "image_width": 640,
+        "image_height": 480,
+        "count": 2,
+        "tags": [
+          {
+            "id": 1,
+            "library_pose": {
+              "distance_m": 0.557,
+              "angle_deg": 6.8137,
+              "yaw_deg": 0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 0.6187,
+              "angle_deg": 5.1703,
+              "yaw_deg": 0.584
+            }
+          },
+          {
+            "id": 2,
+            "library_pose": {
+              "distance_m": 0.5553,
+              "angle_deg": -12.7956,
+              "yaw_deg": 0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 0.6165,
+              "angle_deg": -10.1446,
+              "yaw_deg": 0.584
+            }
+          }
+        ],
+        "camera_params": {
+          "fx": 554.0,
+          "fy": 554.0,
+          "cx": 320.0,
+          "cy": 240.0,
+          "tag_size_m": 0.1
+        },
+        "snapshot_path": "/tmp/location_rear_1780722733706.jpg"
+      },
+      "front_count": 0,
+      "rear_count": 2
+    },
+    "error": "",
+    "registration_mobility_report": true,
+    "returncode": 0
+  }
+}
