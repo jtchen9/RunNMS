@@ -163,6 +163,7 @@ MOBILITY_STATIC_RESTRICTION_MAP_NPY = str(mobility_restriction_map_path())
 MOBILITY_WORLD_SIZE_M = 20.0
 MOBILITY_GRID_RESOLUTION_M = 0.1
 
+MOBILITY_ROBOT_RESTRICT_RADIUS_M = 0.25
 # -------- Mobility correction thresholds --------
 
 MOBILITY_POS_IGNORE_THRESH_M = 0.05
