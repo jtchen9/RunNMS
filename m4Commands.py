@@ -12,7 +12,7 @@ import utility
 import m1Registry
 import m7Traffic
 import m8mobility
-from m8mobility_state_store import key_report, key_time
+from m8mobility_state_store import key_report, key_time, key_state
 
 router = APIRouter()
 
@@ -452,7 +452,8 @@ def cmd_poll(
     m1Registry.require_whitelisted(scanner)
 
     server_now_str = utility.local_ts()
-
+    mobility_report_process_result = {}
+    
     try:
         limit = int(req.limit or 20)
     except Exception:
@@ -523,9 +524,26 @@ def cmd_poll(
             config.r.hset(config.KEY_APPLIED_VIDEO, scanner, applied)
             config.r.hset(config.KEY_APPLIED_VIDEO_TS, scanner, server_now_str)
 
+        mobility_report_process_result = {}
+
         if mobility_report_ok:
             try:
-                m8mobility.on_report_received(scanner)
+                mobility_report_process_result = m8mobility.on_report_received(scanner)
+            except Exception as e:
+                mobility_report_process_result = {
+                    "status": "error",
+                    "scanner": scanner,
+                    "detail": f"on_report_received exception: {type(e).__name__}: {e}",
+                }
+
+            try:
+                utility._hset_many(
+                    key_state(scanner),
+                    {
+                        "last_mobility_report_process_result_json": mobility_report_process_result,
+                        "last_mobility_report_process_at": server_now_str,
+                    },
+                )
             except Exception:
                 pass
 
@@ -542,6 +560,7 @@ def cmd_poll(
         "returned": len(collected["commands"]),
         "skipped": collected["skipped"],
         "commands": collected["commands"],
+        "mobility_report_process_result": mobility_report_process_result,
     }
 
 

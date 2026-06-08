@@ -1290,12 +1290,12 @@ def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
             "detail": "no location retry needed",
         }
 
-    # Retry still allowed: issue mobility.location.report and wait for its report in S1
+    # Retry still allowed: issue mobility.report.location and wait for its report in S1
     if retry_count < LOCATION_RETRY_LIMIT:
         now_ts = utility.local_ts()
         new_retry_count = retry_count + 1
 
-        action = "mobility.location.report"
+        action = "mobility.report.location"
         args = {}
 
         _save_outgoing_command_preview(

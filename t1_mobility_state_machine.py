@@ -417,10 +417,10 @@ def test_s1_timeout_to_s4(scanner: str) -> None:
     _assert(str(busy_count) == "1", "Expected busy_count to increase on missing-report timeout")
 
     cmd_rows = _latest_cmd_rows(scanner)
-    _assert(len(cmd_rows) >= 2, "Expected follow-up mobility.location.report to be issued after timeout")
+    _assert(len(cmd_rows) >= 2, "Expected follow-up mobility.report.location to be issued after timeout")
     _assert(
-        any(row.get("action") == "mobility.location.report" for row in cmd_rows),
-        "Expected mobility.location.report in command stream",
+        any(row.get("action") == "mobility.report.location" for row in cmd_rows),
+        "Expected mobility.report.location in command stream",
     )
 
     print("\nPASS")

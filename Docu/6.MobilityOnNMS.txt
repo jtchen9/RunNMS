@@ -24,7 +24,7 @@ Args:
   "angle_deg": 45
 }
 
-D. mobility.location.report
+D. mobility.report.location
 Args:
 {}
 
@@ -66,7 +66,7 @@ S3_SOLVING_TRUE_LOCATION
 
 S4_WAITING_LOCATION_RETRY
   ↓
-   ├─ issue mobility.location.report → S1
+   ├─ issue mobility.report.location → S1
    └─ retry exhausted → S7
 
 S5_COMPUTING_CORRECTION
@@ -104,7 +104,7 @@ Three scenarios
         dangerous condition
         increment busy_count
         go to S4
-        issue mobility.location.report
+        issue mobility.report.location
 
 Concurrency design
     All S1 exits go through:
@@ -231,7 +231,7 @@ When used
     recoverable errors
 
 Behavior
-    issue mobility.location.report
+    issue mobility.report.location
     go to S1
     loop until:
         success → S3
