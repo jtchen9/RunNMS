@@ -82,6 +82,10 @@ MULTI_TAG_HEADING_THRESH_DEG = 20.0
 
 CORRECTION_ATTEMPT_LIMIT = 1
 
+# During state-machine bring-up, do not physically execute S5 correction.
+# S5 will still compute and log the correction, then return to S0.
+MOBILITY_CORRECTION_DRY_RUN = True
+
 S1_REPORT_TIMEOUT_SEC = 30
 S1_EVENT_LOCK_TTL_SEC = 10
 _S1_TIMERS: Dict[str, threading.Timer] = {}
@@ -1477,6 +1481,45 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
             }
 
     seq = [{"action": action, "args": args}]
+
+    # ---------------------------------------------------------
+    # Bring-up safety mode:
+    # Compute the correction, but do not physically issue it.
+    #
+    # Rationale:
+    # During early mobility bring-up, AprilTag/location calibration is
+    # not mature yet. A noisy true pose can generate a large correction.
+    # We still want to test S0→S5→S6→S1→S2→S3→S5 transition logic,
+    # but we do not want S5 to launch an unexpected physical correction.
+    # ---------------------------------------------------------
+    if MOBILITY_CORRECTION_DRY_RUN:
+        _clear_pending_sequence(scanner)
+        _clear_outgoing_command_preview(scanner)
+
+        utility._hset_many(
+            key_state(scanner),
+            {
+                "dry_run_correction_action": action,
+                "dry_run_correction_args_json": args,
+                "dry_run_correction_error_json": err,
+                "dry_run_correction_detail_json": correction_detail,
+                "dry_run_correction_at": utility.local_ts(),
+            },
+        )
+
+        return {
+            "status": "ok",
+            "transition_to": S0_IDLE,
+            "detail": f"dry-run correction suppressed: {action}",
+            "error": err,
+            "pending_sequence": [],
+            "dry_run_correction": {
+                "action": action,
+                "args": args,
+                "correction_detail": correction_detail,
+            },
+        }
+
     _save_pending_sequence(scanner, seq, "computed_by_s5")
 
     return {
@@ -1487,7 +1530,6 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         "pending_sequence": seq,
         "correction_detail": correction_detail,
     }
-
 
 # ===== s6issuing_correction =====
 
