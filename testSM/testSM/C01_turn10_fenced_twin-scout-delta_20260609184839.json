@@ -1,0 +1,45 @@
+{
+  "test_id": "C01",
+  "test_name": "turn10_fenced",
+  "scanner": "twin-scout-delta",
+  "nms_base": "http://localhost:8000",
+  "started_at": "2026-06-09-18:48:37",
+  "ended_at": "2026-06-09-18:48:39",
+  "pass": false,
+  "failure_reason": "Precondition failed:\n- mobility_ready must be true, got ''",
+  "config": {
+    "location_action": "mobility.report.location",
+    "turn_action": "mobility.turn",
+    "turn_args": {
+      "angle_deg": 10
+    },
+    "correction_fence_count": 999,
+    "max_wait_location_sec": 60,
+    "max_wait_turn_sec": 60
+  },
+  "events": [
+    {
+      "ts": "2026-06-09-18:48:37",
+      "phase": "start",
+      "detail": "test started"
+    }
+  ],
+  "snapshots": {
+    "PRE": {
+      "ts": "2026-06-09-18:48:39",
+      "state": {},
+      "time": {},
+      "pose": {
+        "true_location_json": null,
+        "planned_location_json": null
+      },
+      "report": {},
+      "cmd_stream": {
+        "key": "nms:cmd:twin-scout-delta",
+        "len": 0,
+        "newest_actions": []
+      }
+    }
+  },
+  "trace": []
+}

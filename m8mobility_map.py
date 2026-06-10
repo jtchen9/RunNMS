@@ -337,3 +337,63 @@ def _is_path_clear(x0_m: float, y0_m: float, x1_m: float, y1_m: float, exclude_s
             blocked.append((row, col))
 
     return (len(blocked) == 0), blocked
+
+def _is_path_clear_debug(
+    x0_m: float,
+    y0_m: float,
+    x1_m: float,
+    y1_m: float,
+    exclude_scanner: str = "",
+) -> tuple[bool, list[tuple[int, int]], Dict[str, Any]]:
+    """
+    Debug version of _is_path_clear().
+
+    Purpose:
+    - distinguish static-map blockage from dynamic robot keep-out blockage
+    - show sampled cells
+    - show start/target world coordinates
+    """
+    static_map, dynamic_map, effective_map = _build_effective_map(exclude_scanner=exclude_scanner)
+    cells = _sample_path_cells(x0_m, y0_m, x1_m, y1_m, static_map)
+
+    blocked: list[tuple[int, int]] = []
+    cell_details: list[Dict[str, Any]] = []
+
+    for row, col in cells:
+        s = int(static_map[row, col] != 0)
+        d = int(dynamic_map[row, col] != 0)
+        e = int(effective_map[row, col] != 0)
+
+        item = {
+            "row": int(row),
+            "col": int(col),
+            "static": s,
+            "dynamic": d,
+            "effective": e,
+        }
+        cell_details.append(item)
+
+        if e:
+            blocked.append((row, col))
+
+    debug = {
+        "start": {
+            "x_m": float(x0_m),
+            "y_m": float(y0_m),
+            "grid": _world_to_grid(x0_m, y0_m, static_map),
+        },
+        "target": {
+            "x_m": float(x1_m),
+            "y_m": float(y1_m),
+            "grid": _world_to_grid(x1_m, y1_m, static_map),
+        },
+        "sample_count": len(cells),
+        "sample_cells": cell_details[:30],
+        "blocked_count": len(blocked),
+        "blocked_cells": [
+            d for d in cell_details
+            if int(d.get("effective", 0)) != 0
+        ][:30],
+    }
+
+    return (len(blocked) == 0), blocked, debug

@@ -25,7 +25,7 @@ from m8mobility_state_store import (
 from m8mobility_pose import ( 
     _apply_mobility_command_to_pose, _pose_error 
 ) 
-from m8mobility_map import _is_path_clear, _load_tag_map 
+from m8mobility_map import _is_path_clear, _is_path_clear_debug, _load_tag_map 
 from m8mobility_command_model import ( 
     _normalize_mobility_command, 
     _build_turn_only_command, _build_turn_move_turn_forward_command, 
@@ -82,7 +82,7 @@ MULTI_TAG_HEADING_THRESH_DEG = 20.0
 
 CORRECTION_ATTEMPT_LIMIT = 1
 
-S1_REPORT_TIMEOUT_SEC = 30
+S1_REPORT_TIMEOUT_SEC = 90
 S1_EVENT_LOCK_TTL_SEC = 10
 _S1_TIMERS: Dict[str, threading.Timer] = {}
 
@@ -1463,15 +1463,34 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         px = float(simulated_target["x_m"])
         py = float(simulated_target["y_m"])
 
-        path_ok, blocked = _is_path_clear(tx, ty, px, py, exclude_scanner=scanner)
+        path_ok, blocked, path_debug = _is_path_clear_debug(
+            tx,
+            ty,
+            px,
+            py,
+            exclude_scanner=scanner,
+        )
+
         if not path_ok:
             _clear_pending_sequence(scanner)
             _clear_outgoing_command_preview(scanner)
+
             return {
                 "status": "stop",
                 "transition_to": S7_STOPPED,
-                "detail": f"path unsafe in s5, blocked={len(blocked)}",
-                "error": err,
+                "detail": (
+                    f"path unsafe in s5, blocked={len(blocked)}, "
+                    f"start_grid={path_debug.get('start', {}).get('grid')}, "
+                    f"target_grid={path_debug.get('target', {}).get('grid')}, "
+                    f"blocked_cells={path_debug.get('blocked_cells', [])[:10]}"
+                ),
+                "error": {
+                    **err,
+                    "path_debug": path_debug,
+                    "action": action,
+                    "args": args,
+                    "simulated_target": simulated_target,
+                },
                 "pending_sequence": [],
                 "correction_detail": correction_detail,
             }

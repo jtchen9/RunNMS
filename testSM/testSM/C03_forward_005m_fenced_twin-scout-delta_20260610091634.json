@@ -1,0 +1,3400 @@
+{
+  "test_id": "C03",
+  "test_name": "forward_005m_fenced",
+  "scanner": "twin-scout-delta",
+  "nms_base": "http://localhost:8000",
+  "started_at": "2026-06-10-09:15:49",
+  "ended_at": "2026-06-10-09:16:34",
+  "pass": false,
+  "failure_reason": "Expected NMS to issue mobility.turn_move_turn.forward, but it issued : {}",
+  "config": {
+    "location_action": "mobility.report.location",
+    "ACTION": "mobility.turn_move_turn.forward",
+    "ARGS": {
+      "pre_angle": 0.0,
+      "distance_m": 0.05,
+      "post_angle": 0.0
+    },
+    "correction_fence_count": 999,
+    "max_wait_location_sec": 60,
+    "max_wait_turn_sec": 60
+  },
+  "events": [
+    {
+      "ts": "2026-06-10-09:15:49",
+      "phase": "start",
+      "detail": "test started"
+    },
+    {
+      "ts": "2026-06-10-09:15:51",
+      "phase": "BEFORE LOCATION",
+      "detail": "cleared nms:cmd:twin-scout-delta, old_len=0"
+    },
+    {
+      "ts": "2026-06-10-09:15:51",
+      "phase": "location_prepare",
+      "detail": "NMS prepared to accept mobility.report.location",
+      "extra": {
+        "token": "testSM-location-1781054151"
+      }
+    },
+    {
+      "ts": "2026-06-10-09:15:51",
+      "phase": "location_inject",
+      "detail": "raw location command injected",
+      "extra": {
+        "xid": "1781054151148-0",
+        "fields": {
+          "category": "mobility",
+          "action": "mobility.report.location",
+          "args_json": "{}",
+          "created_at": "2026-06-10-09:15:51",
+          "execute_at": "2026-06-10-09:15:51",
+          "source": "testSM.location_precondition"
+        }
+      }
+    },
+    {
+      "ts": "2026-06-10-09:16:32",
+      "phase": "location_done",
+      "detail": "fresh location report received",
+      "extra": {
+        "elapsed_sec": 41
+      }
+    },
+    {
+      "ts": "2026-06-10-09:16:32",
+      "phase": "align",
+      "detail": "planned_location_json copied from true_location_json"
+    },
+    {
+      "ts": "2026-06-10-09:16:32",
+      "phase": "align_detail",
+      "detail": "aligned planned=true",
+      "extra": {
+        "x_m": 5.255968071739546,
+        "y_m": 2.2513305333951124,
+        "heading_deg": 275.0048622642199,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      }
+    },
+    {
+      "ts": "2026-06-10-09:16:32",
+      "phase": "BEFORE TURN",
+      "detail": "cleared nms:cmd:twin-scout-delta, old_len=0"
+    },
+    {
+      "ts": "2026-06-10-09:16:34",
+      "phase": "enqueue_turn",
+      "detail": "turn command enqueue response",
+      "extra": {
+        "http_status": 200,
+        "payload": {
+          "state": "s0idle",
+          "status": "ok",
+          "detail": "already close enough to planned location",
+          "error": {
+            "dx_m": 0.00436201410129744,
+            "dy_m": -0.049809364912434706,
+            "dpos_m": 0.049999999999999996,
+            "dhead_deg": 0.0
+          },
+          "pending_sequence": []
+        }
+      }
+    },
+    {
+      "ts": "2026-06-10-09:16:34",
+      "phase": "ABORT: WRONG ISSUED ACTION",
+      "detail": "cleared nms:cmd:twin-scout-delta, old_len=0"
+    }
+  ],
+  "snapshots": {
+    "PRE": {
+      "ts": "2026-06-10-09:15:51",
+      "state": {
+        "last_correction_issued_at": "2026-06-10-08:47:17",
+        "need_location_retry": "false",
+        "robot_safety_state": "NORMAL",
+        "mobility_ready": "true",
+        "correction_attempt_count": "999",
+        "outgoing_command_action": "",
+        "state": "s0idle",
+        "retry_count": "0",
+        "state_detail": "correction limit reached (1)",
+        "last_mobility_report_process_result_json": "{\"state\": \"s0idle\", \"status\": \"ok\", \"detail\": \"correction limit reached (1)\", \"error\": {\"dx_m\": -0.4350775716770716, \"dy_m\": -0.018449834651701913, \"dpos_m\": 0.43546858643889863, \"dhead_deg\": -12.326948444444554}, \"pending_sequence\": []}",
+        "pending_sequence_json": "",
+        "last_mobility_report_process_at": "2026-06-10-08:47:52",
+        "collision_veto_count": "0",
+        "pending_sequence_reason": "",
+        "outgoing_command_args_json": "",
+        "s2_entry_reason": "",
+        "stop_experiment": "false",
+        "pending_sequence_len": "0",
+        "mobility_ready_reason": "pose solved at registration",
+        "stop_reason": "",
+        "outgoing_command_updated_at": "",
+        "exec_fail_count": "0",
+        "busy_count": "0",
+        "last_error_code": "",
+        "state_updated_at": "2026-06-10-08:47:52",
+        "last_error_detail": "",
+        "outgoing_command_source": ""
+      },
+      "time": {
+        "last_mobility_report_at": "2026-06-10-08:47:52",
+        "last_registration_mobility_report_at": "2026-06-10-08:07:08",
+        "true_location_updated_at": "2026-06-10-08:47:52",
+        "planned_location_updated_at": "2026-06-10-08:47:17",
+        "last_planned_command_issued_at": "2026-06-10-08:47:17",
+        "s1_timer_token": "",
+        "s1_timer_started_at": "",
+        "policy_updated_at": "2026-06-10-08:47:52",
+        "last_retry_requested_at": "2026-06-09-19:35:55",
+        "busy_retry_token": "",
+        "busy_retry_started_at": ""
+      },
+      "pose": {
+        "planned_location_json": {
+          "location_ok": true,
+          "x_m": 4.823546557142297,
+          "y_m": 2.23351731375455,
+          "heading_deg": 262.6044333751629
+        },
+        "true_location_json": {
+          "location_ok": true,
+          "x_m": 5.258624128819369,
+          "y_m": 2.251967148406252,
+          "heading_deg": 274.93138181960745,
+          "source": "apriltag",
+          "tags_used": [
+            48,
+            49,
+            50
+          ],
+          "tag_count": 3,
+          "solver_stage": "best_effort_fusion",
+          "updated_at": "2026-06-10-08:47:52",
+          "detail": "best-effort fusion ok",
+          "candidates": [
+            {
+              "tag_id": 48,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.29556171542334,
+              "y_m": 2.2662620527676562,
+              "heading_deg": 275.3081,
+              "distance_m": 2.3043,
+              "angle_deg_cw": 25.2405,
+              "yaw_deg": 19.9324,
+              "bearing_robot_deg_ccw": -25.240499999999997,
+              "snapshot_path": "/tmp/location_front_1781052445608.jpg",
+              "yaw_corrected_deg": -5.3081
+            },
+            {
+              "tag_id": 49,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.419955930177552,
+              "y_m": 2.2491900134395992,
+              "heading_deg": 270.8735,
+              "distance_m": 2.1494,
+              "angle_deg_cw": 0.0726,
+              "yaw_deg": -0.8009,
+              "bearing_robot_deg_ccw": -0.07259999999999422,
+              "snapshot_path": "/tmp/location_front_1781052445608.jpg",
+              "yaw_corrected_deg": -0.8734999999999999
+            },
+            {
+              "tag_id": 50,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 4.841773347134055,
+              "y_m": 2.2442082945014312,
+              "heading_deg": 284.1417,
+              "distance_m": 2.4994,
+              "angle_deg_cw": -24.4261,
+              "yaw_deg": -38.5678,
+              "bearing_robot_deg_ccw": 24.42609999999999,
+              "snapshot_path": "/tmp/location_front_1781052445608.jpg",
+              "yaw_corrected_deg": -14.141699999999997
+            }
+          ],
+          "used_candidates": [
+            {
+              "tag_id": 48,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.29556171542334,
+              "y_m": 2.2662620527676562,
+              "heading_deg": 275.3081,
+              "distance_m": 2.3043,
+              "angle_deg_cw": 25.2405,
+              "yaw_deg": 19.9324,
+              "bearing_robot_deg_ccw": -25.240499999999997,
+              "snapshot_path": "/tmp/location_front_1781052445608.jpg",
+              "yaw_corrected_deg": -5.3081,
+              "position_residual_m": 0.03960719120093728,
+              "heading_residual_deg": 0.3767181803925723,
+              "weight": 0.28926369346209985
+            },
+            {
+              "tag_id": 49,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.419955930177552,
+              "y_m": 2.2491900134395992,
+              "heading_deg": 270.8735,
+              "distance_m": 2.1494,
+              "angle_deg_cw": 0.0726,
+              "yaw_deg": -0.8009,
+              "bearing_robot_deg_ccw": -0.07259999999999422,
+              "snapshot_path": "/tmp/location_front_1781052445608.jpg",
+              "yaw_corrected_deg": -0.8734999999999999,
+              "position_residual_m": 0.16135570212452746,
+              "heading_residual_deg": 4.0578818196074735,
+              "weight": 0.6809890836324094
+            },
+            {
+              "tag_id": 50,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 4.841773347134055,
+              "y_m": 2.2442082945014312,
+              "heading_deg": 284.1417,
+              "distance_m": 2.4994,
+              "angle_deg_cw": -24.4261,
+              "yaw_deg": -38.5678,
+              "bearing_robot_deg_ccw": 24.42609999999999,
+              "snapshot_path": "/tmp/location_front_1781052445608.jpg",
+              "yaw_corrected_deg": -14.141699999999997,
+              "position_residual_m": 0.41692298330216054,
+              "heading_residual_deg": 9.210318180392562,
+              "weight": 0.2891919689077597
+            }
+          ],
+          "hard_outliers": [],
+          "soft_outliers": []
+        },
+        "last_planned_command_action": "mobility.turn",
+        "last_planned_command_args_json": "{\"angle_deg\": -10.0}"
+      },
+      "report": {
+        "last_command": "mobility.turn",
+        "last_command_args": {
+          "angle_deg": -10.0
+        },
+        "last_command_received_ts": 1781052444.940008,
+        "last_command_finished_ts": 1781052462.1585884,
+        "last_exec_status": "completed",
+        "last_error_code": "",
+        "last_error_detail": "",
+        "last_location_result": {
+          "ok": true,
+          "capture_mode": "dual_camera",
+          "camera_roles": [
+            "front",
+            "rear"
+          ],
+          "av_was_active": false,
+          "av_restarted": false,
+          "snapshots": {
+            "front": "/tmp/location_front_1781052445608.jpg",
+            "rear": "/tmp/location_rear_1781052451288.jpg"
+          },
+          "front": {
+            "ok": true,
+            "camera_role": "front",
+            "snapshot": {
+              "ok": true,
+              "stage": "snapshot",
+              "camera_role": "front",
+              "snapshot_path": "/tmp/location_front_1781052445608.jpg",
+              "video_dev": "/dev/v4l/by-id/usb-webcamvendor_webcamproduct_YGR80PU1200.23071717-video-index0",
+              "width": 1280,
+              "height": 720,
+              "attempt": 1,
+              "detail": {
+                "ok": true,
+                "error": "",
+                "output_path": "/tmp/location_front_1781052445608.jpg",
+                "width": 1280,
+                "height": 720
+              },
+              "error": ""
+            },
+            "apriltag": {
+              "ok": true,
+              "error": "",
+              "image_path": "/tmp/location_front_1781052445608.jpg",
+              "camera_role": "front",
+              "image_width": 1280,
+              "image_height": 720,
+              "count": 3,
+              "tags": [
+                {
+                  "id": 48,
+                  "library_pose": {
+                    "distance_m": 2.3519,
+                    "angle_deg": 24.6469,
+                    "yaw_deg": 22.7139
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.3043,
+                    "angle_deg": 25.2405,
+                    "yaw_deg": 19.9324
+                  }
+                },
+                {
+                  "id": 49,
+                  "library_pose": {
+                    "distance_m": 2.1946,
+                    "angle_deg": 1.0881,
+                    "yaw_deg": -0.0
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.1494,
+                    "angle_deg": 0.0726,
+                    "yaw_deg": -0.8009
+                  }
+                },
+                {
+                  "id": 50,
+                  "library_pose": {
+                    "distance_m": 2.5502,
+                    "angle_deg": -21.8443,
+                    "yaw_deg": -41.3748
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.4994,
+                    "angle_deg": -24.4261,
+                    "yaw_deg": -38.5678
+                  }
+                }
+              ],
+              "camera_params": {
+                "fx": 857.2,
+                "fy": 851.8,
+                "cx": 640.0,
+                "cy": 360.0,
+                "tag_size_m": 0.1
+              },
+              "snapshot_path": "/tmp/location_front_1781052445608.jpg"
+            },
+            "snapshot_path": "/tmp/location_front_1781052445608.jpg",
+            "tags": [
+              {
+                "id": 48,
+                "library_pose": {
+                  "distance_m": 2.3519,
+                  "angle_deg": 24.6469,
+                  "yaw_deg": 22.7139
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.3043,
+                  "angle_deg": 25.2405,
+                  "yaw_deg": 19.9324
+                }
+              },
+              {
+                "id": 49,
+                "library_pose": {
+                  "distance_m": 2.1946,
+                  "angle_deg": 1.0881,
+                  "yaw_deg": -0.0
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.1494,
+                  "angle_deg": 0.0726,
+                  "yaw_deg": -0.8009
+                }
+              },
+              {
+                "id": 50,
+                "library_pose": {
+                  "distance_m": 2.5502,
+                  "angle_deg": -21.8443,
+                  "yaw_deg": -41.3748
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.4994,
+                  "angle_deg": -24.4261,
+                  "yaw_deg": -38.5678
+                }
+              }
+            ],
+            "count": 3,
+            "error": ""
+          },
+          "rear": {
+            "ok": false,
+            "camera_role": "rear",
+            "snapshot": {
+              "ok": false,
+              "stage": "snapshot",
+              "camera_role": "rear",
+              "snapshot_path": "/tmp/location_rear_1781052451288.jpg",
+              "video_dev": "/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_200901010001-video-index0",
+              "width": 640,
+              "height": 480,
+              "error": "[ WARN:0@0.189] global cap_gstreamer.cpp:2839 handleMessage OpenCV | GStreamer warning: Embedded video playback halted; module source reported: Could not read from resource.\n[ WARN:0@0.190] global cap_gstreamer.cpp:1698 open OpenCV | GStreamer warning: unable to start pipeline\n[ WARN:0@0.190] global cap_gstreamer.cpp:1173 isPipelinePlaying OpenCV | GStreamer warning: GStreamer: pipeline have not been created\n[ WARN:0@1.651] global cap_v4l.cpp:889 requestBuffers VIDEOIO(V4L2:/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_200901010001-video-index0): failed VIDIOC_REQBUFS: errno=19 (No such device)\n{\"ok\": false, \"error\": \"frame_read_failed\", \"output_path\": \"/tmp/location_rear_1781052451288.jpg\"}"
+            },
+            "apriltag": {
+              "ok": false,
+              "stage": "apriltag",
+              "camera_role": "rear",
+              "snapshot_path": "/tmp/location_rear_1781052451288.jpg",
+              "error": "snapshot_failed",
+              "tags": [],
+              "count": 0
+            },
+            "snapshot_path": "/tmp/location_rear_1781052451288.jpg",
+            "tags": [],
+            "count": 0,
+            "error": "[ WARN:0@0.189] global cap_gstreamer.cpp:2839 handleMessage OpenCV | GStreamer warning: Embedded video playback halted; module source reported: Could not read from resource.\n[ WARN:0@0.190] global cap_gstreamer.cpp:1698 open OpenCV | GStreamer warning: unable to start pipeline\n[ WARN:0@0.190] global cap_gstreamer.cpp:1173 isPipelinePlaying OpenCV | GStreamer warning: GStreamer: pipeline have not been created\n[ WARN:0@1.651] global cap_v4l.cpp:889 requestBuffers VIDEOIO(V4L2:/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_200901010001-video-index0): failed VIDIOC_REQBUFS: errno=19 (No such device)\n{\"ok\": false, \"error\": \"frame_read_failed\", \"output_path\": \"/tmp/location_rear_1781052451288.jpg\"}"
+          },
+          "apriltag": {
+            "ok": true,
+            "capture_mode": "dual_camera",
+            "count": 3,
+            "unique_count": 3,
+            "unique_tag_ids": [
+              48,
+              49,
+              50
+            ],
+            "tags": [
+              {
+                "id": 48,
+                "library_pose": {
+                  "distance_m": 2.3519,
+                  "angle_deg": 24.6469,
+                  "yaw_deg": 22.7139
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.3043,
+                  "angle_deg": 25.2405,
+                  "yaw_deg": 19.9324
+                },
+                "camera_role": "front",
+                "snapshot_path": "/tmp/location_front_1781052445608.jpg"
+              },
+              {
+                "id": 49,
+                "library_pose": {
+                  "distance_m": 2.1946,
+                  "angle_deg": 1.0881,
+                  "yaw_deg": -0.0
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.1494,
+                  "angle_deg": 0.0726,
+                  "yaw_deg": -0.8009
+                },
+                "camera_role": "front",
+                "snapshot_path": "/tmp/location_front_1781052445608.jpg"
+              },
+              {
+                "id": 50,
+                "library_pose": {
+                  "distance_m": 2.5502,
+                  "angle_deg": -21.8443,
+                  "yaw_deg": -41.3748
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.4994,
+                  "angle_deg": -24.4261,
+                  "yaw_deg": -38.5678
+                },
+                "camera_role": "front",
+                "snapshot_path": "/tmp/location_front_1781052445608.jpg"
+              }
+            ],
+            "front": {
+              "ok": true,
+              "error": "",
+              "image_path": "/tmp/location_front_1781052445608.jpg",
+              "camera_role": "front",
+              "image_width": 1280,
+              "image_height": 720,
+              "count": 3,
+              "tags": [
+                {
+                  "id": 48,
+                  "library_pose": {
+                    "distance_m": 2.3519,
+                    "angle_deg": 24.6469,
+                    "yaw_deg": 22.7139
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.3043,
+                    "angle_deg": 25.2405,
+                    "yaw_deg": 19.9324
+                  }
+                },
+                {
+                  "id": 49,
+                  "library_pose": {
+                    "distance_m": 2.1946,
+                    "angle_deg": 1.0881,
+                    "yaw_deg": -0.0
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.1494,
+                    "angle_deg": 0.0726,
+                    "yaw_deg": -0.8009
+                  }
+                },
+                {
+                  "id": 50,
+                  "library_pose": {
+                    "distance_m": 2.5502,
+                    "angle_deg": -21.8443,
+                    "yaw_deg": -41.3748
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.4994,
+                    "angle_deg": -24.4261,
+                    "yaw_deg": -38.5678
+                  }
+                }
+              ],
+              "camera_params": {
+                "fx": 857.2,
+                "fy": 851.8,
+                "cx": 640.0,
+                "cy": 360.0,
+                "tag_size_m": 0.1
+              },
+              "snapshot_path": "/tmp/location_front_1781052445608.jpg"
+            },
+            "rear": {
+              "ok": false,
+              "stage": "apriltag",
+              "camera_role": "rear",
+              "snapshot_path": "/tmp/location_rear_1781052451288.jpg",
+              "error": "snapshot_failed",
+              "tags": [],
+              "count": 0
+            },
+            "front_count": 3,
+            "rear_count": 0
+          },
+          "error": ""
+        }
+      },
+      "cmd_stream": {
+        "key": "nms:cmd:twin-scout-delta",
+        "len": 0,
+        "newest_actions": []
+      }
+    },
+    "AFTER LOCATION": {
+      "ts": "2026-06-10-09:16:32",
+      "state": {
+        "last_correction_issued_at": "2026-06-10-08:47:17",
+        "need_location_retry": "false",
+        "robot_safety_state": "NORMAL",
+        "mobility_ready": "true",
+        "correction_attempt_count": "999",
+        "outgoing_command_action": "",
+        "state": "s0idle",
+        "retry_count": "0",
+        "state_detail": "correction limit reached (1)",
+        "last_mobility_report_process_result_json": "{\"state\": \"s0idle\", \"status\": \"ok\", \"detail\": \"correction limit reached (1)\", \"error\": {\"dx_m\": -0.432421514597249, \"dy_m\": -0.017813219640562483, \"dpos_m\": 0.43278825894488143, \"dhead_deg\": -12.400428889057025}, \"pending_sequence\": []}",
+        "pending_sequence_json": "",
+        "last_mobility_report_process_at": "2026-06-10-09:16:31",
+        "collision_veto_count": "0",
+        "pending_sequence_reason": "",
+        "outgoing_command_args_json": "",
+        "s2_entry_reason": "",
+        "stop_experiment": "false",
+        "pending_sequence_len": "0",
+        "mobility_ready_reason": "pose solved at registration",
+        "stop_reason": "",
+        "outgoing_command_updated_at": "",
+        "exec_fail_count": "0",
+        "busy_count": "0",
+        "last_error_code": "",
+        "state_updated_at": "2026-06-10-09:16:31",
+        "last_error_detail": "",
+        "outgoing_command_source": ""
+      },
+      "time": {
+        "last_mobility_report_at": "2026-06-10-09:16:31",
+        "last_registration_mobility_report_at": "2026-06-10-08:07:08",
+        "true_location_updated_at": "2026-06-10-09:16:31",
+        "planned_location_updated_at": "2026-06-10-08:47:17",
+        "last_planned_command_issued_at": "2026-06-10-09:15:51",
+        "s1_timer_token": "",
+        "s1_timer_started_at": "",
+        "policy_updated_at": "2026-06-10-09:16:31",
+        "last_retry_requested_at": "2026-06-09-19:35:55",
+        "busy_retry_token": "",
+        "busy_retry_started_at": ""
+      },
+      "pose": {
+        "planned_location_json": {
+          "location_ok": true,
+          "x_m": 4.823546557142297,
+          "y_m": 2.23351731375455,
+          "heading_deg": 262.6044333751629
+        },
+        "true_location_json": {
+          "location_ok": true,
+          "x_m": 5.255968071739546,
+          "y_m": 2.2513305333951124,
+          "heading_deg": 275.0048622642199,
+          "source": "apriltag",
+          "tags_used": [
+            48,
+            49,
+            50
+          ],
+          "tag_count": 3,
+          "solver_stage": "best_effort_fusion",
+          "updated_at": "2026-06-10-09:16:31",
+          "detail": "best-effort fusion ok",
+          "candidates": [
+            {
+              "tag_id": 48,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.268715529001618,
+              "y_m": 2.273797715071896,
+              "heading_deg": 275.9624,
+              "distance_m": 2.3024,
+              "angle_deg_cw": 25.2028,
+              "yaw_deg": 19.2404,
+              "bearing_robot_deg_ccw": -25.202799999999996,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -5.962399999999999
+            },
+            {
+              "tag_id": 49,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.41999227268315,
+              "y_m": 2.2465902674477207,
+              "heading_deg": 270.8299,
+              "distance_m": 2.1468,
+              "angle_deg_cw": 0.029,
+              "yaw_deg": -0.8009,
+              "bearing_robot_deg_ccw": -0.028999999999996362,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -0.8299
+            },
+            {
+              "tag_id": 50,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 4.8568956559162375,
+              "y_m": 2.2400015059660388,
+              "heading_deg": 283.9062,
+              "distance_m": 2.4867,
+              "angle_deg_cw": -24.4496,
+              "yaw_deg": -38.3558,
+              "bearing_robot_deg_ccw": 24.449600000000004,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -13.906200000000002
+            }
+          ],
+          "used_candidates": [
+            {
+              "tag_id": 48,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.268715529001618,
+              "y_m": 2.273797715071896,
+              "heading_deg": 275.9624,
+              "distance_m": 2.3024,
+              "angle_deg_cw": 25.2028,
+              "yaw_deg": 19.2404,
+              "bearing_robot_deg_ccw": -25.202799999999996,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -5.962399999999999,
+              "position_residual_m": 0.025831606979550264,
+              "heading_residual_deg": 0.957537735780079,
+              "weight": 0.28993514910452284
+            },
+            {
+              "tag_id": 49,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.41999227268315,
+              "y_m": 2.2465902674477207,
+              "heading_deg": 270.8299,
+              "distance_m": 2.1468,
+              "angle_deg_cw": 0.029,
+              "yaw_deg": -0.8009,
+              "bearing_robot_deg_ccw": -0.028999999999996362,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -0.8299,
+              "position_residual_m": 0.16409268300701255,
+              "heading_residual_deg": 4.174962264219914,
+              "weight": 0.6820626024870854
+            },
+            {
+              "tag_id": 50,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 4.8568956559162375,
+              "y_m": 2.2400015059660388,
+              "heading_deg": 283.9062,
+              "distance_m": 2.4867,
+              "angle_deg_cw": -24.4496,
+              "yaw_deg": -38.3558,
+              "bearing_robot_deg_ccw": 24.449600000000004,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -13.906200000000002,
+              "position_residual_m": 0.3992331899198016,
+              "heading_residual_deg": 8.90133773578009,
+              "weight": 0.28959834031628756
+            }
+          ],
+          "hard_outliers": [],
+          "soft_outliers": []
+        },
+        "last_planned_command_action": "mobility.report.location",
+        "last_planned_command_args_json": "{}"
+      },
+      "report": {
+        "last_command": "mobility.report.location",
+        "last_command_args": {},
+        "last_command_received_ts": 1781054164.4995766,
+        "last_command_finished_ts": 1781054181.1075351,
+        "last_exec_status": "completed",
+        "last_error_code": "",
+        "last_error_detail": "",
+        "last_location_result": {
+          "ok": true,
+          "capture_mode": "dual_camera",
+          "camera_roles": [
+            "front",
+            "rear"
+          ],
+          "av_was_active": false,
+          "av_restarted": false,
+          "snapshots": {
+            "front": "/tmp/location_front_1781054164599.jpg",
+            "rear": "/tmp/location_rear_1781054170362.jpg"
+          },
+          "front": {
+            "ok": true,
+            "camera_role": "front",
+            "snapshot": {
+              "ok": true,
+              "stage": "snapshot",
+              "camera_role": "front",
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "video_dev": "/dev/v4l/by-id/usb-webcamvendor_webcamproduct_YGR80PU1200.23071717-video-index0",
+              "width": 1280,
+              "height": 720,
+              "attempt": 1,
+              "detail": {
+                "ok": true,
+                "error": "",
+                "output_path": "/tmp/location_front_1781054164599.jpg",
+                "width": 1280,
+                "height": 720
+              },
+              "error": ""
+            },
+            "apriltag": {
+              "ok": true,
+              "error": "",
+              "image_path": "/tmp/location_front_1781054164599.jpg",
+              "camera_role": "front",
+              "image_width": 1280,
+              "image_height": 720,
+              "count": 3,
+              "tags": [
+                {
+                  "id": 48,
+                  "library_pose": {
+                    "distance_m": 2.35,
+                    "angle_deg": 24.6116,
+                    "yaw_deg": 21.9559
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.3024,
+                    "angle_deg": 25.2028,
+                    "yaw_deg": 19.2404
+                  }
+                },
+                {
+                  "id": 49,
+                  "library_pose": {
+                    "distance_m": 2.192,
+                    "angle_deg": 1.0473,
+                    "yaw_deg": -0.0
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.1468,
+                    "angle_deg": 0.029,
+                    "yaw_deg": -0.8009
+                  }
+                },
+                {
+                  "id": 50,
+                  "library_pose": {
+                    "distance_m": 2.5373,
+                    "angle_deg": -21.8663,
+                    "yaw_deg": -41.1425
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.4867,
+                    "angle_deg": -24.4496,
+                    "yaw_deg": -38.3558
+                  }
+                }
+              ],
+              "camera_params": {
+                "fx": 857.2,
+                "fy": 851.8,
+                "cx": 640.0,
+                "cy": 360.0,
+                "tag_size_m": 0.1
+              },
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg"
+            },
+            "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+            "tags": [
+              {
+                "id": 48,
+                "library_pose": {
+                  "distance_m": 2.35,
+                  "angle_deg": 24.6116,
+                  "yaw_deg": 21.9559
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.3024,
+                  "angle_deg": 25.2028,
+                  "yaw_deg": 19.2404
+                }
+              },
+              {
+                "id": 49,
+                "library_pose": {
+                  "distance_m": 2.192,
+                  "angle_deg": 1.0473,
+                  "yaw_deg": -0.0
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.1468,
+                  "angle_deg": 0.029,
+                  "yaw_deg": -0.8009
+                }
+              },
+              {
+                "id": 50,
+                "library_pose": {
+                  "distance_m": 2.5373,
+                  "angle_deg": -21.8663,
+                  "yaw_deg": -41.1425
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.4867,
+                  "angle_deg": -24.4496,
+                  "yaw_deg": -38.3558
+                }
+              }
+            ],
+            "count": 3,
+            "error": ""
+          },
+          "rear": {
+            "ok": false,
+            "camera_role": "rear",
+            "snapshot": {
+              "ok": false,
+              "stage": "snapshot",
+              "camera_role": "rear",
+              "snapshot_path": "/tmp/location_rear_1781054170362.jpg",
+              "video_dev": "/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_200901010001-video-index0",
+              "width": 640,
+              "height": 480,
+              "error": "[ WARN:0@0.188] global cap_gstreamer.cpp:2839 handleMessage OpenCV | GStreamer warning: Embedded video playback halted; module source reported: Could not read from resource.\n[ WARN:0@0.189] global cap_gstreamer.cpp:1698 open OpenCV | GStreamer warning: unable to start pipeline\n[ WARN:0@0.189] global cap_gstreamer.cpp:1173 isPipelinePlaying OpenCV | GStreamer warning: GStreamer: pipeline have not been created\n[ WARN:0@1.651] global cap_v4l.cpp:889 requestBuffers VIDEOIO(V4L2:/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_200901010001-video-index0): failed VIDIOC_REQBUFS: errno=19 (No such device)\n{\"ok\": false, \"error\": \"frame_read_failed\", \"output_path\": \"/tmp/location_rear_1781054170362.jpg\"}"
+            },
+            "apriltag": {
+              "ok": false,
+              "stage": "apriltag",
+              "camera_role": "rear",
+              "snapshot_path": "/tmp/location_rear_1781054170362.jpg",
+              "error": "snapshot_failed",
+              "tags": [],
+              "count": 0
+            },
+            "snapshot_path": "/tmp/location_rear_1781054170362.jpg",
+            "tags": [],
+            "count": 0,
+            "error": "[ WARN:0@0.188] global cap_gstreamer.cpp:2839 handleMessage OpenCV | GStreamer warning: Embedded video playback halted; module source reported: Could not read from resource.\n[ WARN:0@0.189] global cap_gstreamer.cpp:1698 open OpenCV | GStreamer warning: unable to start pipeline\n[ WARN:0@0.189] global cap_gstreamer.cpp:1173 isPipelinePlaying OpenCV | GStreamer warning: GStreamer: pipeline have not been created\n[ WARN:0@1.651] global cap_v4l.cpp:889 requestBuffers VIDEOIO(V4L2:/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_200901010001-video-index0): failed VIDIOC_REQBUFS: errno=19 (No such device)\n{\"ok\": false, \"error\": \"frame_read_failed\", \"output_path\": \"/tmp/location_rear_1781054170362.jpg\"}"
+          },
+          "apriltag": {
+            "ok": true,
+            "capture_mode": "dual_camera",
+            "count": 3,
+            "unique_count": 3,
+            "unique_tag_ids": [
+              48,
+              49,
+              50
+            ],
+            "tags": [
+              {
+                "id": 48,
+                "library_pose": {
+                  "distance_m": 2.35,
+                  "angle_deg": 24.6116,
+                  "yaw_deg": 21.9559
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.3024,
+                  "angle_deg": 25.2028,
+                  "yaw_deg": 19.2404
+                },
+                "camera_role": "front",
+                "snapshot_path": "/tmp/location_front_1781054164599.jpg"
+              },
+              {
+                "id": 49,
+                "library_pose": {
+                  "distance_m": 2.192,
+                  "angle_deg": 1.0473,
+                  "yaw_deg": -0.0
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.1468,
+                  "angle_deg": 0.029,
+                  "yaw_deg": -0.8009
+                },
+                "camera_role": "front",
+                "snapshot_path": "/tmp/location_front_1781054164599.jpg"
+              },
+              {
+                "id": 50,
+                "library_pose": {
+                  "distance_m": 2.5373,
+                  "angle_deg": -21.8663,
+                  "yaw_deg": -41.1425
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.4867,
+                  "angle_deg": -24.4496,
+                  "yaw_deg": -38.3558
+                },
+                "camera_role": "front",
+                "snapshot_path": "/tmp/location_front_1781054164599.jpg"
+              }
+            ],
+            "front": {
+              "ok": true,
+              "error": "",
+              "image_path": "/tmp/location_front_1781054164599.jpg",
+              "camera_role": "front",
+              "image_width": 1280,
+              "image_height": 720,
+              "count": 3,
+              "tags": [
+                {
+                  "id": 48,
+                  "library_pose": {
+                    "distance_m": 2.35,
+                    "angle_deg": 24.6116,
+                    "yaw_deg": 21.9559
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.3024,
+                    "angle_deg": 25.2028,
+                    "yaw_deg": 19.2404
+                  }
+                },
+                {
+                  "id": 49,
+                  "library_pose": {
+                    "distance_m": 2.192,
+                    "angle_deg": 1.0473,
+                    "yaw_deg": -0.0
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.1468,
+                    "angle_deg": 0.029,
+                    "yaw_deg": -0.8009
+                  }
+                },
+                {
+                  "id": 50,
+                  "library_pose": {
+                    "distance_m": 2.5373,
+                    "angle_deg": -21.8663,
+                    "yaw_deg": -41.1425
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.4867,
+                    "angle_deg": -24.4496,
+                    "yaw_deg": -38.3558
+                  }
+                }
+              ],
+              "camera_params": {
+                "fx": 857.2,
+                "fy": 851.8,
+                "cx": 640.0,
+                "cy": 360.0,
+                "tag_size_m": 0.1
+              },
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg"
+            },
+            "rear": {
+              "ok": false,
+              "stage": "apriltag",
+              "camera_role": "rear",
+              "snapshot_path": "/tmp/location_rear_1781054170362.jpg",
+              "error": "snapshot_failed",
+              "tags": [],
+              "count": 0
+            },
+            "front_count": 3,
+            "rear_count": 0
+          },
+          "error": ""
+        }
+      },
+      "cmd_stream": {
+        "key": "nms:cmd:twin-scout-delta",
+        "len": 0,
+        "newest_actions": []
+      }
+    },
+    "BEFORE TURN": {
+      "ts": "2026-06-10-09:16:32",
+      "state": {
+        "last_correction_issued_at": "2026-06-10-08:47:17",
+        "need_location_retry": "false",
+        "robot_safety_state": "NORMAL",
+        "mobility_ready": "true",
+        "correction_attempt_count": "-1",
+        "outgoing_command_action": "",
+        "state": "s0idle",
+        "retry_count": "0",
+        "state_detail": "testSM planned=true, ready for turn10",
+        "last_mobility_report_process_result_json": "{\"state\": \"s0idle\", \"status\": \"ok\", \"detail\": \"correction limit reached (1)\", \"error\": {\"dx_m\": -0.432421514597249, \"dy_m\": -0.017813219640562483, \"dpos_m\": 0.43278825894488143, \"dhead_deg\": -12.400428889057025}, \"pending_sequence\": []}",
+        "pending_sequence_json": "",
+        "last_mobility_report_process_at": "2026-06-10-09:16:31",
+        "collision_veto_count": "0",
+        "pending_sequence_reason": "",
+        "outgoing_command_args_json": "",
+        "s2_entry_reason": "",
+        "stop_experiment": "false",
+        "pending_sequence_len": "0",
+        "mobility_ready_reason": "pose solved at registration",
+        "stop_reason": "",
+        "outgoing_command_updated_at": "",
+        "exec_fail_count": "0",
+        "busy_count": "0",
+        "last_error_code": "",
+        "state_updated_at": "2026-06-10-09:16:32",
+        "last_error_detail": "",
+        "outgoing_command_source": ""
+      },
+      "time": {
+        "last_mobility_report_at": "2026-06-10-09:16:31",
+        "last_registration_mobility_report_at": "2026-06-10-08:07:08",
+        "true_location_updated_at": "2026-06-10-09:16:31",
+        "planned_location_updated_at": "2026-06-10-08:47:17",
+        "last_planned_command_issued_at": "2026-06-10-09:15:51",
+        "s1_timer_token": "",
+        "s1_timer_started_at": "",
+        "policy_updated_at": "2026-06-10-09:16:31",
+        "last_retry_requested_at": "2026-06-09-19:35:55",
+        "busy_retry_token": "",
+        "busy_retry_started_at": ""
+      },
+      "pose": {
+        "planned_location_json": {
+          "location_ok": true,
+          "x_m": 5.255968071739546,
+          "y_m": 2.2513305333951124,
+          "heading_deg": 275.0048622642199,
+          "source": "apriltag",
+          "tags_used": [
+            48,
+            49,
+            50
+          ],
+          "tag_count": 3,
+          "solver_stage": "best_effort_fusion",
+          "updated_at": "2026-06-10-09:16:31",
+          "detail": "best-effort fusion ok",
+          "candidates": [
+            {
+              "tag_id": 48,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.268715529001618,
+              "y_m": 2.273797715071896,
+              "heading_deg": 275.9624,
+              "distance_m": 2.3024,
+              "angle_deg_cw": 25.2028,
+              "yaw_deg": 19.2404,
+              "bearing_robot_deg_ccw": -25.202799999999996,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -5.962399999999999
+            },
+            {
+              "tag_id": 49,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.41999227268315,
+              "y_m": 2.2465902674477207,
+              "heading_deg": 270.8299,
+              "distance_m": 2.1468,
+              "angle_deg_cw": 0.029,
+              "yaw_deg": -0.8009,
+              "bearing_robot_deg_ccw": -0.028999999999996362,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -0.8299
+            },
+            {
+              "tag_id": 50,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 4.8568956559162375,
+              "y_m": 2.2400015059660388,
+              "heading_deg": 283.9062,
+              "distance_m": 2.4867,
+              "angle_deg_cw": -24.4496,
+              "yaw_deg": -38.3558,
+              "bearing_robot_deg_ccw": 24.449600000000004,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -13.906200000000002
+            }
+          ],
+          "used_candidates": [
+            {
+              "tag_id": 48,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.268715529001618,
+              "y_m": 2.273797715071896,
+              "heading_deg": 275.9624,
+              "distance_m": 2.3024,
+              "angle_deg_cw": 25.2028,
+              "yaw_deg": 19.2404,
+              "bearing_robot_deg_ccw": -25.202799999999996,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -5.962399999999999,
+              "position_residual_m": 0.025831606979550264,
+              "heading_residual_deg": 0.957537735780079,
+              "weight": 0.28993514910452284
+            },
+            {
+              "tag_id": 49,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.41999227268315,
+              "y_m": 2.2465902674477207,
+              "heading_deg": 270.8299,
+              "distance_m": 2.1468,
+              "angle_deg_cw": 0.029,
+              "yaw_deg": -0.8009,
+              "bearing_robot_deg_ccw": -0.028999999999996362,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -0.8299,
+              "position_residual_m": 0.16409268300701255,
+              "heading_residual_deg": 4.174962264219914,
+              "weight": 0.6820626024870854
+            },
+            {
+              "tag_id": 50,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 4.8568956559162375,
+              "y_m": 2.2400015059660388,
+              "heading_deg": 283.9062,
+              "distance_m": 2.4867,
+              "angle_deg_cw": -24.4496,
+              "yaw_deg": -38.3558,
+              "bearing_robot_deg_ccw": 24.449600000000004,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -13.906200000000002,
+              "position_residual_m": 0.3992331899198016,
+              "heading_residual_deg": 8.90133773578009,
+              "weight": 0.28959834031628756
+            }
+          ],
+          "hard_outliers": [],
+          "soft_outliers": []
+        },
+        "true_location_json": {
+          "location_ok": true,
+          "x_m": 5.255968071739546,
+          "y_m": 2.2513305333951124,
+          "heading_deg": 275.0048622642199,
+          "source": "apriltag",
+          "tags_used": [
+            48,
+            49,
+            50
+          ],
+          "tag_count": 3,
+          "solver_stage": "best_effort_fusion",
+          "updated_at": "2026-06-10-09:16:31",
+          "detail": "best-effort fusion ok",
+          "candidates": [
+            {
+              "tag_id": 48,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.268715529001618,
+              "y_m": 2.273797715071896,
+              "heading_deg": 275.9624,
+              "distance_m": 2.3024,
+              "angle_deg_cw": 25.2028,
+              "yaw_deg": 19.2404,
+              "bearing_robot_deg_ccw": -25.202799999999996,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -5.962399999999999
+            },
+            {
+              "tag_id": 49,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.41999227268315,
+              "y_m": 2.2465902674477207,
+              "heading_deg": 270.8299,
+              "distance_m": 2.1468,
+              "angle_deg_cw": 0.029,
+              "yaw_deg": -0.8009,
+              "bearing_robot_deg_ccw": -0.028999999999996362,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -0.8299
+            },
+            {
+              "tag_id": 50,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 4.8568956559162375,
+              "y_m": 2.2400015059660388,
+              "heading_deg": 283.9062,
+              "distance_m": 2.4867,
+              "angle_deg_cw": -24.4496,
+              "yaw_deg": -38.3558,
+              "bearing_robot_deg_ccw": 24.449600000000004,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -13.906200000000002
+            }
+          ],
+          "used_candidates": [
+            {
+              "tag_id": 48,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.268715529001618,
+              "y_m": 2.273797715071896,
+              "heading_deg": 275.9624,
+              "distance_m": 2.3024,
+              "angle_deg_cw": 25.2028,
+              "yaw_deg": 19.2404,
+              "bearing_robot_deg_ccw": -25.202799999999996,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -5.962399999999999,
+              "position_residual_m": 0.025831606979550264,
+              "heading_residual_deg": 0.957537735780079,
+              "weight": 0.28993514910452284
+            },
+            {
+              "tag_id": 49,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 5.41999227268315,
+              "y_m": 2.2465902674477207,
+              "heading_deg": 270.8299,
+              "distance_m": 2.1468,
+              "angle_deg_cw": 0.029,
+              "yaw_deg": -0.8009,
+              "bearing_robot_deg_ccw": -0.028999999999996362,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -0.8299,
+              "position_residual_m": 0.16409268300701255,
+              "heading_residual_deg": 4.174962264219914,
+              "weight": 0.6820626024870854
+            },
+            {
+              "tag_id": 50,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 4.8568956559162375,
+              "y_m": 2.2400015059660388,
+              "heading_deg": 283.9062,
+              "distance_m": 2.4867,
+              "angle_deg_cw": -24.4496,
+              "yaw_deg": -38.3558,
+              "bearing_robot_deg_ccw": 24.449600000000004,
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "yaw_corrected_deg": -13.906200000000002,
+              "position_residual_m": 0.3992331899198016,
+              "heading_residual_deg": 8.90133773578009,
+              "weight": 0.28959834031628756
+            }
+          ],
+          "hard_outliers": [],
+          "soft_outliers": []
+        },
+        "last_planned_command_action": "mobility.report.location",
+        "last_planned_command_args_json": "{}"
+      },
+      "report": {
+        "last_command": "mobility.report.location",
+        "last_command_args": {},
+        "last_command_received_ts": 1781054164.4995766,
+        "last_command_finished_ts": 1781054181.1075351,
+        "last_exec_status": "completed",
+        "last_error_code": "",
+        "last_error_detail": "",
+        "last_location_result": {
+          "ok": true,
+          "capture_mode": "dual_camera",
+          "camera_roles": [
+            "front",
+            "rear"
+          ],
+          "av_was_active": false,
+          "av_restarted": false,
+          "snapshots": {
+            "front": "/tmp/location_front_1781054164599.jpg",
+            "rear": "/tmp/location_rear_1781054170362.jpg"
+          },
+          "front": {
+            "ok": true,
+            "camera_role": "front",
+            "snapshot": {
+              "ok": true,
+              "stage": "snapshot",
+              "camera_role": "front",
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+              "video_dev": "/dev/v4l/by-id/usb-webcamvendor_webcamproduct_YGR80PU1200.23071717-video-index0",
+              "width": 1280,
+              "height": 720,
+              "attempt": 1,
+              "detail": {
+                "ok": true,
+                "error": "",
+                "output_path": "/tmp/location_front_1781054164599.jpg",
+                "width": 1280,
+                "height": 720
+              },
+              "error": ""
+            },
+            "apriltag": {
+              "ok": true,
+              "error": "",
+              "image_path": "/tmp/location_front_1781054164599.jpg",
+              "camera_role": "front",
+              "image_width": 1280,
+              "image_height": 720,
+              "count": 3,
+              "tags": [
+                {
+                  "id": 48,
+                  "library_pose": {
+                    "distance_m": 2.35,
+                    "angle_deg": 24.6116,
+                    "yaw_deg": 21.9559
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.3024,
+                    "angle_deg": 25.2028,
+                    "yaw_deg": 19.2404
+                  }
+                },
+                {
+                  "id": 49,
+                  "library_pose": {
+                    "distance_m": 2.192,
+                    "angle_deg": 1.0473,
+                    "yaw_deg": -0.0
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.1468,
+                    "angle_deg": 0.029,
+                    "yaw_deg": -0.8009
+                  }
+                },
+                {
+                  "id": 50,
+                  "library_pose": {
+                    "distance_m": 2.5373,
+                    "angle_deg": -21.8663,
+                    "yaw_deg": -41.1425
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.4867,
+                    "angle_deg": -24.4496,
+                    "yaw_deg": -38.3558
+                  }
+                }
+              ],
+              "camera_params": {
+                "fx": 857.2,
+                "fy": 851.8,
+                "cx": 640.0,
+                "cy": 360.0,
+                "tag_size_m": 0.1
+              },
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg"
+            },
+            "snapshot_path": "/tmp/location_front_1781054164599.jpg",
+            "tags": [
+              {
+                "id": 48,
+                "library_pose": {
+                  "distance_m": 2.35,
+                  "angle_deg": 24.6116,
+                  "yaw_deg": 21.9559
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.3024,
+                  "angle_deg": 25.2028,
+                  "yaw_deg": 19.2404
+                }
+              },
+              {
+                "id": 49,
+                "library_pose": {
+                  "distance_m": 2.192,
+                  "angle_deg": 1.0473,
+                  "yaw_deg": -0.0
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.1468,
+                  "angle_deg": 0.029,
+                  "yaw_deg": -0.8009
+                }
+              },
+              {
+                "id": 50,
+                "library_pose": {
+                  "distance_m": 2.5373,
+                  "angle_deg": -21.8663,
+                  "yaw_deg": -41.1425
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.4867,
+                  "angle_deg": -24.4496,
+                  "yaw_deg": -38.3558
+                }
+              }
+            ],
+            "count": 3,
+            "error": ""
+          },
+          "rear": {
+            "ok": false,
+            "camera_role": "rear",
+            "snapshot": {
+              "ok": false,
+              "stage": "snapshot",
+              "camera_role": "rear",
+              "snapshot_path": "/tmp/location_rear_1781054170362.jpg",
+              "video_dev": "/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_200901010001-video-index0",
+              "width": 640,
+              "height": 480,
+              "error": "[ WARN:0@0.188] global cap_gstreamer.cpp:2839 handleMessage OpenCV | GStreamer warning: Embedded video playback halted; module source reported: Could not read from resource.\n[ WARN:0@0.189] global cap_gstreamer.cpp:1698 open OpenCV | GStreamer warning: unable to start pipeline\n[ WARN:0@0.189] global cap_gstreamer.cpp:1173 isPipelinePlaying OpenCV | GStreamer warning: GStreamer: pipeline have not been created\n[ WARN:0@1.651] global cap_v4l.cpp:889 requestBuffers VIDEOIO(V4L2:/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_200901010001-video-index0): failed VIDIOC_REQBUFS: errno=19 (No such device)\n{\"ok\": false, \"error\": \"frame_read_failed\", \"output_path\": \"/tmp/location_rear_1781054170362.jpg\"}"
+            },
+            "apriltag": {
+              "ok": false,
+              "stage": "apriltag",
+              "camera_role": "rear",
+              "snapshot_path": "/tmp/location_rear_1781054170362.jpg",
+              "error": "snapshot_failed",
+              "tags": [],
+              "count": 0
+            },
+            "snapshot_path": "/tmp/location_rear_1781054170362.jpg",
+            "tags": [],
+            "count": 0,
+            "error": "[ WARN:0@0.188] global cap_gstreamer.cpp:2839 handleMessage OpenCV | GStreamer warning: Embedded video playback halted; module source reported: Could not read from resource.\n[ WARN:0@0.189] global cap_gstreamer.cpp:1698 open OpenCV | GStreamer warning: unable to start pipeline\n[ WARN:0@0.189] global cap_gstreamer.cpp:1173 isPipelinePlaying OpenCV | GStreamer warning: GStreamer: pipeline have not been created\n[ WARN:0@1.651] global cap_v4l.cpp:889 requestBuffers VIDEOIO(V4L2:/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_200901010001-video-index0): failed VIDIOC_REQBUFS: errno=19 (No such device)\n{\"ok\": false, \"error\": \"frame_read_failed\", \"output_path\": \"/tmp/location_rear_1781054170362.jpg\"}"
+          },
+          "apriltag": {
+            "ok": true,
+            "capture_mode": "dual_camera",
+            "count": 3,
+            "unique_count": 3,
+            "unique_tag_ids": [
+              48,
+              49,
+              50
+            ],
+            "tags": [
+              {
+                "id": 48,
+                "library_pose": {
+                  "distance_m": 2.35,
+                  "angle_deg": 24.6116,
+                  "yaw_deg": 21.9559
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.3024,
+                  "angle_deg": 25.2028,
+                  "yaw_deg": 19.2404
+                },
+                "camera_role": "front",
+                "snapshot_path": "/tmp/location_front_1781054164599.jpg"
+              },
+              {
+                "id": 49,
+                "library_pose": {
+                  "distance_m": 2.192,
+                  "angle_deg": 1.0473,
+                  "yaw_deg": -0.0
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.1468,
+                  "angle_deg": 0.029,
+                  "yaw_deg": -0.8009
+                },
+                "camera_role": "front",
+                "snapshot_path": "/tmp/location_front_1781054164599.jpg"
+              },
+              {
+                "id": 50,
+                "library_pose": {
+                  "distance_m": 2.5373,
+                  "angle_deg": -21.8663,
+                  "yaw_deg": -41.1425
+                },
+                "calibrated_pose": {
+                  "distance_m": 2.4867,
+                  "angle_deg": -24.4496,
+                  "yaw_deg": -38.3558
+                },
+                "camera_role": "front",
+                "snapshot_path": "/tmp/location_front_1781054164599.jpg"
+              }
+            ],
+            "front": {
+              "ok": true,
+              "error": "",
+              "image_path": "/tmp/location_front_1781054164599.jpg",
+              "camera_role": "front",
+              "image_width": 1280,
+              "image_height": 720,
+              "count": 3,
+              "tags": [
+                {
+                  "id": 48,
+                  "library_pose": {
+                    "distance_m": 2.35,
+                    "angle_deg": 24.6116,
+                    "yaw_deg": 21.9559
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.3024,
+                    "angle_deg": 25.2028,
+                    "yaw_deg": 19.2404
+                  }
+                },
+                {
+                  "id": 49,
+                  "library_pose": {
+                    "distance_m": 2.192,
+                    "angle_deg": 1.0473,
+                    "yaw_deg": -0.0
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.1468,
+                    "angle_deg": 0.029,
+                    "yaw_deg": -0.8009
+                  }
+                },
+                {
+                  "id": 50,
+                  "library_pose": {
+                    "distance_m": 2.5373,
+                    "angle_deg": -21.8663,
+                    "yaw_deg": -41.1425
+                  },
+                  "calibrated_pose": {
+                    "distance_m": 2.4867,
+                    "angle_deg": -24.4496,
+                    "yaw_deg": -38.3558
+                  }
+                }
+              ],
+              "camera_params": {
+                "fx": 857.2,
+                "fy": 851.8,
+                "cx": 640.0,
+                "cy": 360.0,
+                "tag_size_m": 0.1
+              },
+              "snapshot_path": "/tmp/location_front_1781054164599.jpg"
+            },
+            "rear": {
+              "ok": false,
+              "stage": "apriltag",
+              "camera_role": "rear",
+              "snapshot_path": "/tmp/location_rear_1781054170362.jpg",
+              "error": "snapshot_failed",
+              "tags": [],
+              "count": 0
+            },
+            "front_count": 3,
+            "rear_count": 0
+          },
+          "error": ""
+        }
+      },
+      "cmd_stream": {
+        "key": "nms:cmd:twin-scout-delta",
+        "len": 0,
+        "newest_actions": []
+      }
+    }
+  },
+  "trace": [
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:15:51",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:15:52",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:15:53",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:15:54",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:15:55",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:15:56",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:15:57",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:15:58",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:15:59",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:00",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:01",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:02",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:03",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:04",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:05",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:06",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:07",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:08",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:09",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:10",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:11",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:12",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:13",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:14",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:15",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:16",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:17",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:18",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:19",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:20",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:21",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 1,
+      "newest_actions": [
+        "mobility.report.location"
+      ]
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:22",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 0,
+      "newest_actions": []
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:23",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 0,
+      "newest_actions": []
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:24",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 0,
+      "newest_actions": []
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:25",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 0,
+      "newest_actions": []
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:26",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 0,
+      "newest_actions": []
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:27",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 0,
+      "newest_actions": []
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:28",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 0,
+      "newest_actions": []
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:29",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 0,
+      "newest_actions": []
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:30",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 0,
+      "newest_actions": []
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:31",
+      "state": "s1waiting_report",
+      "state_detail": "testSM waiting for location report",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "testSM-location-1781054151",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-08:47:52",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.258624128819369,
+        "y_m": 2.251967148406252,
+        "heading_deg": 274.93138181960745,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.turn",
+      "last_report_args": {
+        "angle_deg": -10.0
+      },
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 0,
+      "newest_actions": []
+    },
+    {
+      "phase": "location_wait",
+      "ts": "2026-06-10-09:16:32",
+      "state": "s0idle",
+      "state_detail": "correction limit reached (1)",
+      "mobility_ready": "true",
+      "robot_safety_state": "NORMAL",
+      "correction_attempt_count": "999",
+      "retry_count": "0",
+      "s1_timer_token": "",
+      "busy_retry_token": "",
+      "last_planned_command_issued_at": "2026-06-10-09:15:51",
+      "last_mobility_report_at": "2026-06-10-09:16:31",
+      "last_planned_command_action": "mobility.report.location",
+      "last_planned_command_args_json": "{}",
+      "true_location": {
+        "x_m": 5.255968071739546,
+        "y_m": 2.2513305333951124,
+        "heading_deg": 275.0048622642199,
+        "source": "apriltag",
+        "tag_count": 3,
+        "detail": "best-effort fusion ok"
+      },
+      "planned_location": {
+        "x_m": 4.823546557142297,
+        "y_m": 2.23351731375455,
+        "heading_deg": 262.6044333751629,
+        "source": null,
+        "tag_count": null,
+        "detail": null
+      },
+      "last_report_command": "mobility.report.location",
+      "last_report_args": {},
+      "last_report_status": "completed",
+      "last_report_error_code": "",
+      "cmd_stream_len": 0,
+      "newest_actions": []
+    }
+  ]
+}
