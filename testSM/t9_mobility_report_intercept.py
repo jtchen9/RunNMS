@@ -249,35 +249,93 @@ def rule_robot_busy(match_action: str = DEFAULT_FORWARD_ACTION) -> Dict[str, Any
     }
 
 
-def rule_collision_veto(match_action: str = DEFAULT_FORWARD_ACTION) -> Dict[str, Any]:
+def rule_collision_blocked_at_start(match_action: str = DEFAULT_FORWARD_ACTION) -> Dict[str, Any]:
+    """
+    Simulate the real robot-side error:
+
+        COLLISION_BLOCKED_AT_START
+
+    Meaning:
+        The robot refused to start the movement because local collision
+        prevention already detected a blocked/pressed bumper condition.
+
+    Expected NMS behavior:
+        - Do not treat movement as completed.
+        - Do not advance planned_location as if movement succeeded.
+        - Enter collision/safety handling path.
+    """
     return {
         "mode": "patch",
         "match_action": match_action,
         "once": True,
         "patch": {
             "last_exec_status": "failed",
-            "last_error_code": "COLLISION_VETO",
-            "last_error_detail": "debug injected local collision prevention veto",
+            "last_error_code": "COLLISION_BLOCKED_AT_START",
+            "last_error_detail": "debug injected collision blocked at start",
             "last_location_result": {
                 "ok": False,
-                "error": "debug injected collision prevention veto",
+                "error": "debug injected COLLISION_BLOCKED_AT_START",
             },
         },
     }
 
 
-def rule_location_failed(match_action: str = "mobility.report.location") -> Dict[str, Any]:
+def rule_collision_stop_during_move(match_action: str = DEFAULT_FORWARD_ACTION) -> Dict[str, Any]:
+    """
+    Simulate the real robot-side error:
+
+        COLLISION_STOP_DURING_MOVE
+
+    Meaning:
+        The robot started the movement, then local collision prevention
+        stopped the motion during execution.
+
+    Expected NMS behavior:
+        - Do not treat movement as cleanly completed.
+        - Do not blindly trust planned_location as exact.
+        - Enter collision/safety/location-retry handling path.
+    """
     return {
         "mode": "patch",
         "match_action": match_action,
         "once": True,
         "patch": {
             "last_exec_status": "failed",
-            "last_error_code": "LOCATION_SOLVE_FAILED",
-            "last_error_detail": "debug injected location solve failure",
+            "last_error_code": "COLLISION_STOP_DURING_MOVE",
+            "last_error_detail": "debug injected collision stop during move",
             "last_location_result": {
                 "ok": False,
-                "error": "debug injected no usable AprilTag pose",
+                "error": "debug injected COLLISION_STOP_DURING_MOVE",
+            },
+        },
+    }
+
+
+def rule_location_capture_fail(match_action: str = "mobility.report.location") -> Dict[str, Any]:
+    """
+    Simulate the real robot-side recoverable location error:
+
+        LOCATION_CAPTURE_FAIL
+
+    Meaning:
+        The robot failed to capture/solve a usable location report.
+
+    Expected NMS behavior:
+        - Do not update true_location_json from this failed report.
+        - Treat it as recoverable.
+        - Issue another mobility.report.location if retry limit allows.
+    """
+    return {
+        "mode": "patch",
+        "match_action": match_action,
+        "once": True,
+        "patch": {
+            "last_exec_status": "failed",
+            "last_error_code": "LOCATION_CAPTURE_FAIL",
+            "last_error_detail": "debug injected location capture failure",
+            "last_location_result": {
+                "ok": False,
+                "error": "debug injected LOCATION_CAPTURE_FAIL",
                 "apriltag": {
                     "ok": False,
                     "count": 0,

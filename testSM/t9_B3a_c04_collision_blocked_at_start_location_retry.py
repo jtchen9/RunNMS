@@ -20,6 +20,7 @@ import config
 import utility
 from m8mobility_state import S0_IDLE, S1_WAITING_REPORT
 from m8mobility_state_store import key_state, key_time, key_report, key_pose, _set_state, _save_stop
+from t9_mobility_report_intercept import read_recent_intercept_events
 
 
 # ============================================================
@@ -29,8 +30,8 @@ from m8mobility_state_store import key_state, key_time, key_report, key_pose, _s
 SCANNER = "twin-scout-charlie"
 NMS_BASE = "http://localhost:8000"
 
-TEST_ID = "C04c"
-TEST_NAME = "forward_020m_prexx_postxx_fenced"
+TEST_ID = "B3a"
+TEST_NAME = "collision_blocked_at_start_location_retry"
 
 ACTION = "mobility.turn_move_turn.forward"
 ARGS = {
@@ -44,7 +45,7 @@ LOCATION_ACTION = "mobility.report.location"
 LOCATION_ARGS: Dict[str, Any] = {}
 
 MAX_WAIT_LOCATION_SEC = 60
-MAX_WAIT_ACTION_SEC = 60
+MAX_WAIT_ACTION_SEC = 180
 POLL_EVERY_SEC = 1.0
 
 CORRECTION_FENCE_COUNT = 999
@@ -232,6 +233,9 @@ def compact_snapshot() -> Dict[str, Any]:
         "robot_safety_state": st.get("robot_safety_state", ""),
         "correction_attempt_count": st.get("correction_attempt_count", ""),
         "retry_count": st.get("retry_count", ""),
+        "collision_veto_count": st.get("collision_veto_count", ""),
+        "outgoing_command_action": st.get("outgoing_command_action", ""),
+        "outgoing_command_updated_at": st.get("outgoing_command_updated_at", ""),
         "s1_timer_token": tm.get("s1_timer_token", ""),
         "busy_retry_token": tm.get("busy_retry_token", ""),
         "last_planned_command_issued_at": tm.get("last_planned_command_issued_at", ""),
@@ -483,22 +487,49 @@ def fence_followup_correction() -> None:
 
 
 def wait_for_action_report(start_ts: str) -> None:
-    print(f"\nWaiting for fresh {ACTION} report...")
+    """
+    B3a COLLISION_BLOCKED_AT_START test.
+
+    Expected sequence:
+      1. NMS issues mobility.turn_move_turn.forward.
+      2. Robot really executes and reports completed.
+      3. Debug outlet patches that report into:
+             failed / COLLISION_BLOCKED_AT_START
+      4. NMS must NOT treat the movement as completed.
+      5. NMS must enter collision handling:
+             robot_safety_state = COLLISION_BLOCKED
+             collision_veto_count >= 1
+      6. NMS must issue mobility.report.location.
+      7. The follow-up location report should complete.
+      8. NMS should stay out of s7stopped.
+
+    This is NOT a happy-path movement test.
+    A failed forward report with COLLISION_BLOCKED_AT_START is expected.
+    """
+    print(f"\nWaiting for B3a collision-blocked-at-start recovery for {ACTION}.")
     phase_start = time.time()
+
+    saw_collision = False
+    saw_location_retry_issued = False
+    collision_report_at = ""
 
     while time.time() - phase_start <= MAX_WAIT_ACTION_SEC:
         s = compact_snapshot()
-        EV.trace("action_wait", s)
+        EV.trace("action_wait_b3a_collision_blocked_at_start", s)
 
         elapsed = int(time.time() - phase_start)
         actions = s["newest_actions"]
 
         print(
-            f"[ACTION {elapsed:03d}s] "
+            f"[B3a {elapsed:03d}s] "
             f"state={s['state']!r} "
             f"detail={s['state_detail']!r} "
             f"cmd_len={s['cmd_stream_len']} "
             f"actions={actions} "
+            f"collision_veto_count={s.get('collision_veto_count', '')!r} "
+            f"retry_count={s.get('retry_count', '')!r} "
+            f"robot_safety_state={s.get('robot_safety_state', '')!r} "
+            f"outgoing={s.get('outgoing_command_action', '')!r} "
             f"report={s['last_report_command']!r}/"
             f"{s['last_report_status']!r}/"
             f"{s['last_report_error_code']!r} "
@@ -506,73 +537,150 @@ def wait_for_action_report(start_ts: str) -> None:
         )
 
         fresh = str(s["last_mobility_report_at"]) >= str(start_ts)
-        matching = s["last_report_command"] == ACTION
 
-        # First handle the intended command report if it arrived.
-        if fresh and matching:
-            if s["last_report_status"] != "completed" or s["last_report_error_code"]:
-                fail(
-                    f"{ACTION} report arrived but failed: "
-                    f"status={s['last_report_status']!r}, "
-                    f"error_code={s['last_report_error_code']!r}"
+        # ---------------------------------------------------------
+        # 1. Expected injected collision report
+        # ---------------------------------------------------------
+        if (
+            fresh
+            and s["last_report_command"] == ACTION
+            and s["last_report_status"] == "failed"
+            and s["last_report_error_code"] == "COLLISION_BLOCKED_AT_START"
+        ):
+            if not saw_collision:
+                saw_collision = True
+                collision_report_at = str(s["last_mobility_report_at"])
+
+                EV.event(
+                    "collision_blocked_at_start_seen",
+                    "fresh matching ACTION report patched to COLLISION_BLOCKED_AT_START",
+                    {
+                        "elapsed_sec": elapsed,
+                        "state": s["state"],
+                        "state_detail": s["state_detail"],
+                        "robot_safety_state": s.get("robot_safety_state", ""),
+                        "collision_veto_count": s.get("collision_veto_count", ""),
+                        "retry_count": s.get("retry_count", ""),
+                    },
                 )
 
+        # ---------------------------------------------------------
+        # 2. NMS should issue mobility.report.location after collision
+        # ---------------------------------------------------------
+        if saw_collision:
+            outgoing_is_location = s.get("outgoing_command_action", "") == LOCATION_ACTION
+            queued_location = LOCATION_ACTION in actions
+            location_retry_detail = "location retry issued" in str(s["state_detail"])
+
+            if outgoing_is_location or queued_location or location_retry_detail:
+                if not saw_location_retry_issued:
+                    saw_location_retry_issued = True
+                    EV.event(
+                        "location_retry_issued",
+                        "NMS issued mobility.report.location after COLLISION_BLOCKED_AT_START",
+                        {
+                            "elapsed_sec": elapsed,
+                            "state": s["state"],
+                            "state_detail": s["state_detail"],
+                            "outgoing_command_action": s.get("outgoing_command_action", ""),
+                            "actions": actions,
+                            "retry_count": s.get("retry_count", ""),
+                            "collision_veto_count": s.get("collision_veto_count", ""),
+                            "robot_safety_state": s.get("robot_safety_state", ""),
+                        },
+                    )
+
+        # ---------------------------------------------------------
+        # 3. Follow-up location report completed
+        # ---------------------------------------------------------
+        if (
+            saw_collision
+            and saw_location_retry_issued
+            and fresh
+            and str(s["last_mobility_report_at"]) > str(collision_report_at)
+            and s["last_report_command"] == LOCATION_ACTION
+            and s["last_report_status"] == "completed"
+            and not s["last_report_error_code"]
+        ):
             EV.event(
-                "action_done",
-                f"fresh completed {ACTION} report received",
-                {"elapsed_sec": elapsed},
+                "location_retry_completed",
+                "follow-up mobility.report.location completed after collision",
+                {
+                    "elapsed_sec": elapsed,
+                    "state": s["state"],
+                    "state_detail": s["state_detail"],
+                    "robot_safety_state": s.get("robot_safety_state", ""),
+                    "retry_count": s.get("retry_count", ""),
+                    "collision_veto_count": s.get("collision_veto_count", ""),
+                },
             )
 
             final = compact_snapshot()
             EV.snapshot("FINAL", full_snapshot())
 
-            if final["state"] != "s0idle":
+            if final["state"] == "s7stopped":
                 fail(
-                    f"Final state is not s0idle: "
-                    f"{final['state']} / {final['state_detail']}"
+                    f"NMS stopped after successful location retry: "
+                    f"{final['state_detail']}"
                 )
 
-            if final["robot_safety_state"] != "NORMAL":
+            if final["last_report_command"] != LOCATION_ACTION:
                 fail(
-                    f"Final robot_safety_state is not NORMAL: "
+                    f"Final report is not location report: "
+                    f"{final['last_report_command']}"
+                )
+
+            if final["last_report_status"] != "completed" or final["last_report_error_code"]:
+                fail(
+                    f"Final location retry did not complete cleanly: "
+                    f"{final['last_report_status']} / {final['last_report_error_code']}"
+                )
+
+            if final["robot_safety_state"] not in ("", "NORMAL", "COLLISION_BLOCKED"):
+                fail(
+                    f"Unexpected robot_safety_state after location retry: "
                     f"{final['robot_safety_state']}"
-                )
-
-            if final["retry_count"] != "0":
-                fail(f"retry_count should remain 0, got {final['retry_count']}")
-
-            if final["cmd_stream_len"] != 0:
-                fail(
-                    f"Final command stream not empty: "
-                    f"actions={final['newest_actions']}"
-                )
-
-            if final["last_planned_command_action"] != ACTION:
-                fail(
-                    f"Expected last_planned_command_action={ACTION}, "
-                    f"got {final['last_planned_command_action']}"
-                )
-
-            if final["last_report_command"] != ACTION:
-                fail(
-                    f"Expected last_report_command={ACTION}, "
-                    f"got {final['last_report_command']}"
                 )
 
             return
 
-        # Only call this a retry-before-report if no matching ACTION report has arrived.
-        if (
-            s["last_planned_command_action"] == LOCATION_ACTION
-            or "location retry issued" in str(s["state_detail"])
-        ):
+        # ---------------------------------------------------------
+        # 4. Bad stop before location retry completes
+        # ---------------------------------------------------------
+        if s["state"] == "s7stopped":
+            if not saw_collision:
+                fail(
+                    f"NMS entered s7stopped before seeing injected collision: "
+                    f"{s['state_detail']}"
+                )
+
+            if not saw_location_retry_issued:
+                fail(
+                    f"NMS entered s7stopped after collision but before issuing "
+                    f"{LOCATION_ACTION}: {s['state_detail']}"
+                )
+
             fail(
-                f"NMS entered location retry before the intended {ACTION} report was accepted."
+                f"NMS entered s7stopped before location retry completed: "
+                f"{s['state_detail']}"
             )
 
         time.sleep(POLL_EVERY_SEC)
 
-    fail(f"Timed out waiting for fresh completed {ACTION} report.")
+    print()
+    print("Recent mobility-report intercept events at B3a timeout:")
+    try:
+        for ev in read_recent_intercept_events(10):
+            print(json.dumps(ev, ensure_ascii=False, indent=2))
+    except Exception as e:
+        print(f"Failed to read intercept events: {type(e).__name__}: {e}")
+
+    fail(
+        "Timed out waiting for COLLISION_BLOCKED_AT_START location-retry sequence: "
+        f"saw_collision={saw_collision}, "
+        f"saw_location_retry_issued={saw_location_retry_issued}. "
+        "See recent intercept events printed above."
+    )
 
 
 def run() -> None:
@@ -653,7 +761,10 @@ def run() -> None:
     out = EV.finish(True, "")
 
     print("\nPASS:")
-    print(f"{SCANNER} executed {ACTION} args={json.dumps(ARGS, ensure_ascii=False)} cleanly.")
+    print(
+        f"{SCANNER} completed B3a: {ACTION} args={json.dumps(ARGS, ensure_ascii=False)} "
+        f"triggered COLLISION_BLOCKED_AT_START handling and location retry."
+    )
     print(f"Evidence saved to: {out}")
 
 def reset_test_stop_state() -> None:

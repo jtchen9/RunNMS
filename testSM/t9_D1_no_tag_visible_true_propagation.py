@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 import time
 import urllib.error
@@ -29,8 +30,8 @@ from m8mobility_state_store import key_state, key_time, key_report, key_pose, _s
 SCANNER = "twin-scout-charlie"
 NMS_BASE = "http://localhost:8000"
 
-TEST_ID = "C04c"
-TEST_NAME = "forward_020m_prexx_postxx_fenced"
+TEST_ID = "D1"
+TEST_NAME = "no_tag_visible_true_propagation"
 
 ACTION = "mobility.turn_move_turn.forward"
 ARGS = {
@@ -44,10 +45,13 @@ LOCATION_ACTION = "mobility.report.location"
 LOCATION_ARGS: Dict[str, Any] = {}
 
 MAX_WAIT_LOCATION_SEC = 60
-MAX_WAIT_ACTION_SEC = 60
+MAX_WAIT_ACTION_SEC = 180
 POLL_EVERY_SEC = 1.0
 
 CORRECTION_FENCE_COUNT = 999
+EXPECTED_ERROR_CODE = "NO_TAG_VISIBLE"
+POS_TOL_M = 0.03
+HEADING_TOL_DEG = 1.0
 
 
 # ============================================================
@@ -70,6 +74,9 @@ class Evidence:
                 "location_action": LOCATION_ACTION,
                 "ACTION": ACTION,
                 "ARGS": ARGS,
+                "expected_error_code": EXPECTED_ERROR_CODE,
+                "pos_tol_m": POS_TOL_M,
+                "heading_tol_deg": HEADING_TOL_DEG,
                 "correction_fence_count": CORRECTION_FENCE_COUNT,
                 "max_wait_location_sec": MAX_WAIT_LOCATION_SEC,
                 "max_wait_action_sec": MAX_WAIT_ACTION_SEC,
@@ -232,6 +239,15 @@ def compact_snapshot() -> Dict[str, Any]:
         "robot_safety_state": st.get("robot_safety_state", ""),
         "correction_attempt_count": st.get("correction_attempt_count", ""),
         "retry_count": st.get("retry_count", ""),
+        "collision_veto_count": st.get("collision_veto_count", ""),
+        "busy_count": st.get("busy_count", ""),
+        "exec_fail_count": st.get("exec_fail_count", ""),
+        "need_location_retry": st.get("need_location_retry", ""),
+        "stop_experiment": st.get("stop_experiment", ""),
+        "stop_reason": st.get("stop_reason", ""),
+        "true_propagation_applied": st.get("true_propagation_applied", ""),
+        "true_propagation_detail": st.get("true_propagation_detail", ""),
+        "true_propagation_time": st.get("true_propagation_time", ""),
         "s1_timer_token": tm.get("s1_timer_token", ""),
         "busy_retry_token": tm.get("busy_retry_token", ""),
         "last_planned_command_issued_at": tm.get("last_planned_command_issued_at", ""),
@@ -471,6 +487,112 @@ def align_planned_to_true_for_test() -> Dict[str, Any]:
     return true_loc
 
 
+
+# ============================================================
+# Independent propagation checker
+# ============================================================
+
+def deg_norm_360(angle_deg: float) -> float:
+    return float(angle_deg) % 360.0
+
+
+def angle_diff_deg(a: float, b: float) -> float:
+    return (float(a) - float(b) + 180.0) % 360.0 - 180.0
+
+
+def independent_apply_command(loc: Dict[str, Any], action: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Independent test-side calculation of the pose after the issued command.
+
+    This intentionally does not import _apply_mobility_command_to_pose(), because
+    D1 is a safety test for that same propagation behavior.
+    """
+    x0 = float(loc["x_m"])
+    y0 = float(loc["y_m"])
+    h0 = float(loc["heading_deg"])
+
+    if action == "mobility.turn":
+        return {
+            "location_ok": True,
+            "x_m": x0,
+            "y_m": y0,
+            "heading_deg": deg_norm_360(h0 + float(args["angle_deg"])),
+        }
+
+    if action in ("mobility.turn_move_turn.forward", "mobility.turn_move_turn.backward"):
+        pre = float(args["pre_angle"])
+        distance = float(args["distance_m"])
+        post = float(args["post_angle"])
+        direction = 1.0 if action == "mobility.turn_move_turn.forward" else -1.0
+
+        h1 = deg_norm_360(h0 + pre)
+        rad = math.radians(h1)
+        dx = direction * distance * math.cos(rad)
+        dy = direction * distance * math.sin(rad)
+
+        return {
+            "location_ok": True,
+            "x_m": x0 + dx,
+            "y_m": y0 + dy,
+            "heading_deg": deg_norm_360(h1 + post),
+            "debug": {
+                "x0": x0,
+                "y0": y0,
+                "h0": h0,
+                "h1_after_pre_angle": h1,
+                "dx_m": dx,
+                "dy_m": dy,
+                "direction": direction,
+            },
+        }
+
+    if action == "mobility.report.location":
+        return {
+            "location_ok": True,
+            "x_m": x0,
+            "y_m": y0,
+            "heading_deg": h0,
+        }
+
+    raise ValueError(f"unsupported action in independent_apply_command: {action}")
+
+
+def pose_delta(actual: Dict[str, Any], expected: Dict[str, Any]) -> Dict[str, float]:
+    dx = float(actual["x_m"]) - float(expected["x_m"])
+    dy = float(actual["y_m"]) - float(expected["y_m"])
+    return {
+        "dx_m": dx,
+        "dy_m": dy,
+        "dpos_m": math.hypot(dx, dy),
+        "dhead_deg": angle_diff_deg(float(actual["heading_deg"]), float(expected["heading_deg"])),
+    }
+
+
+def require_pose_close(actual: Dict[str, Any], expected: Dict[str, Any], context: Dict[str, Any]) -> None:
+    d = pose_delta(actual, expected)
+    ok_pos = abs(float(d["dpos_m"])) <= POS_TOL_M
+    ok_head = abs(float(d["dhead_deg"])) <= HEADING_TOL_DEG
+
+    EV.event(
+        "propagation_numeric_check",
+        "compared NMS propagated true_location against independent command-vector calculation",
+        {
+            "actual": actual,
+            "expected": expected,
+            "delta": d,
+            **context,
+        },
+    )
+
+    if not ok_pos or not ok_head:
+        fail(
+            "NO_TAG_VISIBLE true-location propagation vector is wrong.\n"
+            f"actual={json.dumps(actual, ensure_ascii=False)}\n"
+            f"expected={json.dumps(expected, ensure_ascii=False)}\n"
+            f"delta={json.dumps(d, ensure_ascii=False)}\n"
+            f"context={json.dumps(context, ensure_ascii=False)}"
+        )
+
 # ============================================================
 # Action test
 # ============================================================
@@ -482,102 +604,172 @@ def fence_followup_correction() -> None:
     EV.event("fence", "post-report correction fenced", msg)
 
 
-def wait_for_action_report(start_ts: str) -> None:
-    print(f"\nWaiting for fresh {ACTION} report...")
+def wait_for_action_report(start_ts: str, true_before_action: Dict[str, Any], issued_action: str, issued_args: Dict[str, Any]) -> None:
+    """
+    D1 NO_TAG_VISIBLE true-location propagation test.
+
+    Expected sequence:
+      1. NMS issues a real movement command.
+      2. Robot returns a matching movement report.
+      3. Debug outlet patches that report to completed / NO_TAG_VISIBLE.
+      4. S2 treats NO_TAG_VISIBLE as normal sparse-tag operation.
+      5. S3 cannot solve AprilTag and propagates true_location by the last issued command.
+      6. The propagated true_location must equal an independent test-side calculation:
+             true_before_action + issued command vector
+      7. NMS must not issue a location retry and must not stop.
+    """
+    print(f"\nWaiting for D1 NO_TAG_VISIBLE propagation after {ACTION}...")
     phase_start = time.time()
+
+    saw_no_tag = False
+    saw_propagation = False
+    no_tag_report_at = ""
+
+    expected_true = independent_apply_command(true_before_action, issued_action, issued_args)
+    EV.event(
+        "expected_propagated_true",
+        "independent expected true_location calculated before waiting for report",
+        {
+            "true_before_action": true_before_action,
+            "issued_action": issued_action,
+            "issued_args": issued_args,
+            "expected_true": expected_true,
+        },
+    )
 
     while time.time() - phase_start <= MAX_WAIT_ACTION_SEC:
         s = compact_snapshot()
-        EV.trace("action_wait", s)
+        EV.trace("d1_wait_no_tag_true_propagation", s)
 
         elapsed = int(time.time() - phase_start)
         actions = s["newest_actions"]
 
         print(
-            f"[ACTION {elapsed:03d}s] "
+            f"[D1 {elapsed:03d}s] "
             f"state={s['state']!r} "
             f"detail={s['state_detail']!r} "
             f"cmd_len={s['cmd_stream_len']} "
             f"actions={actions} "
+            f"safety={s.get('robot_safety_state', '')!r} "
+            f"prop={s.get('true_propagation_applied', '')!r} "
+            f"retry_count={s.get('retry_count', '')!r} "
             f"report={s['last_report_command']!r}/"
             f"{s['last_report_status']!r}/"
             f"{s['last_report_error_code']!r} "
-            f"report_at={s['last_mobility_report_at']!r}"
+            f"report_at={s['last_mobility_report_at']!r} "
+            f"true=({s['true_location'].get('x_m')}, {s['true_location'].get('y_m')}, {s['true_location'].get('heading_deg')})"
         )
 
         fresh = str(s["last_mobility_report_at"]) >= str(start_ts)
         matching = s["last_report_command"] == ACTION
 
-        # First handle the intended command report if it arrived.
-        if fresh and matching:
-            if s["last_report_status"] != "completed" or s["last_report_error_code"]:
-                fail(
-                    f"{ACTION} report arrived but failed: "
-                    f"status={s['last_report_status']!r}, "
-                    f"error_code={s['last_report_error_code']!r}"
-                )
-
-            EV.event(
-                "action_done",
-                f"fresh completed {ACTION} report received",
-                {"elapsed_sec": elapsed},
-            )
-
-            final = compact_snapshot()
-            EV.snapshot("FINAL", full_snapshot())
-
-            if final["state"] != "s0idle":
-                fail(
-                    f"Final state is not s0idle: "
-                    f"{final['state']} / {final['state_detail']}"
-                )
-
-            if final["robot_safety_state"] != "NORMAL":
-                fail(
-                    f"Final robot_safety_state is not NORMAL: "
-                    f"{final['robot_safety_state']}"
-                )
-
-            if final["retry_count"] != "0":
-                fail(f"retry_count should remain 0, got {final['retry_count']}")
-
-            if final["cmd_stream_len"] != 0:
-                fail(
-                    f"Final command stream not empty: "
-                    f"actions={final['newest_actions']}"
-                )
-
-            if final["last_planned_command_action"] != ACTION:
-                fail(
-                    f"Expected last_planned_command_action={ACTION}, "
-                    f"got {final['last_planned_command_action']}"
-                )
-
-            if final["last_report_command"] != ACTION:
-                fail(
-                    f"Expected last_report_command={ACTION}, "
-                    f"got {final['last_report_command']}"
-                )
-
-            return
-
-        # Only call this a retry-before-report if no matching ACTION report has arrived.
+        # ---------------------------------------------------------
+        # 1. Expected injected no-tag report
+        # ---------------------------------------------------------
         if (
-            s["last_planned_command_action"] == LOCATION_ACTION
-            or "location retry issued" in str(s["state_detail"])
+            fresh
+            and matching
+            and s["last_report_status"] in ("completed", "ok", "accepted", "")
+            and s["last_report_error_code"] == EXPECTED_ERROR_CODE
         ):
-            fail(
-                f"NMS entered location retry before the intended {ACTION} report was accepted."
-            )
+            if not saw_no_tag:
+                saw_no_tag = True
+                no_tag_report_at = str(s["last_mobility_report_at"])
+                EV.event(
+                    "no_tag_visible_seen",
+                    "movement report patched to NO_TAG_VISIBLE",
+                    {
+                        "elapsed_sec": elapsed,
+                        "state": s["state"],
+                        "state_detail": s["state_detail"],
+                        "robot_safety_state": s.get("robot_safety_state", ""),
+                    },
+                )
+
+                if s["state"] == "s7stopped":
+                    fail("NO_TAG_VISIBLE incorrectly caused immediate s7stopped")
+
+        # ---------------------------------------------------------
+        # 2. NMS must propagate true by issued command, not retry location
+        # ---------------------------------------------------------
+        if saw_no_tag:
+            if s.get("last_planned_command_action", "") == LOCATION_ACTION:
+                fail(
+                    "NO_TAG_VISIBLE incorrectly caused NMS to issue mobility.report.location. "
+                    "D1 expects true-location propagation, not location retry."
+                )
+
+            if LOCATION_ACTION in actions:
+                fail(
+                    "NO_TAG_VISIBLE incorrectly queued mobility.report.location. "
+                    "D1 expects true-location propagation, not location retry."
+                )
+
+            actual_true = s.get("true_location") or {}
+            if (
+                s.get("true_propagation_applied", "") == "true"
+                and actual_true.get("x_m") is not None
+                and str(s["last_mobility_report_at"]) >= str(no_tag_report_at)
+            ):
+                saw_propagation = True
+
+                require_pose_close(
+                    actual=actual_true,
+                    expected=expected_true,
+                    context={
+                        "elapsed_sec": elapsed,
+                        "no_tag_report_at": no_tag_report_at,
+                        "state": s["state"],
+                        "state_detail": s["state_detail"],
+                        "robot_safety_state": s.get("robot_safety_state", ""),
+                        "true_propagation_detail": s.get("true_propagation_detail", ""),
+                    },
+                )
+
+                final = compact_snapshot()
+                EV.snapshot("FINAL", full_snapshot())
+
+                if final["state"] == "s7stopped":
+                    fail(f"NMS stopped after valid NO_TAG_VISIBLE propagation: {final['state_detail']}")
+
+                if final["robot_safety_state"] not in ("", "NORMAL", "NORMAL_NO_TAG"):
+                    fail(f"Unexpected final robot_safety_state: {final['robot_safety_state']}")
+
+                if final.get("need_location_retry", "") == "true":
+                    fail("need_location_retry should be false after successful no-tag propagation")
+
+                print("\nPASS:")
+                print(
+                    f"{SCANNER} completed D1: {ACTION} args={json.dumps(issued_args, ensure_ascii=False)} "
+                    f"was patched to {EXPECTED_ERROR_CODE}; NMS propagated true_location by the exact issued vector."
+                )
+                print("\nPropagation check:")
+                print(json.dumps({
+                    "true_before_action": true_before_action,
+                    "issued_action": issued_action,
+                    "issued_args": issued_args,
+                    "expected_true": expected_true,
+                    "actual_true": actual_true,
+                    "delta": pose_delta(actual_true, expected_true),
+                }, ensure_ascii=False, indent=2))
+                return
+
+        if s["state"] == "s7stopped":
+            if not saw_no_tag:
+                fail(f"NMS entered s7stopped before seeing injected NO_TAG_VISIBLE: {s['state_detail']}")
+            if not saw_propagation:
+                fail(f"NMS entered s7stopped before true propagation completed: {s['state_detail']}")
 
         time.sleep(POLL_EVERY_SEC)
 
-    fail(f"Timed out waiting for fresh completed {ACTION} report.")
-
+    fail(
+        "Timed out waiting for NO_TAG_VISIBLE true-location propagation: "
+        f"saw_no_tag={saw_no_tag}, saw_propagation={saw_propagation}"
+    )
 
 def run() -> None:
     print("=" * 72)
-    print("")
+    print("D1: NO_TAG_VISIBLE true-location propagation vector check")
     print("=" * 72)
 
     EV.event("start", "test started")
@@ -610,6 +802,10 @@ def run() -> None:
     )
 
     print_compact("BEFORE ACTION")
+
+    true_before_action = load_json_field(key_pose(SCANNER), "true_location_json")
+    if not true_before_action:
+        fail("Cannot run D1 because true_location_json is missing before action.")
 
     clear_cmd_stream("BEFORE ACTION")
     action_start_ts = utility.local_ts()
@@ -645,15 +841,27 @@ def run() -> None:
         clear_cmd_stream("ABORT: WRONG ISSUED ACTION")
         fail(f"Expected NMS to issue {ACTION}, but it issued {issued_action}: {issued}")
 
+    issued_args = issued.get("args", {})
+    if not isinstance(issued_args, dict):
+        fail(f"issued args is not dict: {issued_args!r}")
+
+    EV.event(
+        "issued_command_for_propagation_check",
+        "captured original true_location and exact issued command before NO_TAG_VISIBLE report",
+        {
+            "true_before_action": true_before_action,
+            "issued_action": issued_action,
+            "issued_args": issued_args,
+        },
+    )
+
     fence_followup_correction()
-    wait_for_action_report(action_start_ts)
+    wait_for_action_report(action_start_ts, true_before_action, issued_action, issued_args)
 
     print_compact("FINAL")
 
     out = EV.finish(True, "")
 
-    print("\nPASS:")
-    print(f"{SCANNER} executed {ACTION} args={json.dumps(ARGS, ensure_ascii=False)} cleanly.")
     print(f"Evidence saved to: {out}")
 
 def reset_test_stop_state() -> None:
