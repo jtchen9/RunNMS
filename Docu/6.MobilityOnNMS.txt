@@ -62,7 +62,7 @@ S3_SOLVING_TRUE_LOCATION
   ↓
    ├─ solved → S5_COMPUTING_CORRECTION
    ├─ cannot solve but allowed → propagate → S5
-   └─ cannot solve and not allowed → S4
+   └─ cannot solve and not allowed → S4movment
 
 S4_WAITING_LOCATION_RETRY
   ↓

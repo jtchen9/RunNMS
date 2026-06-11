@@ -26,17 +26,17 @@ from m8mobility_state_store import key_state, key_time, key_report, key_pose, _s
 # Editable settings
 # ============================================================
 
-SCANNER = "twin-scout-delta"
+SCANNER = "twin-scout-charlie"
 NMS_BASE = "http://localhost:8000"
 
-TEST_ID = "C04"
-TEST_NAME = "forward_050m_pre0_post0_fenced"
+TEST_ID = "C04c"
+TEST_NAME = "forward_050m_prexx_postxx_fenced"
 
 ACTION = "mobility.turn_move_turn.forward"
 ARGS = {
-    "pre_angle": 0.0,
-    "distance_m": 0.2,
-    "post_angle": 0.0,
+    "pre_angle": 10.0,
+    "distance_m": 0.5,
+    "post_angle": -10.0
 }
 OUT_DIR = Path("testSM")
 

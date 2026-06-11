@@ -176,6 +176,10 @@ MOBILITY_ANGLE_CORRECT_MAX_DEG = 20.0
 MOBILITY_MAX_PRECOMP_DISTANCE_DELTA_M = 0.30
 MOBILITY_TAG_STALE_TIMEOUT_SEC = 120
 
+# Dynamic obstacle freshness.
+# A powered-off / put-away robot must not remain as a phantom blocker.
+MOBILITY_DYNAMIC_OBSTACLE_TTL_SEC = 120
+
 # ==================
 # Runtime init
 # ==================

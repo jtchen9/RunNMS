@@ -15,7 +15,7 @@ import re
 
 import utility
 
-from m8mobility_state_store import key_pose, _is_loc_ok
+from m8mobility_state_store import key_pose, key_time, key_state, _is_loc_ok
 
 
 # ===== asset loaders =====
@@ -217,8 +217,7 @@ def _world_to_grid(x_m: float, y_m: float, static_map: np.ndarray) -> tuple[int,
     res = float(site_cfg["grid_resolution_m"])
 
     col = int(math.floor(x_m / res))
-    row_from_bottom = int(math.floor(y_m / res))
-    row = rows - 1 - row_from_bottom
+    row = int(math.floor(y_m / res))
 
     col = max(0, min(cols - 1, col))
     row = max(0, min(rows - 1, row))
@@ -250,10 +249,109 @@ def _rasterize_circle(mask: np.ndarray, x_m: float, y_m: float, radius_m: float)
             if dx * dx + dy * dy <= radius_m * radius_m:
                 mask[rr, cc] = 1
 
+def _dynamic_obstacle_ttl_sec() -> int:
+    """
+    How fresh another robot must be to act as a dynamic blocker.
+
+    Lab rule:
+    - Powered-on / active robots may block each other.
+    - Powered-off robots are put away and must not remain as phantom blockers.
+    """
+    try:
+        return int(getattr(config, "MOBILITY_DYNAMIC_OBSTACLE_TTL_SEC", 120))
+    except Exception:
+        return 120
+
+def _age_sec_from_local_ts(ts: str) -> float:
+    """
+    Return age in seconds for an NMS local timestamp.
+    Unknown/bad timestamps are treated as infinitely stale.
+    """
+    try:
+        dt = utility.parse_local_dt(ts)
+        now = utility.parse_local_dt(utility.local_ts())
+        return max(0.0, float((now - dt).total_seconds()))
+    except Exception:
+        return 1e99
+
+def _scanner_is_active_for_dynamic_obstacle(scanner: str) -> tuple[bool, str]:
+    """
+    A registered scanner is NOT automatically a dynamic obstacle.
+
+    Dynamic obstacle rule:
+    - must be a robot, not AP
+    - must be polling recently
+    - must not be explicitly stopped/disabled/offline/lost
+    - stale powered-off robots must be ignored
+    """
+    ttl = _dynamic_obstacle_ttl_sec()
+
+    meta = config.r.hgetall(config.key_scanner_meta(scanner)) or {}
+    state = config.r.hgetall(key_state(scanner)) or {}
+
+    device_type = str(meta.get("device_type") or "").strip().lower()
+    if device_type and device_type != "robot":
+        return False, f"not_robot device_type={device_type}"
+
+    safety = str(state.get("robot_safety_state") or "").strip().upper()
+    if safety in {"OFFLINE", "LOST", "DISABLED"}:
+        return False, f"robot_safety_state={safety}"
+
+    last_poll = str(meta.get("last_poll") or "").strip()
+    last_seen = str(meta.get("last_seen") or "").strip()
+
+    # Prefer last_poll because it proves the robot agent is alive.
+    # Fall back to last_seen for boot/register edge cases.
+    active_ts = last_poll or last_seen
+    if not active_ts:
+        return False, "missing last_poll/last_seen"
+
+    age = _age_sec_from_local_ts(active_ts)
+    if age > ttl:
+        return False, f"stale_active_ts age_sec={age:.1f} ttl_sec={ttl}"
+
+    return True, f"active age_sec={age:.1f} ttl_sec={ttl}"
+
+def _pose_is_fresh_for_dynamic_obstacle(scanner: str, field_name: str) -> tuple[bool, str]:
+    """
+    Pose freshness guard.
+
+    true_location_json uses true_location_updated_at.
+    planned_location_json uses planned_location_updated_at.
+
+    This prevents old registration/planned poses from becoming permanent phantom walls.
+    """
+    ttl = _dynamic_obstacle_ttl_sec()
+    time_key = key_time(scanner)
+
+    if field_name == "true_location_json":
+        ts_field = "true_location_updated_at"
+    elif field_name == "planned_location_json":
+        ts_field = "planned_location_updated_at"
+    else:
+        return False, f"unknown pose field {field_name}"
+
+    ts = utility._hget(time_key, ts_field, "")
+    if not ts:
+        return False, f"missing {ts_field}"
+
+    age = _age_sec_from_local_ts(ts)
+    if age > ttl:
+        return False, f"stale {ts_field} age_sec={age:.1f} ttl_sec={ttl}"
+
+    return True, f"fresh {ts_field} age_sec={age:.1f} ttl_sec={ttl}"
+
 def _build_dynamic_map(exclude_scanner: str = "") -> np.ndarray:
     """
-    Build dynamic keep-out map from OTHER robots' true/planned locations.
-    Uses both true_location_json and planned_location_json (conservative union).
+    Build dynamic keep-out map from OTHER ACTIVE robots only.
+
+    Lab rule:
+    - A registered robot is not automatically a dynamic blocker.
+    - Powered-off robots are put away.
+    - Therefore stale/offline robots must not create phantom dynamic obstacles.
+
+    Uses both true_location_json and planned_location_json for active robots,
+    but only when the corresponding pose timestamp is fresh.
     """
     static_map = _load_static_map()
     dynamic = np.zeros_like(static_map, dtype=np.uint8)
@@ -264,12 +362,20 @@ def _build_dynamic_map(exclude_scanner: str = "") -> np.ndarray:
         if exclude_scanner and scanner == exclude_scanner:
             continue
 
+        active_ok, _active_detail = _scanner_is_active_for_dynamic_obstacle(scanner)
+        if not active_ok:
+            continue
+
         pose_key = key_pose(scanner)
 
         true_loc = utility._hget_json(pose_key, "true_location_json")
         planned_loc = utility._hget_json(pose_key, "planned_location_json")
 
-        if _is_loc_ok(true_loc):
+        true_fresh, _true_detail = _pose_is_fresh_for_dynamic_obstacle(
+            scanner,
+            "true_location_json",
+        )
+        if true_fresh and _is_loc_ok(true_loc):
             _rasterize_circle(
                 dynamic,
                 float(true_loc["x_m"]),
@@ -277,7 +383,11 @@ def _build_dynamic_map(exclude_scanner: str = "") -> np.ndarray:
                 float(config.MOBILITY_ROBOT_RESTRICT_RADIUS_M),
             )
 
-        if _is_loc_ok(planned_loc):
+        planned_fresh, _planned_detail = _pose_is_fresh_for_dynamic_obstacle(
+            scanner,
+            "planned_location_json",
+        )
+        if planned_fresh and _is_loc_ok(planned_loc):
             _rasterize_circle(
                 dynamic,
                 float(planned_loc["x_m"]),
