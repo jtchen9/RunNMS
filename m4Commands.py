@@ -3,6 +3,7 @@ from datetime import timedelta
 import json
 import csv
 import io
+import copy
 
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, Form
 from pydantic import BaseModel, Field
@@ -60,6 +61,309 @@ class CmdPollReq(BaseModel):
     boot_id: Optional[str] = None
     status_report: Dict[str, Any] = Field(default_factory=dict)
     mobility_report: Optional[Dict[str, Any]] = None
+
+
+# ============================================================
+# Mobility report debug interception outlet
+# ============================================================
+def _mobility_report_intercept_key(scanner: str) -> str:
+    return f"{config.MOBILITY_REPORT_INTERCEPT_KEY_PREFIX}{scanner}"
+
+
+def _mobility_report_intercept_enable_key(scanner: str = "") -> str:
+    base = getattr(
+        config,
+        "MOBILITY_REPORT_INTERCEPT_ENABLE_KEY",
+        f"{config.KEY_PREFIX}debug:mobility_report_intercept:enabled",
+    )
+    return f"{base}:{scanner}" if scanner else base
+
+
+def _redis_truthy(v: Any) -> bool:
+    if v is None:
+        return False
+    if isinstance(v, bytes):
+        v = v.decode("utf-8", errors="replace")
+    return str(v).strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _mobility_report_intercept_enabled(scanner: str) -> bool:
+    """
+    Runtime gate for mobility report interception.
+
+    Long-term usage:
+    - config.MOBILITY_REPORT_INTERCEPT_AVAILABLE is a production kill switch.
+    - testSM scripts enable the outlet by Redis key.
+    - No config.py edit or NMS restart is needed for each test.
+
+    Global enable key:
+        nms:debug:mobility_report_intercept:enabled
+
+    Scanner-specific enable key:
+        nms:debug:mobility_report_intercept:enabled:<scanner>
+    """
+    try:
+        available = bool(getattr(config, "MOBILITY_REPORT_INTERCEPT_AVAILABLE", False))
+        if not available:
+            return False
+
+        return (
+            _redis_truthy(config.r.get(_mobility_report_intercept_enable_key()))
+            or _redis_truthy(config.r.get(_mobility_report_intercept_enable_key(scanner)))
+        )
+    except Exception:
+        return False
+
+
+def _deep_merge_dict(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Recursive dict merge used by intercept mode='patch'.
+
+    This lets a test change only selected fields while preserving the real report.
+    Example:
+        patch last_exec_status, last_error_code, or nested last_location_result.ok
+    """
+    out = copy.deepcopy(base)
+
+    for k, v in (patch or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge_dict(out[k], v)
+        else:
+            out[k] = copy.deepcopy(v)
+
+    return out
+
+
+def _log_mobility_report_intercept(
+    scanner: str,
+    *,
+    phase: str,
+    detail: str,
+    original_report: Optional[Dict[str, Any]] = None,
+    final_report: Optional[Dict[str, Any]] = None,
+    rule_key: str = "",
+) -> None:
+    """
+    Best-effort debug event stream.
+
+    Inspect with:
+        memurai-cli XREVRANGE nms:debug:mobility_report_intercept:events + - COUNT 20
+    """
+    try:
+        payload = {
+            "ts": utility.local_ts(),
+            "scanner": scanner,
+            "phase": phase,
+            "detail": detail,
+            "rule_key": rule_key,
+            "original_action": "" if original_report is None else str(original_report.get("last_command") or ""),
+            "original_status": "" if original_report is None else str(original_report.get("last_exec_status") or ""),
+            "final_action": "" if final_report is None else str(final_report.get("last_command") or ""),
+            "final_status": "" if final_report is None else str(final_report.get("last_exec_status") or ""),
+        }
+
+        config.r.xadd(
+            config.MOBILITY_REPORT_INTERCEPT_EVENT_STREAM,
+            {"json": json.dumps(payload, ensure_ascii=False)},
+            maxlen=2000,
+            approximate=True,
+        )
+    except Exception:
+        pass
+
+
+def _apply_mobility_report_intercept(
+    scanner: str,
+    report: Dict[str, Any],
+) -> tuple[Optional[Dict[str, Any]], bool, str]:
+    """
+    Debug-only mobility report interception.
+
+    This is called inside cmd_poll() before the report is written to Redis and
+    before m8mobility.on_report_received(scanner) is called.
+
+    Return:
+        (report, False, detail)
+            No interception applied. Continue normal path.
+
+        (mutated_report, True, detail)
+            Store mutated report, update last_mobility_report_at, call on_report_received().
+
+        (None, True, detail)
+            Drop report. Do NOT store report, do NOT update last_mobility_report_at,
+            do NOT call on_report_received(). This simulates missing report / S1 timeout.
+
+    Redis enable:
+        nms:debug:mobility_report_intercept:enabled:<scanner> = true
+
+    Redis rule key:
+        nms:debug:mobility_report_intercept:<scanner>
+
+    Rule JSON examples:
+
+    1) Drop next matching report:
+        {
+          "mode": "drop",
+          "match_action": "mobility.turn_move_turn.forward",
+          "once": true
+        }
+
+    2) Patch real report:
+        {
+          "mode": "patch",
+          "match_action": "mobility.turn_move_turn.forward",
+          "once": true,
+          "patch": {
+            "last_exec_status": "failed",
+            "last_error_code": "MOBILITY_BUSY",
+            "last_error_detail": "debug injected robot busy"
+          }
+        }
+
+    3) Replace whole report:
+        {
+          "mode": "replace",
+          "match_action": "mobility.turn_move_turn.forward",
+          "once": true,
+          "replacement": {
+            "last_command": "mobility.report.location",
+            "last_exec_status": "completed",
+            "last_error_code": "",
+            "last_error_detail": "debug injected wrong action",
+            "last_location_result": {"ok": true}
+          }
+        }
+
+    match_action:
+        Optional. If present, only apply when incoming report.last_command matches.
+
+    once:
+        Usually true. Deletes the rule after the first matched report.
+    """
+    if not _mobility_report_intercept_enabled(scanner):
+        return report, False, "intercept_disabled"
+
+    key = _mobility_report_intercept_key(scanner)
+    raw = config.r.get(key)
+
+    if not raw:
+        return report, False, "no_intercept_rule"
+
+    try:
+        rule = json.loads(raw)
+        if not isinstance(rule, dict):
+            return report, False, "intercept_rule_not_dict"
+    except Exception as e:
+        _log_mobility_report_intercept(
+            scanner,
+            phase="bad_rule",
+            detail=f"bad_intercept_json: {type(e).__name__}: {e}",
+            original_report=report,
+            final_report=report,
+            rule_key=key,
+        )
+        return report, False, f"bad_intercept_json: {type(e).__name__}: {e}"
+
+    mode = str(rule.get("mode", "pass") or "pass").strip().lower()
+    match_action = str(rule.get("match_action", "") or "").strip()
+    report_action = str((report or {}).get("last_command") or "").strip()
+
+    if match_action and report_action != match_action:
+        _log_mobility_report_intercept(
+            scanner,
+            phase="not_matched",
+            detail=f"action={report_action} expected={match_action}",
+            original_report=report,
+            final_report=report,
+            rule_key=key,
+        )
+        return report, False, f"intercept_not_matched action={report_action} expected={match_action}"
+
+    if bool(rule.get("once", True)):
+        try:
+            config.r.delete(key)
+        except Exception:
+            pass
+
+    if mode in {"pass", "passthrough", "pass-through"}:
+        _log_mobility_report_intercept(
+            scanner,
+            phase="pass",
+            detail="intercept_pass",
+            original_report=report,
+            final_report=report,
+            rule_key=key,
+        )
+        return report, True, "intercept_pass"
+
+    if mode == "drop":
+        _log_mobility_report_intercept(
+            scanner,
+            phase="drop",
+            detail="intercept_drop",
+            original_report=report,
+            final_report=None,
+            rule_key=key,
+        )
+        return None, True, "intercept_drop"
+
+    if mode == "replace":
+        replacement = rule.get("replacement")
+        if not isinstance(replacement, dict):
+            _log_mobility_report_intercept(
+                scanner,
+                phase="replace_error",
+                detail="intercept_replace_missing_replacement",
+                original_report=report,
+                final_report=report,
+                rule_key=key,
+            )
+            return report, True, "intercept_replace_missing_replacement"
+
+        final_report = copy.deepcopy(replacement)
+        _log_mobility_report_intercept(
+            scanner,
+            phase="replace",
+            detail="intercept_replace",
+            original_report=report,
+            final_report=final_report,
+            rule_key=key,
+        )
+        return final_report, True, "intercept_replace"
+
+    if mode == "patch":
+        patch = rule.get("patch")
+        if not isinstance(patch, dict):
+            _log_mobility_report_intercept(
+                scanner,
+                phase="patch_error",
+                detail="intercept_patch_missing_patch",
+                original_report=report,
+                final_report=report,
+                rule_key=key,
+            )
+            return report, True, "intercept_patch_missing_patch"
+
+        final_report = _deep_merge_dict(report, patch)
+        _log_mobility_report_intercept(
+            scanner,
+            phase="patch",
+            detail="intercept_patch",
+            original_report=report,
+            final_report=final_report,
+            rule_key=key,
+        )
+        return final_report, True, "intercept_patch"
+
+    _log_mobility_report_intercept(
+        scanner,
+        phase="unknown_mode",
+        detail=f"intercept_unknown_mode={mode}",
+        original_report=report,
+        final_report=report,
+        rule_key=key,
+    )
+    return report, True, f"intercept_unknown_mode={mode}"
 
 
 @router.get("/cmd/_list_command_queues", tags=["4 Commands (Polling)"])
@@ -499,22 +803,35 @@ def cmd_poll(
 
         mobility_report_ok = False
         if isinstance(req.mobility_report, dict) and req.mobility_report:
-            try:
-                config.r.hset(
-                    key_report(scanner),
-                    mapping={
-                        "last_mobility_report_json": json.dumps(req.mobility_report, ensure_ascii=False),
-                    },
-                )
-                config.r.hset(
-                    key_time(scanner),
-                    mapping={
-                        "last_mobility_report_at": server_now_str,
-                    },
-                )
-                mobility_report_ok = True
-            except Exception:
-                mobility_report_ok = False
+            original_report = req.mobility_report
+
+            final_report, _intercepted, _intercept_detail = _apply_mobility_report_intercept(
+                scanner,
+                original_report,
+            )
+
+            # final_report=None means the debug outlet intentionally dropped the report.
+            # Important:
+            # - do not save last_mobility_report_json
+            # - do not update last_mobility_report_at
+            # - do not call m8mobility.on_report_received()
+            if final_report is not None:
+                try:
+                    config.r.hset(
+                        key_report(scanner),
+                        mapping={
+                            "last_mobility_report_json": json.dumps(final_report, ensure_ascii=False),
+                        },
+                    )
+                    config.r.hset(
+                        key_time(scanner),
+                        mapping={
+                            "last_mobility_report_at": server_now_str,
+                        },
+                    )
+                    mobility_report_ok = True
+                except Exception:
+                    mobility_report_ok = False
 
         config.r.hset(config.key_scanner_meta(scanner), mapping=meta_updates)
         config.r.sadd(config.KEY_REGISTRY, scanner)

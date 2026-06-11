@@ -588,7 +588,7 @@ def run() -> None:
     out = EV.finish(True, "")
 
     print("\nPASS:")
-    print("Delta executed mobility.turn angle_deg=-10 and no follow-up turn_move_turn was observed.")
+    print(f"{SCANNER} executed {ACTION} args={json.dumps(ARGS, ensure_ascii=False)} cleanly.")
     print(f"Evidence saved to: {out}")
 
 

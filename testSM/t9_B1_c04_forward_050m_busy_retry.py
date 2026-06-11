@@ -8,7 +8,6 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-
 # ============================================================
 # Allow import from NMS project root
 # ============================================================
@@ -20,28 +19,32 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import config
 import utility
 from m8mobility_state import S0_IDLE, S1_WAITING_REPORT
-from m8mobility_state_store import key_state, key_time, key_report, key_pose, _set_state
-
+from m8mobility_state_store import key_state, key_time, key_report, key_pose, _set_state, _save_stop
+from t9_mobility_report_intercept import read_recent_intercept_events
 
 # ============================================================
 # Editable settings
 # ============================================================
 
-SCANNER = "twin-scout-delta"
+SCANNER = "twin-scout-charlie"
 NMS_BASE = "http://localhost:8000"
 
-TEST_ID = "C01"
-TEST_NAME = "turn10_fenced"
+TEST_ID = "C04c"
+TEST_NAME = "forward_050m_prexx_postxx_fenced"
+
+ACTION = "mobility.turn_move_turn.forward"
+ARGS = {
+    "pre_angle": 10.0,
+    "distance_m": 0.5,
+    "post_angle": -10.0
+}
 OUT_DIR = Path("testSM")
 
 LOCATION_ACTION = "mobility.report.location"
 LOCATION_ARGS: Dict[str, Any] = {}
 
-ACTION = "mobility.turn"
-ARGS = {"angle_deg": 10}
-
 MAX_WAIT_LOCATION_SEC = 60
-MAX_WAIT_TURN_SEC = 60
+MAX_WAIT_ACTION_SEC = 180
 POLL_EVERY_SEC = 1.0
 
 CORRECTION_FENCE_COUNT = 999
@@ -69,7 +72,7 @@ class Evidence:
                 "ARGS": ARGS,
                 "correction_fence_count": CORRECTION_FENCE_COUNT,
                 "max_wait_location_sec": MAX_WAIT_LOCATION_SEC,
-                "max_wait_turn_sec": MAX_WAIT_TURN_SEC,
+                "max_wait_action_sec": MAX_WAIT_ACTION_SEC,
             },
             "events": [],
             "snapshots": {},
@@ -109,7 +112,7 @@ EV = Evidence()
 
 
 # ============================================================
-# Redis helpers
+# Redis helper
 # ============================================================
 
 def hget(hash_key: str, field: str, default: str = "") -> str:
@@ -297,7 +300,7 @@ def post_json(url: str, body: Dict[str, Any], timeout_sec: int = 10) -> Tuple[in
         }
 
 
-def enqueue_turn() -> Tuple[int, Any]:
+def enqueue_action() -> Tuple[int, Any]:
     url = f"{NMS_BASE}/cmd/_enqueue/{SCANNER}"
     body = {
         "category": "mobility",
@@ -444,10 +447,15 @@ def align_planned_to_true_for_test() -> Dict[str, Any]:
             "exec_fail_count": "0",
             "s2_entry_reason": "",
             "need_location_retry": "false",
+            "stop_experiment": "false",
+            "stop_reason": "",
+            "robot_safety_state": "NORMAL",
+            "last_error_code": "",
+            "last_error_detail": "",
         },
     )
 
-    _set_state(SCANNER, S0_IDLE, "testSM planned=true, ready for turn10")
+    _set_state(SCANNER, S0_IDLE, f"testSM planned=true, ready for {ACTION}")
 
     hset(
         key_time(SCANNER),
@@ -464,72 +472,186 @@ def align_planned_to_true_for_test() -> Dict[str, Any]:
 
 
 # ============================================================
-# Turn test
+# Action test
 # ============================================================
 
-def fence_post_report_correction() -> None:
+def fence_followup_correction() -> None:
     hset(key_state(SCANNER), {"correction_attempt_count": str(CORRECTION_FENCE_COUNT)})
     msg = f"correction_attempt_count={CORRECTION_FENCE_COUNT}"
     print(f"\nCorrection fence set: {msg}")
     EV.event("fence", "post-report correction fenced", msg)
 
 
-def wait_for_turn_report(start_ts: str) -> None:
-    print("\nWaiting for fresh mobility.turn report...")
+def wait_for_action_report(start_ts: str) -> None:
+    """
+    B1 MOBILITY_BUSY test.
+
+    Expected sequence:
+      1. First fresh matching ACTION report is patched to:
+           failed / MOBILITY_BUSY
+      2. NMS must NOT stop.
+      3. NMS should enter s2evaluating_policy with busy_retry_timer.
+      4. Busy retry timer should reissue the same ACTION.
+      5. Robot should execute the reissued command normally.
+      6. A later fresh matching ACTION report should be completed.
+      7. Final state should return to s0idle.
+
+    Important:
+      This test must not fail immediately on MOBILITY_BUSY.
+      MOBILITY_BUSY is the expected injected condition.
+    """
+    print(f"\nWaiting for B1 busy-retry behavior for {ACTION}.")
     phase_start = time.time()
 
-    while time.time() - phase_start <= MAX_WAIT_TURN_SEC:
+    saw_busy = False
+    saw_retry_reissued = False
+    busy_report_at = ""
+
+    while time.time() - phase_start <= MAX_WAIT_ACTION_SEC:
         s = compact_snapshot()
-        EV.trace("turn_wait", s)
+        EV.trace("action_wait_b1_busy", s)
 
         elapsed = int(time.time() - phase_start)
         actions = s["newest_actions"]
 
         print(
-            f"[TURN {elapsed:03d}s] "
+            f"[B1 {elapsed:03d}s] "
             f"state={s['state']!r} "
             f"detail={s['state_detail']!r} "
             f"cmd_len={s['cmd_stream_len']} "
             f"actions={actions} "
+            f"busy_count={s.get('busy_count', '')!r} "
+            f"s2_entry_reason={s.get('s2_entry_reason', '')!r} "
+            f"busy_retry_token={s.get('busy_retry_token', '')!r} "
             f"report={s['last_report_command']!r}/"
             f"{s['last_report_status']!r}/"
             f"{s['last_report_error_code']!r} "
             f"report_at={s['last_mobility_report_at']!r}"
         )
 
-        if any(a.startswith("mobility.turn_move_turn") for a in actions):
-            fail("Unsafe follow-up turn_move_turn appeared in command stream.")
-
         fresh = str(s["last_mobility_report_at"]) >= str(start_ts)
         matching = s["last_report_command"] == ACTION
 
-        args = s["last_report_args"]
-        args_ok = False
-        if isinstance(args, dict):
-            try:
-                args_ok = abs(float(args.get("angle_deg")) - float(ARGS["angle_deg"])) < 1e-6
-            except Exception:
-                args_ok = False
+        # ---------------------------------------------------------
+        # 1. Expected injected busy report
+        # ---------------------------------------------------------
+        if (
+            fresh
+            and matching
+            and s["last_report_error_code"] == "MOBILITY_BUSY"
+        ):
+            saw_busy = True
+            busy_report_at = str(s["last_mobility_report_at"])
 
-        if fresh and matching and args_ok:
-            if s["last_report_status"] != "completed":
-                fail(f"Turn report arrived but status={s['last_report_status']!r}")
+            if s["state"] == "s7stopped":
+                fail("MOBILITY_BUSY incorrectly caused s7stopped")
 
-            EV.event("turn_done", "fresh completed mobility.turn report received", {"elapsed_sec": elapsed})
+            EV.event(
+                "busy_seen",
+                "fresh matching ACTION report patched to MOBILITY_BUSY",
+                {
+                    "elapsed_sec": elapsed,
+                    "state": s["state"],
+                    "state_detail": s["state_detail"],
+                    "busy_count": s.get("busy_count", ""),
+                    "s2_entry_reason": s.get("s2_entry_reason", ""),
+                    "busy_retry_token": s.get("busy_retry_token", ""),
+                },
+            )
+
+        # ---------------------------------------------------------
+        # 2. Detect same command reissued by busy retry timer
+        # ---------------------------------------------------------
+        if saw_busy:
+            if (
+                s["last_planned_command_action"] == ACTION
+                and ACTION in actions
+            ):
+                saw_retry_reissued = True
+                EV.event(
+                    "busy_retry_reissued",
+                    "same ACTION appears again in robot command stream",
+                    {
+                        "elapsed_sec": elapsed,
+                        "actions": actions,
+                        "state": s["state"],
+                        "state_detail": s["state_detail"],
+                    },
+                )
+
+        # ---------------------------------------------------------
+        # 3. Success: later completed report after the busy report
+        # ---------------------------------------------------------
+        if (
+            saw_busy
+            and str(s["last_mobility_report_at"]) > busy_report_at
+            and matching
+            and s["last_report_status"] == "completed"
+            and not s["last_report_error_code"]
+        ):
+            EV.event(
+                "action_done_after_busy_retry",
+                f"fresh completed {ACTION} report received after MOBILITY_BUSY retry",
+                {"elapsed_sec": elapsed},
+            )
+
+            final = compact_snapshot()
+            EV.snapshot("FINAL", full_snapshot())
+
+            if not saw_retry_reissued:
+                fail("Completed after MOBILITY_BUSY, but test did not observe command reissue")
+
+            if final["state"] != "s0idle":
+                fail(
+                    f"Final state is not s0idle: "
+                    f"{final['state']} / {final['state_detail']}"
+                )
+
+            if final["robot_safety_state"] != "NORMAL":
+                fail(
+                    f"Final robot_safety_state is not NORMAL: "
+                    f"{final['robot_safety_state']}"
+                )
+
             return
+
+        # ---------------------------------------------------------
+        # 4. Unexpected hard stop
+        # ---------------------------------------------------------
+        if s["state"] == "s7stopped":
+            fail(
+                f"NMS entered s7stopped during B1 busy retry: "
+                f"{s['state_detail']}"
+            )
 
         time.sleep(POLL_EVERY_SEC)
 
-    fail("Timed out waiting for fresh completed mobility.turn report.")
+    print()
+    print("Recent mobility-report intercept events at B1 timeout:")
+    try:
+        for ev in read_recent_intercept_events(10):
+            print(json.dumps(ev, ensure_ascii=False, indent=2))
+    except Exception as e:
+        print(f"Failed to read intercept events: {type(e).__name__}: {e}")
+
+    fail(
+        "Timed out waiting for MOBILITY_BUSY retry sequence: "
+        f"saw_busy={saw_busy}, saw_retry_reissued={saw_retry_reissued}. "
+        "See recent intercept events printed above."
+    )
 
 
 def run() -> None:
     print("=" * 72)
-    print("Layer-C C01: turn 10 degrees with location precondition + correction fence")
+    print("")
     print("=" * 72)
 
     EV.event("start", "test started")
     print_compact("PRE")
+
+    reset_test_stop_state()
+    print_compact("AFTER RESET")
+
     check_basic_preconditions()
 
     clear_cmd_stream("BEFORE LOCATION")
@@ -553,23 +675,33 @@ def run() -> None:
         },
     )
 
-    print_compact("BEFORE TURN")
+    print_compact("BEFORE ACTION")
 
-    clear_cmd_stream("BEFORE TURN")
-    turn_start_ts = utility.local_ts()
+    clear_cmd_stream("BEFORE ACTION")
+    action_start_ts = utility.local_ts()
 
-    status, payload = enqueue_turn()
-    EV.event("enqueue_turn", "turn command enqueue response", {"http_status": status, "payload": payload})
+    status, payload = enqueue_action()
+    EV.event("enqueue_action", "action command enqueue response", {"http_status": status, "payload": payload})
 
-    print("\nENQUEUE TURN RESPONSE:")
+    print("\nENQUEUE ACTION RESPONSE:")
     print(json.dumps({"http_status": status, "payload": payload}, ensure_ascii=False, indent=2))
 
     if status != 200:
-        fail(f"enqueue turn failed http={status}")
+        fail(f"enqueue action failed http={status}")
 
     if not isinstance(payload, dict):
-        fail("enqueue turn response is not JSON dict")
+        fail("enqueue action response is not JSON dict")
 
+    # NEW: NMS rejected/stopped before issuing any robot command.
+    if payload.get("status") == "stopped" or payload.get("state") == "s7stopped":
+        fail(
+            f"NMS stopped before issuing {ACTION}: "
+            f"state={payload.get('state')}, "
+            f"status={payload.get('status')}, "
+            f"detail={payload.get('detail')}"
+        )
+
+    # Existing code continues here.
     issued = payload.get("issued_command", {})
     if not isinstance(issued, dict):
         fail("enqueue response missing issued_command")
@@ -579,8 +711,8 @@ def run() -> None:
         clear_cmd_stream("ABORT: WRONG ISSUED ACTION")
         fail(f"Expected NMS to issue {ACTION}, but it issued {issued_action}: {issued}")
 
-    fence_post_report_correction()
-    wait_for_turn_report(turn_start_ts)
+    fence_followup_correction()
+    wait_for_action_report(action_start_ts)
 
     print_compact("FINAL")
 
@@ -590,7 +722,48 @@ def run() -> None:
     print(f"{SCANNER} executed {ACTION} args={json.dumps(ARGS, ensure_ascii=False)} cleanly.")
     print(f"Evidence saved to: {out}")
 
+def reset_test_stop_state() -> None:
+    """
+    Test-only recovery from previous S7 stop.
+
+    This does not issue any robot command.
+    It only clears NMS stop/safety bookkeeping so the test can first
+    request a fresh mobility.report.location.
+    """
+    _save_stop(False, "")
+    clear_cmd_stream("RESET STOP CLEAR CMD STREAM")
+
+    hset(
+        key_state(SCANNER),
+        {
+            "state": S0_IDLE,
+            "state_detail": "testSM reset previous stop before precondition",
+            "robot_safety_state": "NORMAL",
+            "stop_experiment": "false",
+            "stop_reason": "",
+            "need_location_retry": "false",
+            "retry_count": "0",
+            "collision_veto_count": "0",
+            "busy_count": "0",
+            "exec_fail_count": "0",
+            "last_error_code": "",
+            "last_error_detail": "",
+            "s2_entry_reason": "",
+        },
+    )
+
+    hset(
+        key_time(SCANNER),
+        {
+            "s1_timer_token": "",
+            "s1_timer_started_at": "",
+            "busy_retry_token": "",
+            "busy_retry_started_at": "",
+        },
+    )
+
+    EV.event("reset_stop", "cleared previous s7stopped/UNSAFE_STOP for test fixture")
+
 
 if __name__ == "__main__":
     run()
-    

@@ -635,7 +635,7 @@ def run() -> None:
     out = EV.finish(True, "")
 
     print("\nPASS:")
-    print(f"Delta executed {ACTION} args={json.dumps(ARGS, ensure_ascii=False)} cleanly.")
+    print(f"{SCANNER} executed {ACTION} args={json.dumps(ARGS, ensure_ascii=False)} cleanly.")
     print(f"Evidence saved to: {out}")
 
 

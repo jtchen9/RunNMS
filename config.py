@@ -180,6 +180,34 @@ MOBILITY_TAG_STALE_TIMEOUT_SEC = 120
 # A powered-off / put-away robot must not remain as a phantom blocker.
 MOBILITY_DYNAMIC_OBSTACLE_TTL_SEC = 120
 
+# -----------------------------
+# Mobility report interception
+# -----------------------------
+# Production-code debug outlet for NMS state-machine tests.
+#
+# Important design:
+# - The outlet exists in production code.
+# - It is normally inactive.
+# - testSM scripts enable it at runtime by Redis key.
+# - No config.py edit or NMS restart is needed per test.
+#
+# Kill switch:
+#   Set MOBILITY_REPORT_INTERCEPT_AVAILABLE = False to disable this feature entirely.
+#
+# Runtime enable keys:
+#   nms:debug:mobility_report_intercept:enabled
+#   nms:debug:mobility_report_intercept:enabled:<scanner>
+#
+# Rule key:
+#   nms:debug:mobility_report_intercept:<scanner>
+#
+# Event stream:
+#   nms:debug:mobility_report_intercept:events
+MOBILITY_REPORT_INTERCEPT_AVAILABLE = True
+MOBILITY_REPORT_INTERCEPT_KEY_PREFIX = f"{KEY_PREFIX}debug:mobility_report_intercept:"
+MOBILITY_REPORT_INTERCEPT_ENABLE_KEY = f"{KEY_PREFIX}debug:mobility_report_intercept:enabled"
+MOBILITY_REPORT_INTERCEPT_EVENT_STREAM = f"{KEY_PREFIX}debug:mobility_report_intercept:events"
+
 # ==================
 # Runtime init
 # ==================

@@ -443,16 +443,47 @@ def s2evaluating_policy(scanner: str) -> Dict[str, Any]:
 
     # ---------------------------------------------------------
     # Special entry: busy retry timer fired
-    # ---------------------------------------------------------
+    # ---------------------------------------------------------    
     if entry_reason == "busy_retry_timer":
         _clear_s2_entry_reason(scanner)
 
         last_action = utility._hget(key_pose(scanner), "last_planned_command_action", "")
-        last_args = utility._hget(key_pose(scanner), "last_planned_command_args_json", "")
+        last_args_raw = utility._hget(key_pose(scanner), "last_planned_command_args_json", "")
 
-        if not last_action or not last_args:
+        if not last_action or not last_args_raw:
             _cancel_busy_retry_timer(scanner)
             _set_state(scanner, S7_STOPPED, "MOBILITY_BUSY retry missing previous command")
+            return s7stopped(scanner)
+
+        try:
+            last_args = json.loads(last_args_raw) if isinstance(last_args_raw, str) else last_args_raw
+        except Exception as e:
+            _cancel_busy_retry_timer(scanner)
+            _set_state(
+                scanner,
+                S7_STOPPED,
+                f"MOBILITY_BUSY retry bad previous args json: {type(e).__name__}: {e}",
+            )
+            return s7stopped(scanner)
+
+        if not isinstance(last_args, dict):
+            _cancel_busy_retry_timer(scanner)
+            _set_state(
+                scanner,
+                S7_STOPPED,
+                f"MOBILITY_BUSY retry previous args not dict: {type(last_args).__name__}",
+            )
+            return s7stopped(scanner)
+
+        try:
+            last_action, last_args = _normalize_mobility_command(last_action, last_args)
+        except Exception as e:
+            _cancel_busy_retry_timer(scanner)
+            _set_state(
+                scanner,
+                S7_STOPPED,
+                f"MOBILITY_BUSY retry bad previous command: {type(e).__name__}: {e}",
+            )
             return s7stopped(scanner)
 
         _save_outgoing_command_preview(
@@ -754,29 +785,43 @@ def _cancel_busy_retry_timer(scanner: str) -> None:
     )
 
 def _busy_retry_timeout_callback(scanner: str, token: str) -> None:
+    """
+    Busy-retry timer callback.
+
+    Important:
+        Do NOT clear s2_entry_reason here.
+
+    Reason:
+        s2evaluating_policy() uses s2_entry_reason == "busy_retry_timer"
+        to enter the special retry path that reissues the previous command.
+
+        If this callback clears s2_entry_reason before run_state_machine(),
+        S2 will wrongly re-evaluate the same stored MOBILITY_BUSY report,
+        increment busy_count again, and may stop at sum=2.
+
+    Ownership checks are done here.
+    Cleanup is done inside s2evaluating_policy() after it consumes the marker.
+    """
     current_state = _get_state(scanner)
     current_token = utility._hget(key_time(scanner), "busy_retry_token", "")
     entry_reason = _get_s2_entry_reason(scanner)
 
-    # ---------------------------------------------------------
-    # Validate ownership
-    # ---------------------------------------------------------
+    # Validate ownership.
     if current_state != S2_EVALUATING_POLICY:
         return
+
     if str(current_token or "") != str(token):
         return
+
     if entry_reason != "busy_retry_timer":
         return
 
-    # ---------------------------------------------------------
-    # This timer owns the retry → clean up FIRST
-    # ---------------------------------------------------------
-    _cancel_busy_retry_timer(scanner)
-    _clear_s2_entry_reason(scanner)
-
-    # ---------------------------------------------------------
-    # Re-enter S2 in retry mode
-    # ---------------------------------------------------------
+    # Let s2evaluating_policy() consume the busy_retry_timer marker.
+    # It will:
+    #   - clear s2_entry_reason
+    #   - reissue the previous command
+    #   - cancel busy retry timer
+    #   - enter S1
     run_state_machine(scanner)
 
 def _set_s2_entry_reason(scanner: str, reason: str) -> None:
