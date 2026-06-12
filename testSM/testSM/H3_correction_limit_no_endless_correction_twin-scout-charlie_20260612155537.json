@@ -1,0 +1,366 @@
+{
+  "test_id": "H3",
+  "test_name": "correction_limit_no_endless_correction",
+  "scanner": "twin-scout-charlie",
+  "started_at": "2026-06-12-15:55:35",
+  "ended_at": "2026-06-12-15:55:37",
+  "pass": false,
+  "failure_reason": "H3 no-endless-correction verification failed:\n- S5 should transition to s0idle, got None",
+  "config": {
+    "ACTION": "mobility.turn_move_turn.forward",
+    "synthetic_residual_args": {
+      "pre_angle": 45.0,
+      "distance_m": 0.5,
+      "post_angle": -45.0
+    },
+    "correction_attempt_limit": 1,
+    "mode": "no movement; seed S5 at correction limit; verify no command is issued"
+  },
+  "events": [
+    {
+      "ts": "2026-06-12-15:55:37",
+      "phase": "clear_cmd_stream",
+      "detail": "cleared command stream before no-endless-correction test",
+      "extra": {
+        "old_len": 0,
+        "key": "nms:cmd:twin-scout-charlie"
+      }
+    },
+    {
+      "ts": "2026-06-12-15:55:37",
+      "phase": "seed",
+      "detail": "seeded remaining error with correction_attempt_count at limit",
+      "extra": {
+        "true_location": {
+          "location_ok": true,
+          "x_m": 4.033922382025684,
+          "y_m": 1.41337224268355,
+          "heading_deg": 296.21122544338687,
+          "source": "testSM.H3.seed",
+          "updated_at": "2026-06-12-15:55:37"
+        },
+        "planned_location": {
+          "location_ok": true,
+          "x_m": 4.507278572299157,
+          "y_m": 1.2523321323700498,
+          "heading_deg": 296.21122544338687,
+          "source": "testSM.H3.synthetic_planned_target",
+          "updated_at": "2026-06-12-15:55:37"
+        },
+        "correction_attempt_count": 1
+      }
+    },
+    {
+      "ts": "2026-06-12-15:55:37",
+      "phase": "s5computing_correction",
+      "detail": "called production S5 wrapper",
+      "extra": {
+        "state": "s0idle",
+        "status": "ok",
+        "detail": "correction limit reached (1)",
+        "error": {
+          "dx_m": 0.4733561902734724,
+          "dy_m": -0.16104011031350018,
+          "dpos_m": 0.5000000000000001,
+          "dhead_deg": 0.0
+        },
+        "pending_sequence": []
+      }
+    },
+    {
+      "ts": "2026-06-12-15:55:37",
+      "phase": "restore",
+      "detail": "restored state/time/pose hashes after H3; command stream left empty by design",
+      "extra": {
+        "before_cmd_len": 0,
+        "after_cmd_len": 0
+      }
+    }
+  ],
+  "snapshots": {
+    "PRE": {
+      "ts": "2026-06-12-15:55:37",
+      "state": {
+        "state": "s0idle",
+        "state_detail": "correction limit reached (1)",
+        "mobility_ready": "true",
+        "robot_safety_state": "NORMAL",
+        "stop_experiment": "false",
+        "stop_reason": "",
+        "need_location_retry": "false",
+        "retry_count": "0",
+        "busy_count": "0",
+        "collision_veto_count": "0",
+        "exec_fail_count": "0",
+        "correction_attempt_count": "1",
+        "outgoing_command_action": "",
+        "outgoing_command_args_json": "",
+        "outgoing_command_source": "",
+        "pending_sequence_len": "0",
+        "pending_sequence_json": "",
+        "last_error_code": "",
+        "last_error_detail": "",
+        "last_correction_issued_at": "2026-06-12-15:45:32"
+      },
+      "time": {
+        "policy_updated_at": "2026-06-12-15:46:16",
+        "last_planned_command_issued_at": "2026-06-12-15:45:32",
+        "s1_timer_token": "",
+        "busy_retry_token": ""
+      },
+      "pose": {
+        "true_location_json": {
+          "location_ok": true,
+          "x_m": 4.033922382025684,
+          "y_m": 1.41337224268355,
+          "heading_deg": 296.21122544338687,
+          "source": "apriltag",
+          "tags_used": [
+            48,
+            49
+          ],
+          "tag_count": 2,
+          "solver_stage": "best_effort_fusion",
+          "updated_at": "2026-06-12-15:46:16",
+          "detail": "best-effort fusion ok",
+          "candidates": [
+            {
+              "tag_id": 48,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 4.0407297718979756,
+              "y_m": 1.3647475847049773,
+              "heading_deg": 297.4774,
+              "distance_m": 1.349,
+              "angle_deg_cw": 7.1206,
+              "yaw_deg": -20.3568,
+              "bearing_robot_deg_ccw": -7.120599999999996,
+              "snapshot_path": "/tmp/location_front_1781250357884.jpg",
+              "yaw_corrected_deg": -27.4774
+            },
+            {
+              "tag_id": 49,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 4.020421171011418,
+              "y_m": 1.5098103460067367,
+              "heading_deg": 293.69939999999997,
+              "distance_m": 2.0078,
+              "angle_deg_cw": -21.6995,
+              "yaw_deg": -45.3989,
+              "bearing_robot_deg_ccw": 21.6995,
+              "snapshot_path": "/tmp/location_front_1781250357884.jpg",
+              "yaw_corrected_deg": -23.699399999999997
+            }
+          ],
+          "used_candidates": [
+            {
+              "tag_id": 48,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 4.0407297718979756,
+              "y_m": 1.3647475847049773,
+              "heading_deg": 297.4774,
+              "distance_m": 1.349,
+              "angle_deg_cw": 7.1206,
+              "yaw_deg": -20.3568,
+              "bearing_robot_deg_ccw": -7.120599999999996,
+              "snapshot_path": "/tmp/location_front_1781250357884.jpg",
+              "yaw_corrected_deg": -27.4774,
+              "position_residual_m": 0.04909885864667884,
+              "heading_residual_deg": 1.266174556613123,
+              "weight": 0.7247439566948121
+            },
+            {
+              "tag_id": 49,
+              "camera_role": "front",
+              "camera_offset_deg": 0.0,
+              "x_m": 4.020421171011418,
+              "y_m": 1.5098103460067367,
+              "heading_deg": 293.69939999999997,
+              "distance_m": 2.0078,
+              "angle_deg_cw": -21.6995,
+              "yaw_deg": -45.3989,
+              "bearing_robot_deg_ccw": 21.6995,
+              "snapshot_path": "/tmp/location_front_1781250357884.jpg",
+              "yaw_corrected_deg": -23.699399999999997,
+              "position_residual_m": 0.09737859349685318,
+              "heading_residual_deg": 2.511825443386897,
+              "weight": 0.36542015865060995
+            }
+          ],
+          "hard_outliers": [],
+          "soft_outliers": []
+        },
+        "planned_location_json": {
+          "location_ok": true,
+          "x_m": 6.242801431774584,
+          "y_m": 1.4052686633215081,
+          "heading_deg": 269.22039549777645
+        },
+        "last_planned_command_action": "mobility.turn_move_turn.forward",
+        "last_planned_command_args_json": "{\"pre_angle\": 76.66774271064219, \"distance_m\": 1.822475201106823, \"post_angle\": -82.93991621601396}"
+      },
+      "cmd_stream": {
+        "key": "nms:cmd:twin-scout-charlie",
+        "len": 0
+      }
+    },
+    "SEEDED": {
+      "ts": "2026-06-12-15:55:37",
+      "state": {
+        "state": "s5computing_correction",
+        "state_detail": "testSM H3 seeded S5 at correction limit",
+        "mobility_ready": "true",
+        "robot_safety_state": "NORMAL",
+        "stop_experiment": "false",
+        "stop_reason": "",
+        "need_location_retry": "false",
+        "retry_count": "0",
+        "busy_count": "0",
+        "collision_veto_count": "0",
+        "exec_fail_count": "0",
+        "correction_attempt_count": "1",
+        "outgoing_command_action": "",
+        "outgoing_command_args_json": "",
+        "outgoing_command_source": "",
+        "pending_sequence_len": "0",
+        "pending_sequence_json": "",
+        "last_error_code": "",
+        "last_error_detail": "",
+        "last_correction_issued_at": "2026-06-12-15:45:32"
+      },
+      "time": {
+        "policy_updated_at": "2026-06-12-15:55:37",
+        "last_planned_command_issued_at": "2026-06-12-15:45:32",
+        "s1_timer_token": "",
+        "busy_retry_token": ""
+      },
+      "pose": {
+        "true_location_json": {
+          "location_ok": true,
+          "x_m": 4.033922382025684,
+          "y_m": 1.41337224268355,
+          "heading_deg": 296.21122544338687,
+          "source": "testSM.H3.seed",
+          "updated_at": "2026-06-12-15:55:37"
+        },
+        "planned_location_json": {
+          "location_ok": true,
+          "x_m": 4.507278572299157,
+          "y_m": 1.2523321323700498,
+          "heading_deg": 296.21122544338687,
+          "source": "testSM.H3.synthetic_planned_target",
+          "updated_at": "2026-06-12-15:55:37"
+        },
+        "last_planned_command_action": "mobility.turn_move_turn.forward",
+        "last_planned_command_args_json": "{\"pre_angle\": 45.0, \"distance_m\": 0.5, \"post_angle\": -45.0}"
+      },
+      "cmd_stream": {
+        "key": "nms:cmd:twin-scout-charlie",
+        "len": 0
+      }
+    },
+    "FINAL_BEFORE_RESTORE": {
+      "ts": "2026-06-12-15:55:37",
+      "state": {
+        "state": "s0idle",
+        "state_detail": "correction limit reached (1)",
+        "mobility_ready": "true",
+        "robot_safety_state": "NORMAL",
+        "stop_experiment": "false",
+        "stop_reason": "",
+        "need_location_retry": "false",
+        "retry_count": "0",
+        "busy_count": "0",
+        "collision_veto_count": "0",
+        "exec_fail_count": "0",
+        "correction_attempt_count": "1",
+        "outgoing_command_action": "",
+        "outgoing_command_args_json": "",
+        "outgoing_command_source": "",
+        "pending_sequence_len": "0",
+        "pending_sequence_json": "",
+        "last_error_code": "",
+        "last_error_detail": "",
+        "last_correction_issued_at": "2026-06-12-15:45:32"
+      },
+      "time": {
+        "policy_updated_at": "2026-06-12-15:55:37",
+        "last_planned_command_issued_at": "2026-06-12-15:45:32",
+        "s1_timer_token": "",
+        "busy_retry_token": ""
+      },
+      "pose": {
+        "true_location_json": {
+          "location_ok": true,
+          "x_m": 4.033922382025684,
+          "y_m": 1.41337224268355,
+          "heading_deg": 296.21122544338687,
+          "source": "testSM.H3.seed",
+          "updated_at": "2026-06-12-15:55:37"
+        },
+        "planned_location_json": {
+          "location_ok": true,
+          "x_m": 4.507278572299157,
+          "y_m": 1.2523321323700498,
+          "heading_deg": 296.21122544338687,
+          "source": "testSM.H3.synthetic_planned_target",
+          "updated_at": "2026-06-12-15:55:37"
+        },
+        "last_planned_command_action": "mobility.turn_move_turn.forward",
+        "last_planned_command_args_json": "{\"pre_angle\": 45.0, \"distance_m\": 0.5, \"post_angle\": -45.0}"
+      },
+      "cmd_stream": {
+        "key": "nms:cmd:twin-scout-charlie",
+        "len": 0
+      }
+    }
+  },
+  "checks": {
+    "H3_no_endless_correction_after_limit": {
+      "result": {
+        "state": "s0idle",
+        "status": "ok",
+        "detail": "correction limit reached (1)",
+        "error": {
+          "dx_m": 0.4733561902734724,
+          "dy_m": -0.16104011031350018,
+          "dpos_m": 0.5000000000000001,
+          "dhead_deg": 0.0
+        },
+        "pending_sequence": []
+      },
+      "final_state": {
+        "state": "s0idle",
+        "state_detail": "correction limit reached (1)",
+        "mobility_ready": "true",
+        "robot_safety_state": "NORMAL",
+        "stop_experiment": "false",
+        "stop_reason": "",
+        "need_location_retry": "false",
+        "retry_count": "0",
+        "busy_count": "0",
+        "collision_veto_count": "0",
+        "exec_fail_count": "0",
+        "correction_attempt_count": "1",
+        "outgoing_command_action": "",
+        "outgoing_command_args_json": "",
+        "outgoing_command_source": "",
+        "pending_sequence_len": "0",
+        "pending_sequence_json": "",
+        "last_error_code": "",
+        "last_error_detail": "",
+        "last_correction_issued_at": "2026-06-12-15:45:32"
+      },
+      "expected": {
+        "state": "s0idle",
+        "state_detail_contains": "correction limit reached (1)",
+        "cmd_stream_len": 0,
+        "outgoing_command_action": "",
+        "pending_sequence_len": "0"
+      },
+      "ok": false
+    }
+  }
+}

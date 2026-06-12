@@ -1,0 +1,304 @@
+{
+  "test_id": "F2",
+  "test_name": "move_exec_fail_counter_limit_direct",
+  "scanner": "twin-scout-delta",
+  "started_at": "2026-06-12-13:04:03",
+  "ended_at": "2026-06-12-13:04:05",
+  "pass": true,
+  "failure_reason": "",
+  "config": {
+    "ACTION": "mobility.turn_move_turn.forward",
+    "ARGS": {
+      "pre_angle": 0.0,
+      "distance_m": 0.2,
+      "post_angle": 0.0
+    },
+    "expected_error_code": "MOVE_EXEC_FAIL",
+    "unexpected_event_sum_limit": 2,
+    "seeded_exec_fail_count": 1
+  },
+  "events": [
+    {
+      "ts": "2026-06-12-13:04:03",
+      "phase": "start",
+      "detail": "test started"
+    },
+    {
+      "ts": "2026-06-12-13:04:05",
+      "phase": "RESET CMD STREAM",
+      "detail": "cleared nms:cmd:twin-scout-delta, old_len=0"
+    },
+    {
+      "ts": "2026-06-12-13:04:05",
+      "phase": "clear_intercept_keys",
+      "detail": "cleared mobility report intercept keys",
+      "extra": {
+        "deleted": 0,
+        "keys": [
+          "nms:debug:mobility_report_intercept:twin-scout-delta",
+          "nms:debug:mobility_report_intercept:enabled:twin-scout-delta",
+          "nms:debug:mobility_report_intercept:enabled"
+        ]
+      }
+    },
+    {
+      "ts": "2026-06-12-13:04:05",
+      "phase": "seed",
+      "detail": "seeded S1 with exec_fail_count=limit-1 and injected matching MOVE_EXEC_FAIL report",
+      "extra": {
+        "now": "2026-06-12-13:04:05",
+        "state": "s1waiting_report",
+        "seeded_exec_fail_count": 1,
+        "expected_final_exec_fail_count": 2,
+        "report": {
+          "last_command": "mobility.turn_move_turn.forward",
+          "last_command_args": {
+            "pre_angle": 0.0,
+            "distance_m": 0.2,
+            "post_angle": 0.0
+          },
+          "last_command_received_ts": 1781240645.8126893,
+          "last_command_finished_ts": 1781240645.8126893,
+          "last_exec_status": "failed",
+          "last_error_code": "MOVE_EXEC_FAIL",
+          "last_error_detail": "testSM injected MOVE_EXEC_FAIL to hit exec_fail counter limit",
+          "last_location_result": {
+            "ok": false,
+            "error": "testSM injected MOVE_EXEC_FAIL to hit exec_fail counter limit"
+          }
+        }
+      }
+    },
+    {
+      "ts": "2026-06-12-13:04:05",
+      "phase": "on_report_received",
+      "detail": "called m8mobility.on_report_received",
+      "extra": {
+        "state": "s7stopped",
+        "status": "stopped",
+        "detail": "MOVE_EXEC_FAIL sum=2"
+      }
+    }
+  ],
+  "snapshots": {
+    "PRE": {
+      "ts": "2026-06-12-13:04:05",
+      "state": {
+        "outgoing_command_args_json": "",
+        "mobility_ready_reason": "pose solved at registration",
+        "mobility_ready": "true",
+        "retry_count": "1",
+        "pending_sequence_reason": "",
+        "outgoing_command_source": "",
+        "state": "s7stopped",
+        "busy_count": "0",
+        "correction_attempt_count": "-1",
+        "state_detail": "MOVE_EXEC_FAIL sum=2",
+        "outgoing_command_updated_at": "",
+        "last_error_code": "MOVE_EXEC_FAIL",
+        "exec_fail_count": "2",
+        "last_mobility_report_process_at": "2026-06-10-13:53:27",
+        "outgoing_command_action": "",
+        "state_updated_at": "2026-06-12-12:50:36",
+        "stop_reason": "MOVE_EXEC_FAIL sum=2",
+        "stop_experiment": "true",
+        "s2_entry_reason": "",
+        "need_location_retry": "false",
+        "collision_veto_count": "0",
+        "last_mobility_report_process_result_json": "{\"state\": \"s0idle\", \"status\": \"ok\", \"detail\": \"correction limit reached (1)\", \"error\": {\"dx_m\": -0.17240807272030167, \"dy_m\": -0.0242531167661848, \"dpos_m\": 0.1741055921330588, \"dhead_deg\": -1.9644348467386976}, \"pending_sequence\": []}",
+        "robot_safety_state": "UNSAFE_STOP",
+        "last_error_detail": "testSM injected MOVE_EXEC_FAIL to hit exec_fail counter limit",
+        "last_correction_issued_at": "2026-06-10-13:52:48",
+        "pending_sequence_json": "",
+        "pending_sequence_len": "0"
+      },
+      "time": {
+        "last_mobility_report_at": "2026-06-12-12:50:36",
+        "last_registration_mobility_report_at": "2026-06-12-12:40:38",
+        "true_location_updated_at": "2026-06-12-12:40:39",
+        "planned_location_updated_at": "2026-06-12-12:40:39",
+        "last_planned_command_issued_at": "2026-06-12-12:50:36",
+        "s1_timer_token": "",
+        "s1_timer_started_at": "",
+        "policy_updated_at": "2026-06-12-12:50:36",
+        "last_retry_requested_at": "2026-06-10-13:43:55",
+        "busy_retry_token": "",
+        "busy_retry_started_at": ""
+      },
+      "pose": {
+        "planned_location_json": "{\"location_ok\": true, \"x_m\": 4.921333600243375, \"y_m\": 2.1061959536085473, \"heading_deg\": 274.19489182863117, \"source\": \"registration\", \"updated_at\": \"2026-06-12-12:40:38\"}",
+        "last_planned_command_action": "mobility.turn_move_turn.forward",
+        "last_planned_command_args_json": "{\"pre_angle\": 0.0, \"distance_m\": 0.2, \"post_angle\": 0.0}",
+        "true_location_json": "{\"location_ok\": true, \"x_m\": 4.921333600243375, \"y_m\": 2.1061959536085473, \"heading_deg\": 274.19489182863117, \"source\": \"registration\", \"tags_used\": [47, 48, 49, 50, 35, 36], \"tag_count\": 6, \"solver_stage\": \"best_effort_fusion\", \"updated_at\": \"2026-06-12-12:40:38\", \"detail\": \"4 soft outlier(s) kept in fusion\", \"candidates\": [{\"tag_id\": 47, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.550653564669309, \"y_m\": 2.188048465785546, \"heading_deg\": 263.7943, \"distance_m\": 2.8849, \"angle_deg_cw\": 37.4264, \"yaw_deg\": 43.6321, \"bearing_robot_deg_ccw\": -37.4264, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.2057}, {\"tag_id\": 48, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 3.896636301239012, \"y_m\": 2.1258834771630477, \"heading_deg\": 307.3555, \"distance_m\": 2.1167, \"angle_deg_cw\": 20.5111, \"yaw_deg\": -16.8444, \"bearing_robot_deg_ccw\": -20.5111, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -37.3555}, {\"tag_id\": 49, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.421353718854504, \"y_m\": 2.149199782982746, \"heading_deg\": 263.7375, \"distance_m\": 2.0494, \"angle_deg_cw\": -7.0634, \"yaw_deg\": -0.8009, \"bearing_robot_deg_ccw\": 7.0634000000000015, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.262499999999999}, {\"tag_id\": 50, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 4.6745396938836, \"y_m\": 2.11370477106814, \"heading_deg\": 282.7583, \"distance_m\": 2.5106, \"angle_deg_cw\": -30.6561, \"yaw_deg\": -43.4144, \"bearing_robot_deg_ccw\": 30.65610000000001, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -12.758300000000002}, {\"tag_id\": 35, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 5.467956672807339, \"y_m\": 2.0563633057901836, \"heading_deg\": 276.5703, \"distance_m\": 3.1438, \"angle_deg_cw\": 7.1543, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": 172.84569999999997, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": -6.5703000000000005}, {\"tag_id\": 36, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 4.512728823005065, \"y_m\": 2.0645389849774842, \"heading_deg\": 257.4108, \"distance_m\": 2.6756, \"angle_deg_cw\": -12.0052, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": -167.9948, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": 12.5892}], \"used_candidates\": [{\"tag_id\": 47, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.550653564669309, \"y_m\": 2.188048465785546, \"heading_deg\": 263.7943, \"distance_m\": 2.8849, \"angle_deg_cw\": 37.4264, \"yaw_deg\": 43.6321, \"bearing_robot_deg_ccw\": -37.4264, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.2057, \"position_residual_m\": 0.6346207145805635, \"heading_residual_deg\": 10.40059182863115, \"weight\": 0.09908877707012098}, {\"tag_id\": 48, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 3.896636301239012, \"y_m\": 2.1258834771630477, \"heading_deg\": 307.3555, \"distance_m\": 2.1167, \"angle_deg_cw\": 20.5111, \"yaw_deg\": -16.8444, \"bearing_robot_deg_ccw\": -20.5111, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -37.3555, \"position_residual_m\": 1.0248864098867472, \"heading_residual_deg\": 33.160608171368835, \"weight\": 0.37404780376602054}, {\"tag_id\": 49, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.421353718854504, \"y_m\": 2.149199782982746, \"heading_deg\": 263.7375, \"distance_m\": 2.0494, \"angle_deg_cw\": -7.0634, \"yaw_deg\": -0.8009, \"bearing_robot_deg_ccw\": 7.0634000000000015, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.262499999999999, \"position_residual_m\": 0.5018659665256578, \"heading_residual_deg\": 10.45739182863116, \"weight\": 0.5888877574138255}, {\"tag_id\": 50, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 4.6745396938836, \"y_m\": 2.11370477106814, \"heading_deg\": 282.7583, \"distance_m\": 2.5106, \"angle_deg_cw\": -30.6561, \"yaw_deg\": -43.4144, \"bearing_robot_deg_ccw\": 30.65610000000001, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -12.758300000000002, \"position_residual_m\": 0.24690810953866804, \"heading_residual_deg\": 8.563408171368849, \"weight\": 0.201171277029771}, {\"tag_id\": 35, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 5.467956672807339, \"y_m\": 2.0563633057901836, \"heading_deg\": 276.5703, \"distance_m\": 3.1438, \"angle_deg_cw\": 7.1543, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": 172.84569999999997, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": -6.5703000000000005, \"position_residual_m\": 0.5488898580296941, \"heading_residual_deg\": 2.375408171368804, \"weight\": 0.47432560993233375}, {\"tag_id\": 36, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 4.512728823005065, \"y_m\": 2.0645389849774842, \"heading_deg\": 257.4108, \"distance_m\": 2.6756, \"angle_deg_cw\": -12.0052, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": -167.9948, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": 12.5892, \"position_residual_m\": 0.410722737400181, \"heading_residual_deg\": 16.784091828631176, \"weight\": 0.448252161864785}], \"hard_outliers\": [], \"soft_outliers\": [{\"tag_id\": 47, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.550653564669309, \"y_m\": 2.188048465785546, \"heading_deg\": 263.7943, \"distance_m\": 2.8849, \"angle_deg_cw\": 37.4264, \"yaw_deg\": 43.6321, \"bearing_robot_deg_ccw\": -37.4264, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.2057, \"position_residual_m\": 0.6346207145805635, \"heading_residual_deg\": 10.40059182863115, \"weight\": 0.09908877707012098}, {\"tag_id\": 48, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 3.896636301239012, \"y_m\": 2.1258834771630477, \"heading_deg\": 307.3555, \"distance_m\": 2.1167, \"angle_deg_cw\": 20.5111, \"yaw_deg\": -16.8444, \"bearing_robot_deg_ccw\": -20.5111, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -37.3555, \"position_residual_m\": 1.0248864098867472, \"heading_residual_deg\": 33.160608171368835, \"weight\": 0.37404780376602054}, {\"tag_id\": 49, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.421353718854504, \"y_m\": 2.149199782982746, \"heading_deg\": 263.7375, \"distance_m\": 2.0494, \"angle_deg_cw\": -7.0634, \"yaw_deg\": -0.8009, \"bearing_robot_deg_ccw\": 7.0634000000000015, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.262499999999999, \"position_residual_m\": 0.5018659665256578, \"heading_residual_deg\": 10.45739182863116, \"weight\": 0.5888877574138255}, {\"tag_id\": 35, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 5.467956672807339, \"y_m\": 2.0563633057901836, \"heading_deg\": 276.5703, \"distance_m\": 3.1438, \"angle_deg_cw\": 7.1543, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": 172.84569999999997, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": -6.5703000000000005, \"position_residual_m\": 0.5488898580296941, \"heading_residual_deg\": 2.375408171368804, \"weight\": 0.47432560993233375}]}"
+      },
+      "report": {
+        "last_command": "mobility.turn_move_turn.forward",
+        "last_command_args": {
+          "pre_angle": 0.0,
+          "distance_m": 0.2,
+          "post_angle": 0.0
+        },
+        "last_command_received_ts": 1781239836.3843055,
+        "last_command_finished_ts": 1781239836.3843055,
+        "last_exec_status": "failed",
+        "last_error_code": "MOVE_EXEC_FAIL",
+        "last_error_detail": "testSM injected MOVE_EXEC_FAIL to hit exec_fail counter limit",
+        "last_location_result": {
+          "ok": false,
+          "error": "testSM injected MOVE_EXEC_FAIL to hit exec_fail counter limit"
+        }
+      },
+      "cmd_stream": {
+        "key": "nms:cmd:twin-scout-delta",
+        "len": 0,
+        "newest_actions": []
+      }
+    },
+    "SEEDED": {
+      "ts": "2026-06-12-13:04:05",
+      "state": {
+        "outgoing_command_args_json": "{\"pre_angle\": 0.0, \"distance_m\": 0.2, \"post_angle\": 0.0}",
+        "mobility_ready_reason": "pose solved at registration",
+        "mobility_ready": "true",
+        "retry_count": "0",
+        "pending_sequence_reason": "",
+        "outgoing_command_source": "testSM.F2.seeded_expected_command",
+        "state": "s1waiting_report",
+        "busy_count": "0",
+        "correction_attempt_count": "-1",
+        "state_detail": "testSM F2 seeded S1: exec_fail_count at limit-1",
+        "outgoing_command_updated_at": "2026-06-12-13:04:05",
+        "last_error_code": "",
+        "exec_fail_count": "1",
+        "last_mobility_report_process_at": "2026-06-10-13:53:27",
+        "outgoing_command_action": "mobility.turn_move_turn.forward",
+        "state_updated_at": "2026-06-12-12:50:36",
+        "stop_reason": "",
+        "stop_experiment": "false",
+        "s2_entry_reason": "",
+        "need_location_retry": "false",
+        "collision_veto_count": "0",
+        "last_mobility_report_process_result_json": "{\"state\": \"s0idle\", \"status\": \"ok\", \"detail\": \"correction limit reached (1)\", \"error\": {\"dx_m\": -0.17240807272030167, \"dy_m\": -0.0242531167661848, \"dpos_m\": 0.1741055921330588, \"dhead_deg\": -1.9644348467386976}, \"pending_sequence\": []}",
+        "robot_safety_state": "NORMAL",
+        "last_error_detail": "",
+        "last_correction_issued_at": "2026-06-10-13:52:48",
+        "pending_sequence_json": "",
+        "pending_sequence_len": "0"
+      },
+      "time": {
+        "last_mobility_report_at": "2026-06-12-13:04:05",
+        "last_registration_mobility_report_at": "2026-06-12-12:40:38",
+        "true_location_updated_at": "2026-06-12-12:40:39",
+        "planned_location_updated_at": "2026-06-12-12:40:39",
+        "last_planned_command_issued_at": "2026-06-12-13:04:05",
+        "s1_timer_token": "testSM-F2-no-real-timer",
+        "s1_timer_started_at": "2026-06-12-13:04:05",
+        "policy_updated_at": "2026-06-12-12:50:36",
+        "last_retry_requested_at": "2026-06-10-13:43:55",
+        "busy_retry_token": "",
+        "busy_retry_started_at": ""
+      },
+      "pose": {
+        "planned_location_json": "{\"location_ok\": true, \"x_m\": 4.921333600243375, \"y_m\": 2.1061959536085473, \"heading_deg\": 274.19489182863117, \"source\": \"registration\", \"updated_at\": \"2026-06-12-12:40:38\"}",
+        "last_planned_command_action": "mobility.turn_move_turn.forward",
+        "last_planned_command_args_json": "{\"pre_angle\": 0.0, \"distance_m\": 0.2, \"post_angle\": 0.0}",
+        "true_location_json": "{\"location_ok\": true, \"x_m\": 4.921333600243375, \"y_m\": 2.1061959536085473, \"heading_deg\": 274.19489182863117, \"source\": \"registration\", \"tags_used\": [47, 48, 49, 50, 35, 36], \"tag_count\": 6, \"solver_stage\": \"best_effort_fusion\", \"updated_at\": \"2026-06-12-12:40:38\", \"detail\": \"4 soft outlier(s) kept in fusion\", \"candidates\": [{\"tag_id\": 47, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.550653564669309, \"y_m\": 2.188048465785546, \"heading_deg\": 263.7943, \"distance_m\": 2.8849, \"angle_deg_cw\": 37.4264, \"yaw_deg\": 43.6321, \"bearing_robot_deg_ccw\": -37.4264, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.2057}, {\"tag_id\": 48, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 3.896636301239012, \"y_m\": 2.1258834771630477, \"heading_deg\": 307.3555, \"distance_m\": 2.1167, \"angle_deg_cw\": 20.5111, \"yaw_deg\": -16.8444, \"bearing_robot_deg_ccw\": -20.5111, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -37.3555}, {\"tag_id\": 49, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.421353718854504, \"y_m\": 2.149199782982746, \"heading_deg\": 263.7375, \"distance_m\": 2.0494, \"angle_deg_cw\": -7.0634, \"yaw_deg\": -0.8009, \"bearing_robot_deg_ccw\": 7.0634000000000015, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.262499999999999}, {\"tag_id\": 50, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 4.6745396938836, \"y_m\": 2.11370477106814, \"heading_deg\": 282.7583, \"distance_m\": 2.5106, \"angle_deg_cw\": -30.6561, \"yaw_deg\": -43.4144, \"bearing_robot_deg_ccw\": 30.65610000000001, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -12.758300000000002}, {\"tag_id\": 35, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 5.467956672807339, \"y_m\": 2.0563633057901836, \"heading_deg\": 276.5703, \"distance_m\": 3.1438, \"angle_deg_cw\": 7.1543, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": 172.84569999999997, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": -6.5703000000000005}, {\"tag_id\": 36, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 4.512728823005065, \"y_m\": 2.0645389849774842, \"heading_deg\": 257.4108, \"distance_m\": 2.6756, \"angle_deg_cw\": -12.0052, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": -167.9948, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": 12.5892}], \"used_candidates\": [{\"tag_id\": 47, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.550653564669309, \"y_m\": 2.188048465785546, \"heading_deg\": 263.7943, \"distance_m\": 2.8849, \"angle_deg_cw\": 37.4264, \"yaw_deg\": 43.6321, \"bearing_robot_deg_ccw\": -37.4264, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.2057, \"position_residual_m\": 0.6346207145805635, \"heading_residual_deg\": 10.40059182863115, \"weight\": 0.09908877707012098}, {\"tag_id\": 48, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 3.896636301239012, \"y_m\": 2.1258834771630477, \"heading_deg\": 307.3555, \"distance_m\": 2.1167, \"angle_deg_cw\": 20.5111, \"yaw_deg\": -16.8444, \"bearing_robot_deg_ccw\": -20.5111, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -37.3555, \"position_residual_m\": 1.0248864098867472, \"heading_residual_deg\": 33.160608171368835, \"weight\": 0.37404780376602054}, {\"tag_id\": 49, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.421353718854504, \"y_m\": 2.149199782982746, \"heading_deg\": 263.7375, \"distance_m\": 2.0494, \"angle_deg_cw\": -7.0634, \"yaw_deg\": -0.8009, \"bearing_robot_deg_ccw\": 7.0634000000000015, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.262499999999999, \"position_residual_m\": 0.5018659665256578, \"heading_residual_deg\": 10.45739182863116, \"weight\": 0.5888877574138255}, {\"tag_id\": 50, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 4.6745396938836, \"y_m\": 2.11370477106814, \"heading_deg\": 282.7583, \"distance_m\": 2.5106, \"angle_deg_cw\": -30.6561, \"yaw_deg\": -43.4144, \"bearing_robot_deg_ccw\": 30.65610000000001, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -12.758300000000002, \"position_residual_m\": 0.24690810953866804, \"heading_residual_deg\": 8.563408171368849, \"weight\": 0.201171277029771}, {\"tag_id\": 35, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 5.467956672807339, \"y_m\": 2.0563633057901836, \"heading_deg\": 276.5703, \"distance_m\": 3.1438, \"angle_deg_cw\": 7.1543, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": 172.84569999999997, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": -6.5703000000000005, \"position_residual_m\": 0.5488898580296941, \"heading_residual_deg\": 2.375408171368804, \"weight\": 0.47432560993233375}, {\"tag_id\": 36, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 4.512728823005065, \"y_m\": 2.0645389849774842, \"heading_deg\": 257.4108, \"distance_m\": 2.6756, \"angle_deg_cw\": -12.0052, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": -167.9948, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": 12.5892, \"position_residual_m\": 0.410722737400181, \"heading_residual_deg\": 16.784091828631176, \"weight\": 0.448252161864785}], \"hard_outliers\": [], \"soft_outliers\": [{\"tag_id\": 47, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.550653564669309, \"y_m\": 2.188048465785546, \"heading_deg\": 263.7943, \"distance_m\": 2.8849, \"angle_deg_cw\": 37.4264, \"yaw_deg\": 43.6321, \"bearing_robot_deg_ccw\": -37.4264, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.2057, \"position_residual_m\": 0.6346207145805635, \"heading_residual_deg\": 10.40059182863115, \"weight\": 0.09908877707012098}, {\"tag_id\": 48, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 3.896636301239012, \"y_m\": 2.1258834771630477, \"heading_deg\": 307.3555, \"distance_m\": 2.1167, \"angle_deg_cw\": 20.5111, \"yaw_deg\": -16.8444, \"bearing_robot_deg_ccw\": -20.5111, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -37.3555, \"position_residual_m\": 1.0248864098867472, \"heading_residual_deg\": 33.160608171368835, \"weight\": 0.37404780376602054}, {\"tag_id\": 49, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.421353718854504, \"y_m\": 2.149199782982746, \"heading_deg\": 263.7375, \"distance_m\": 2.0494, \"angle_deg_cw\": -7.0634, \"yaw_deg\": -0.8009, \"bearing_robot_deg_ccw\": 7.0634000000000015, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.262499999999999, \"position_residual_m\": 0.5018659665256578, \"heading_residual_deg\": 10.45739182863116, \"weight\": 0.5888877574138255}, {\"tag_id\": 35, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 5.467956672807339, \"y_m\": 2.0563633057901836, \"heading_deg\": 276.5703, \"distance_m\": 3.1438, \"angle_deg_cw\": 7.1543, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": 172.84569999999997, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": -6.5703000000000005, \"position_residual_m\": 0.5488898580296941, \"heading_residual_deg\": 2.375408171368804, \"weight\": 0.47432560993233375}]}"
+      },
+      "report": {
+        "last_command": "mobility.turn_move_turn.forward",
+        "last_command_args": {
+          "pre_angle": 0.0,
+          "distance_m": 0.2,
+          "post_angle": 0.0
+        },
+        "last_command_received_ts": 1781240645.8126893,
+        "last_command_finished_ts": 1781240645.8126893,
+        "last_exec_status": "failed",
+        "last_error_code": "MOVE_EXEC_FAIL",
+        "last_error_detail": "testSM injected MOVE_EXEC_FAIL to hit exec_fail counter limit",
+        "last_location_result": {
+          "ok": false,
+          "error": "testSM injected MOVE_EXEC_FAIL to hit exec_fail counter limit"
+        }
+      },
+      "cmd_stream": {
+        "key": "nms:cmd:twin-scout-delta",
+        "len": 0,
+        "newest_actions": []
+      }
+    },
+    "FINAL": {
+      "ts": "2026-06-12-13:04:05",
+      "state": {
+        "outgoing_command_args_json": "",
+        "mobility_ready_reason": "pose solved at registration",
+        "mobility_ready": "true",
+        "retry_count": "1",
+        "pending_sequence_reason": "",
+        "outgoing_command_source": "",
+        "state": "s7stopped",
+        "busy_count": "0",
+        "correction_attempt_count": "-1",
+        "state_detail": "MOVE_EXEC_FAIL sum=2",
+        "outgoing_command_updated_at": "",
+        "last_error_code": "MOVE_EXEC_FAIL",
+        "exec_fail_count": "2",
+        "last_mobility_report_process_at": "2026-06-10-13:53:27",
+        "outgoing_command_action": "",
+        "state_updated_at": "2026-06-12-13:04:05",
+        "stop_reason": "MOVE_EXEC_FAIL sum=2",
+        "stop_experiment": "true",
+        "s2_entry_reason": "",
+        "need_location_retry": "false",
+        "collision_veto_count": "0",
+        "last_mobility_report_process_result_json": "{\"state\": \"s0idle\", \"status\": \"ok\", \"detail\": \"correction limit reached (1)\", \"error\": {\"dx_m\": -0.17240807272030167, \"dy_m\": -0.0242531167661848, \"dpos_m\": 0.1741055921330588, \"dhead_deg\": -1.9644348467386976}, \"pending_sequence\": []}",
+        "robot_safety_state": "UNSAFE_STOP",
+        "last_error_detail": "testSM injected MOVE_EXEC_FAIL to hit exec_fail counter limit",
+        "last_correction_issued_at": "2026-06-10-13:52:48",
+        "pending_sequence_json": "",
+        "pending_sequence_len": "0"
+      },
+      "time": {
+        "last_mobility_report_at": "2026-06-12-13:04:05",
+        "last_registration_mobility_report_at": "2026-06-12-12:40:38",
+        "true_location_updated_at": "2026-06-12-12:40:39",
+        "planned_location_updated_at": "2026-06-12-12:40:39",
+        "last_planned_command_issued_at": "2026-06-12-13:04:05",
+        "s1_timer_token": "",
+        "s1_timer_started_at": "",
+        "policy_updated_at": "2026-06-12-13:04:05",
+        "last_retry_requested_at": "2026-06-10-13:43:55",
+        "busy_retry_token": "",
+        "busy_retry_started_at": ""
+      },
+      "pose": {
+        "planned_location_json": "{\"location_ok\": true, \"x_m\": 4.921333600243375, \"y_m\": 2.1061959536085473, \"heading_deg\": 274.19489182863117, \"source\": \"registration\", \"updated_at\": \"2026-06-12-12:40:38\"}",
+        "last_planned_command_action": "mobility.turn_move_turn.forward",
+        "last_planned_command_args_json": "{\"pre_angle\": 0.0, \"distance_m\": 0.2, \"post_angle\": 0.0}",
+        "true_location_json": "{\"location_ok\": true, \"x_m\": 4.921333600243375, \"y_m\": 2.1061959536085473, \"heading_deg\": 274.19489182863117, \"source\": \"registration\", \"tags_used\": [47, 48, 49, 50, 35, 36], \"tag_count\": 6, \"solver_stage\": \"best_effort_fusion\", \"updated_at\": \"2026-06-12-12:40:38\", \"detail\": \"4 soft outlier(s) kept in fusion\", \"candidates\": [{\"tag_id\": 47, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.550653564669309, \"y_m\": 2.188048465785546, \"heading_deg\": 263.7943, \"distance_m\": 2.8849, \"angle_deg_cw\": 37.4264, \"yaw_deg\": 43.6321, \"bearing_robot_deg_ccw\": -37.4264, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.2057}, {\"tag_id\": 48, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 3.896636301239012, \"y_m\": 2.1258834771630477, \"heading_deg\": 307.3555, \"distance_m\": 2.1167, \"angle_deg_cw\": 20.5111, \"yaw_deg\": -16.8444, \"bearing_robot_deg_ccw\": -20.5111, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -37.3555}, {\"tag_id\": 49, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.421353718854504, \"y_m\": 2.149199782982746, \"heading_deg\": 263.7375, \"distance_m\": 2.0494, \"angle_deg_cw\": -7.0634, \"yaw_deg\": -0.8009, \"bearing_robot_deg_ccw\": 7.0634000000000015, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.262499999999999}, {\"tag_id\": 50, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 4.6745396938836, \"y_m\": 2.11370477106814, \"heading_deg\": 282.7583, \"distance_m\": 2.5106, \"angle_deg_cw\": -30.6561, \"yaw_deg\": -43.4144, \"bearing_robot_deg_ccw\": 30.65610000000001, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -12.758300000000002}, {\"tag_id\": 35, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 5.467956672807339, \"y_m\": 2.0563633057901836, \"heading_deg\": 276.5703, \"distance_m\": 3.1438, \"angle_deg_cw\": 7.1543, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": 172.84569999999997, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": -6.5703000000000005}, {\"tag_id\": 36, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 4.512728823005065, \"y_m\": 2.0645389849774842, \"heading_deg\": 257.4108, \"distance_m\": 2.6756, \"angle_deg_cw\": -12.0052, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": -167.9948, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": 12.5892}], \"used_candidates\": [{\"tag_id\": 47, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.550653564669309, \"y_m\": 2.188048465785546, \"heading_deg\": 263.7943, \"distance_m\": 2.8849, \"angle_deg_cw\": 37.4264, \"yaw_deg\": 43.6321, \"bearing_robot_deg_ccw\": -37.4264, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.2057, \"position_residual_m\": 0.6346207145805635, \"heading_residual_deg\": 10.40059182863115, \"weight\": 0.09908877707012098}, {\"tag_id\": 48, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 3.896636301239012, \"y_m\": 2.1258834771630477, \"heading_deg\": 307.3555, \"distance_m\": 2.1167, \"angle_deg_cw\": 20.5111, \"yaw_deg\": -16.8444, \"bearing_robot_deg_ccw\": -20.5111, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -37.3555, \"position_residual_m\": 1.0248864098867472, \"heading_residual_deg\": 33.160608171368835, \"weight\": 0.37404780376602054}, {\"tag_id\": 49, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.421353718854504, \"y_m\": 2.149199782982746, \"heading_deg\": 263.7375, \"distance_m\": 2.0494, \"angle_deg_cw\": -7.0634, \"yaw_deg\": -0.8009, \"bearing_robot_deg_ccw\": 7.0634000000000015, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.262499999999999, \"position_residual_m\": 0.5018659665256578, \"heading_residual_deg\": 10.45739182863116, \"weight\": 0.5888877574138255}, {\"tag_id\": 50, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 4.6745396938836, \"y_m\": 2.11370477106814, \"heading_deg\": 282.7583, \"distance_m\": 2.5106, \"angle_deg_cw\": -30.6561, \"yaw_deg\": -43.4144, \"bearing_robot_deg_ccw\": 30.65610000000001, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -12.758300000000002, \"position_residual_m\": 0.24690810953866804, \"heading_residual_deg\": 8.563408171368849, \"weight\": 0.201171277029771}, {\"tag_id\": 35, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 5.467956672807339, \"y_m\": 2.0563633057901836, \"heading_deg\": 276.5703, \"distance_m\": 3.1438, \"angle_deg_cw\": 7.1543, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": 172.84569999999997, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": -6.5703000000000005, \"position_residual_m\": 0.5488898580296941, \"heading_residual_deg\": 2.375408171368804, \"weight\": 0.47432560993233375}, {\"tag_id\": 36, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 4.512728823005065, \"y_m\": 2.0645389849774842, \"heading_deg\": 257.4108, \"distance_m\": 2.6756, \"angle_deg_cw\": -12.0052, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": -167.9948, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": 12.5892, \"position_residual_m\": 0.410722737400181, \"heading_residual_deg\": 16.784091828631176, \"weight\": 0.448252161864785}], \"hard_outliers\": [], \"soft_outliers\": [{\"tag_id\": 47, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.550653564669309, \"y_m\": 2.188048465785546, \"heading_deg\": 263.7943, \"distance_m\": 2.8849, \"angle_deg_cw\": 37.4264, \"yaw_deg\": 43.6321, \"bearing_robot_deg_ccw\": -37.4264, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.2057, \"position_residual_m\": 0.6346207145805635, \"heading_residual_deg\": 10.40059182863115, \"weight\": 0.09908877707012098}, {\"tag_id\": 48, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 3.896636301239012, \"y_m\": 2.1258834771630477, \"heading_deg\": 307.3555, \"distance_m\": 2.1167, \"angle_deg_cw\": 20.5111, \"yaw_deg\": -16.8444, \"bearing_robot_deg_ccw\": -20.5111, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": -37.3555, \"position_residual_m\": 1.0248864098867472, \"heading_residual_deg\": 33.160608171368835, \"weight\": 0.37404780376602054}, {\"tag_id\": 49, \"camera_role\": \"front\", \"camera_offset_deg\": 0.0, \"x_m\": 5.421353718854504, \"y_m\": 2.149199782982746, \"heading_deg\": 263.7375, \"distance_m\": 2.0494, \"angle_deg_cw\": -7.0634, \"yaw_deg\": -0.8009, \"bearing_robot_deg_ccw\": 7.0634000000000015, \"snapshot_path\": \"/tmp/location_front_1781239226280.jpg\", \"yaw_corrected_deg\": 6.262499999999999, \"position_residual_m\": 0.5018659665256578, \"heading_residual_deg\": 10.45739182863116, \"weight\": 0.5888877574138255}, {\"tag_id\": 35, \"camera_role\": \"rear\", \"camera_offset_deg\": 180.0, \"x_m\": 5.467956672807339, \"y_m\": 2.0563633057901836, \"heading_deg\": 276.5703, \"distance_m\": 3.1438, \"angle_deg_cw\": 7.1543, \"yaw_deg\": 0.584, \"bearing_robot_deg_ccw\": 172.84569999999997, \"snapshot_path\": \"/tmp/location_rear_1781239231182.jpg\", \"yaw_corrected_deg\": -6.5703000000000005, \"position_residual_m\": 0.5488898580296941, \"heading_residual_deg\": 2.375408171368804, \"weight\": 0.47432560993233375}]}"
+      },
+      "report": {
+        "last_command": "mobility.turn_move_turn.forward",
+        "last_command_args": {
+          "pre_angle": 0.0,
+          "distance_m": 0.2,
+          "post_angle": 0.0
+        },
+        "last_command_received_ts": 1781240645.8126893,
+        "last_command_finished_ts": 1781240645.8126893,
+        "last_exec_status": "failed",
+        "last_error_code": "MOVE_EXEC_FAIL",
+        "last_error_detail": "testSM injected MOVE_EXEC_FAIL to hit exec_fail counter limit",
+        "last_location_result": {
+          "ok": false,
+          "error": "testSM injected MOVE_EXEC_FAIL to hit exec_fail counter limit"
+        }
+      },
+      "cmd_stream": {
+        "key": "nms:cmd:twin-scout-delta",
+        "len": 0,
+        "newest_actions": []
+      }
+    }
+  }
+}
