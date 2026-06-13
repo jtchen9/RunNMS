@@ -13,7 +13,7 @@ import utility
 import m1Registry
 import m7Traffic
 import m8mobility
-from m8mobility_state_store import key_report, key_time, key_state
+from m8mobility_state_store import key_report, key_time, key_state, key_pose, _save_stop
 
 router = APIRouter()
 
@@ -516,6 +516,157 @@ def _register_experiment_status(
     }
 
 
+
+def _is_mobility_csv_row(row: Dict[str, Any]) -> bool:
+    return (row.get("category") or "").strip().lower() == "mobility"
+
+
+def _prepare_mobility_script_run_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Production preflight for script/CSV mobility runs.
+
+    Invariants before accepting a new mobility script:
+    - old global stop latch is cleared
+    - old scheduled mobility rows are cleared
+    - old per-robot command streams are cleared for scanners in this script
+    - per-robot mobility state is reset to S0/NORMAL
+    - stale planned pose and last-issued command mirrors are cleared
+    - first mobility row for each scanner must be mobility.report.location
+
+    Why first-row location is required:
+    mobility.report.location is now a precondition command.  Its report refreshes
+    true_location_json and S3 aligns planned_location_json=true_location_json.
+    Script movement commands then start from a well-defined pose.
+    """
+    scanner_first: Dict[str, Dict[str, Any]] = {}
+    mobility_scanners = set()
+
+    for row in rows:
+        scanner = (row.get("scanner") or "").strip()
+        if not scanner:
+            continue
+        if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
+            continue
+        if not _is_mobility_csv_row(row):
+            continue
+
+        action = (row.get("action") or "").strip()
+        try:
+            offset = int((row.get("t_offset_sec") or "0").strip())
+        except Exception:
+            offset = 0
+
+        mobility_scanners.add(scanner)
+        old = scanner_first.get(scanner)
+        if old is None or offset < int(old.get("offset", 0)):
+            scanner_first[scanner] = {"offset": offset, "action": action}
+
+    if not mobility_scanners:
+        return {
+            "mobility_preflight": "skipped",
+            "mobility_scanners": [],
+            "detail": "no mobility rows",
+        }
+
+    bad_first = {
+        scanner: info
+        for scanner, info in scanner_first.items()
+        if info.get("action") != "mobility.report.location"
+    }
+    if bad_first:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Mobility CSV script must start each scanner with "
+                "mobility.report.location at the earliest mobility offset. "
+                f"Bad first rows: {bad_first}"
+            ),
+        )
+
+    _save_stop(False, "")
+
+    old_mobility_len = 0
+    try:
+        old_mobility_len = int(config.r.xlen(config.KEY_MOBILITY_CMD_STREAM))
+    except Exception:
+        old_mobility_len = -1
+    config.r.delete(config.KEY_MOBILITY_CMD_STREAM)
+
+    reset_scanners = []
+    for scanner in sorted(mobility_scanners):
+        try:
+            config.r.delete(config.key_cmd_stream(scanner))
+        except Exception:
+            pass
+
+        utility._hset_many(
+            key_state(scanner),
+            {
+                "state": "s0idle",
+                "state_detail": "script-run preflight: reset before CSV",
+                "mobility_ready": "true",
+                "mobility_ready_reason": "script-run preflight",
+                "robot_safety_state": "NORMAL",
+                "stop_experiment": "false",
+                "stop_reason": "",
+                "need_location_retry": "false",
+                "retry_count": "0",
+                "busy_count": "0",
+                "collision_veto_count": "0",
+                "exec_fail_count": "0",
+                "correction_attempt_count": "-1",
+                "outgoing_command_action": "",
+                "outgoing_command_args_json": "",
+                "outgoing_command_source": "",
+                "outgoing_command_updated_at": "",
+                "pending_sequence_json": "",
+                "pending_sequence_len": "0",
+                "pending_sequence_reason": "",
+                "last_error_code": "",
+                "last_error_detail": "",
+                "s2_entry_reason": "",
+                "true_propagation_applied": "",
+                "true_propagation_detail": "",
+                "true_propagation_time": "",
+            },
+        )
+
+        utility._hset_many(
+            key_time(scanner),
+            {
+                "policy_updated_at": utility.local_ts(),
+                "s1_timer_token": "",
+                "s1_timer_started_at": "",
+                "busy_retry_token": "",
+                "busy_retry_started_at": "",
+                "last_planned_command_issued_at": "",
+                "planned_location_updated_at": "",
+            },
+        )
+
+        try:
+            config.r.hdel(
+                key_pose(scanner),
+                "planned_location_json",
+                "last_planned_command_action",
+                "last_planned_command_args_json",
+                "last_planned_command_source",
+                "last_planned_command_updated_at",
+            )
+        except Exception:
+            pass
+
+        reset_scanners.append(scanner)
+
+    return {
+        "mobility_preflight": "ok",
+        "mobility_scanners": reset_scanners,
+        "old_mobility_cmd_stream_len": old_mobility_len,
+        "detail": "cleared stop latch, old mobility schedule, robot command streams, stale planned pose",
+    }
+
+
+
 def _enqueue_script_or_csv_item(
     *,
     scanner: str,
@@ -983,11 +1134,14 @@ def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
     if not required_cols.issubset(set(reader.fieldnames or [])):
         raise HTTPException(status_code=400, detail=f"CSV must have columns: {sorted(list(required_cols))}")
 
+    rows = list(reader)
+    preflight = _prepare_mobility_script_run_from_rows(rows)
+
     added = 0
     skipped_not_whitelisted = 0
     bad_rows = 0
 
-    for row in reader:
+    for row in rows:
         scanner = (row.get("scanner") or "").strip()
         if not scanner:
             bad_rows += 1
@@ -1057,6 +1211,7 @@ def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
         "added": added,
         "skipped_not_whitelisted": skipped_not_whitelisted,
         "bad_rows": bad_rows,
+        "preflight": preflight,
         "experiment": exp,
     }
 
@@ -1103,11 +1258,14 @@ async def cmd_load_csv_file(
             detail=f"CSV must have columns: {sorted(list(required_cols))}"
         )
 
+    rows = list(reader)
+    preflight = _prepare_mobility_script_run_from_rows(rows)
+
     added = 0
     skipped_not_whitelisted = 0
     bad_rows = 0
 
-    for row in reader:
+    for row in rows:
         scanner = (row.get("scanner") or "").strip()
         if not scanner:
             bad_rows += 1
@@ -1179,5 +1337,6 @@ async def cmd_load_csv_file(
         "added": added,
         "skipped_not_whitelisted": skipped_not_whitelisted,
         "bad_rows": bad_rows,
+        "preflight": preflight,
         "experiment": exp,
     }

@@ -127,7 +127,45 @@ def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> 
         action, args = _normalize_mobility_command(action, args)
 
         # ---------------------------------------------------------
-        # Step 2: update planned location (script intent only)
+        # Step 2A: location precondition command
+        # ---------------------------------------------------------
+        # mobility.report.location is not a movement intent.  It must not
+        # advance planned_location_json and it must not trigger S5 correction
+        # from a stale planned pose.  It is used to refresh true_location_json;
+        # S3 will align planned=true when the location report is solved.
+        if action == "mobility.report.location":
+            _clear_pending_sequence(scanner)
+            _clear_outgoing_command_preview(scanner)
+            _reset_correction_counter(scanner)
+
+            _save_outgoing_command_preview(
+                scanner,
+                action=action,
+                args=args,
+                source="location_precondition",
+            )
+            issued_at = _save_last_issued_command(
+                scanner,
+                action=action,
+                args=args,
+            )
+
+            _set_state(scanner, S1_WAITING_REPORT, "location precondition issued")
+            _start_s1_timer(scanner)
+
+            return {
+                "state": S1_WAITING_REPORT,
+                "status": "ok",
+                "detail": "location precondition issued",
+                "issued_command": {
+                    "action": action,
+                    "args": args,
+                },
+                "issued_at": issued_at,
+            }
+
+        # ---------------------------------------------------------
+        # Step 2B: update planned location (script movement intent only)
         # ---------------------------------------------------------
         planned = _s0_init_planned(scanner)
         new_planned = _apply_mobility_command_to_pose(planned, action, args)
@@ -844,6 +882,10 @@ def _clear_s2_entry_reason(scanner: str) -> None:
     )
 
 
+def _last_issued_action(scanner: str) -> str:
+    return str(utility._hget(key_pose(scanner), "last_planned_command_action", "") or "").strip()
+
+
 # ===== s3solving_true_location =====
 
 def s3solving_true_location(scanner: str) -> Dict[str, Any]:
@@ -855,7 +897,62 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
     if loc.get("location_ok") is True:
         _s3_save_true_location(scanner, loc)
         _update_10s_report(scanner)
+
+        # A pure mobility.report.location command is a script-run precondition.
+        # After it solves the physical true pose, planned must be reset to
+        # that same pose.  Do not continue to S5, otherwise S5 may build a
+        # correction toward an old planned_location_json.
+        if _last_issued_action(scanner) == "mobility.report.location":
+            planned = {
+                "location_ok": True,
+                "x_m": float(loc["x_m"]),
+                "y_m": float(loc["y_m"]),
+                "heading_deg": utility._deg_norm_360(float(loc["heading_deg"])),
+            }
+            _save_planned(scanner, planned)
+            _clear_pending_sequence(scanner)
+            _clear_outgoing_command_preview(scanner)
+            _reset_correction_counter(scanner)
+            utility._hset_many(
+                key_state(scanner),
+                {
+                    "need_location_retry": "false",
+                    "retry_count": "0",
+                    "collision_veto_count": "0",
+                    "busy_count": "0",
+                    "exec_fail_count": "0",
+                    "stop_experiment": "false",
+                    "stop_reason": "",
+                    "robot_safety_state": "NORMAL",
+                    "last_error_code": "",
+                    "last_error_detail": "",
+                    "s2_entry_reason": "",
+                },
+            )
+            _set_state(scanner, S0_IDLE, "location precondition solved; planned=true")
+            return s0idle(scanner)
+
         _set_state(scanner, S5_COMPUTING_CORRECTION, "true location solved")
+        return run_state_machine(scanner)
+
+    # ---------------------------------------------------------
+    # Case B0: location precondition failed
+    # ---------------------------------------------------------
+    # A failed mobility.report.location must not propagate old true pose and
+    # must not continue to S5.  It should request a location retry.
+    if _last_issued_action(scanner) == "mobility.report.location":
+        detail = loc.get("detail", "location precondition failed")
+        utility._hset_many(
+            key_state(scanner),
+            {
+                "need_location_retry": "true",
+                "robot_safety_state": "LOCATION_RECOVERY_NEEDED",
+                "true_propagation_applied": "false",
+                "true_propagation_detail": detail,
+                "true_propagation_time": utility.local_ts(),
+            },
+        )
+        _set_state(scanner, S4_WAITING_LOCATION_RETRY, f"location precondition solve failed: {detail}")
         return run_state_machine(scanner)
 
     # ---------------------------------------------------------
