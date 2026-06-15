@@ -1075,20 +1075,54 @@ def cmd_load_script(script: ScriptLoad) -> Dict[str, Any]:
     except Exception:
         raise HTTPException(status_code=400, detail=f"Invalid t0; expected like '{utility.local_ts()}' (format {config.TIME_FMT})")
 
+    # Normalize JSON script items into the same row shape used by CSV loaders.
+    # This guarantees /cmd/_load_script, /cmd/_load_csv, and /cmd/_load_csv_file
+    # share the same mobility preflight, stop-latch clearing, queue clearing,
+    # stale planned-pose clearing, and first-row mobility.report.location rule.
+    rows: List[Dict[str, Any]] = []
+    for it in script.items:
+        rows.append({
+            "scanner": (it.scanner or "").strip(),
+            "t_offset_sec": str(int(it.t_offset_sec)),
+            "category": (it.category or "scan").strip() or "scan",
+            "action": (it.action or "").strip(),
+            "args_json": json.dumps(it.args or {}, ensure_ascii=False),
+        })
+
+    preflight = _prepare_mobility_script_run_from_rows(rows)
+
     added = 0
     skipped_not_whitelisted = 0
+    bad_rows = 0
 
     for it in script.items:
-        if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, (it.scanner or "").strip()):
+        scanner = (it.scanner or "").strip()
+        if not scanner:
+            bad_rows += 1
+            continue
+
+        if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
             skipped_not_whitelisted += 1
             continue
 
-        execute_at = (t0_dt + timedelta(seconds=int(it.t_offset_sec))).strftime(config.TIME_FMT)
+        try:
+            offset = int(it.t_offset_sec)
+        except Exception:
+            bad_rows += 1
+            continue
+
+        category = (it.category or "scan").strip() or "scan"
+        action = (it.action or "").strip()
+        if not action:
+            bad_rows += 1
+            continue
+
+        execute_at = (t0_dt + timedelta(seconds=offset)).strftime(config.TIME_FMT)
 
         _enqueue_script_or_csv_item(
-            scanner=it.scanner,
-            category=it.category,
-            action=it.action,
+            scanner=scanner,
+            category=category,
+            action=action,
             execute_at=execute_at,
             args=it.args or {},
         )
@@ -1115,8 +1149,10 @@ def cmd_load_script(script: ScriptLoad) -> Dict[str, Any]:
         "status": "ok",
         "added": added,
         "skipped_not_whitelisted": skipped_not_whitelisted,
+        "bad_rows": bad_rows,
         "t0": t0_dt.strftime(config.TIME_FMT),
         "time_format": config.TIME_FMT,
+        "preflight": preflight,
         "experiment": exp,
     }
 
