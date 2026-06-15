@@ -1046,26 +1046,15 @@ def _s3_solve_true_location(scanner: str) -> Dict[str, Any]:
 
 def _s3_extract_visible_tags(scanner: str) -> list[Dict[str, Any]]:
     """
-    New official parser for dual-camera robot reports.
+    Parse dual-camera observations from latest mobility report.
 
-    Accepted source:
-      last_location_result.apriltag.tags[]
+    AprilTag calibrated measurements are interpreted as measurements
+    at the camera center.
 
-    Required per tag:
-      id
-      camera_role: "front" or "rear"
-      calibrated_pose.distance_m
-      calibrated_pose.angle_deg
-      calibrated_pose.yaw_deg
-
-    Sign convention:
-      angle_deg > 0 means tag is on camera's right side.
-      NMS world math is CCW-positive, so bearing offset is -angle_deg.
-
-    Camera convention:
-      robot heading == front camera heading
-      rear camera heading == robot heading + 180 deg
+    Mechanical camera offsets are carried forward for later conversion
+    from camera position to robot-center position.
     """
+
     report = _load_report_json(scanner)
 
     loc = report.get("last_location_result") or {}
@@ -1080,44 +1069,75 @@ def _s3_extract_visible_tags(scanner: str) -> list[Dict[str, Any]]:
     if not isinstance(tags, list):
         return []
 
-    camera_offsets = {
-        "front": 0.0,
-        "rear": 180.0,
+    camera_cfg = {
+        "front": {
+            "heading_offset_deg": 0.0,
+            "forward_offset_m": 0.055,
+        },
+        "rear": {
+            "heading_offset_deg": 180.0,
+            "forward_offset_m": -0.055,
+        },
     }
 
     out = []
+
     for t in tags:
         if not isinstance(t, dict):
             continue
 
         try:
             camera_role = str(t.get("camera_role") or "").strip().lower()
-            if camera_role not in camera_offsets:
+            if camera_role not in camera_cfg:
                 continue
 
+            # KEEP calibrated_pose exactly as today
             pose = t.get("calibrated_pose") or {}
             if not isinstance(pose, dict):
                 continue
 
             angle_deg_cw = float(pose["angle_deg"])
-            camera_offset_deg = float(camera_offsets[camera_role])
 
             out.append({
                 "id": int(t["id"]),
+
                 "camera_role": camera_role,
-                "camera_offset_deg": camera_offset_deg,
-                "distance_m": float(pose["distance_m"]),
-                "angle_deg_cw": angle_deg_cw,
-                "yaw_deg": float(pose["yaw_deg"]),
-                "bearing_robot_deg_ccw": utility._wrap_angle_deg(camera_offset_deg - angle_deg_cw),
-                "snapshot_path": str(t.get("snapshot_path") or ""),
+
+                "camera_offset_deg":
+                    float(camera_cfg[camera_role]["heading_offset_deg"]),
+
+                "camera_forward_offset_m":
+                    float(camera_cfg[camera_role]["forward_offset_m"]),
+
+                "distance_m":
+                    float(pose["distance_m"]),
+
+                "angle_deg_cw":
+                    angle_deg_cw,
+
+                "yaw_deg":
+                    float(pose["yaw_deg"]),
+
+                "bearing_robot_deg_ccw":
+                    utility._wrap_angle_deg(
+                        float(camera_cfg[camera_role]["heading_offset_deg"])
+                        - angle_deg_cw
+                    ),
+
+                "snapshot_path":
+                    str(t.get("snapshot_path") or ""),
             })
+
         except Exception:
             continue
 
     return out
 
-def _s3_solve_single_tag(obs: Dict[str, Any], tag_world: Dict[str, Any]) -> Dict[str, Any]:
+def _s3_solve_single_tag(
+    obs: Dict[str, Any],
+    tag_world: Dict[str, Any]
+) -> Dict[str, Any]:
+
     tag_x = float(tag_world["x_m"])
     tag_y = float(tag_world["y_m"])
     tag_yaw_world = float(tag_world["yaw_deg"])
@@ -1125,44 +1145,96 @@ def _s3_solve_single_tag(obs: Dict[str, Any], tag_world: Dict[str, Any]) -> Dict
     distance_m = float(obs["distance_m"])
     angle_deg_cw = float(obs["angle_deg_cw"])
     yaw_deg = float(obs["yaw_deg"])
+
     camera_role = str(obs.get("camera_role") or "")
     camera_offset_deg = float(obs.get("camera_offset_deg") or 0.0)
 
-    # The old front-camera formula estimated camera heading.
-    # With two cameras:
-    #   front camera heading = robot heading
-    #   rear camera heading  = robot heading + 180
+    camera_forward_offset_m = float(
+        obs.get("camera_forward_offset_m") or 0.0
+    )
+
+    # ---------------------------------------------------------
+    # Solve robot heading
+    # ---------------------------------------------------------
+
     yaw_corrected_deg = yaw_deg - angle_deg_cw
 
     camera_heading_deg = utility._deg_norm_360(
         tag_yaw_world + 180.0 - yaw_corrected_deg
     )
-    robot_heading_deg = utility._deg_norm_360(camera_heading_deg - camera_offset_deg)
 
-    # Robot-frame bearing is CCW-positive:
-    #   front: -angle_cw
-    #   rear : 180 - angle_cw
-    bearing_robot_to_tag_deg_ccw = utility._wrap_angle_deg(camera_offset_deg - angle_deg_cw)
+    robot_heading_deg = utility._deg_norm_360(
+        camera_heading_deg - camera_offset_deg
+    )
 
-    world_bearing_deg = utility._deg_norm_360(robot_heading_deg + bearing_robot_to_tag_deg_ccw)
+    # ---------------------------------------------------------
+    # Bearing from robot toward tag
+    # ---------------------------------------------------------
+
+    bearing_robot_to_tag_deg_ccw = utility._wrap_angle_deg(
+        camera_offset_deg - angle_deg_cw
+    )
+
+    world_bearing_deg = utility._deg_norm_360(
+        robot_heading_deg + bearing_robot_to_tag_deg_ccw
+    )
+
     world_bearing_rad = utility._deg_to_rad(world_bearing_deg)
 
-    robot_x = tag_x - distance_m * math.cos(world_bearing_rad)
-    robot_y = tag_y - distance_m * math.sin(world_bearing_rad)
+    # ---------------------------------------------------------
+    # First solve CAMERA position
+    # ---------------------------------------------------------
+
+    camera_x = tag_x - distance_m * math.cos(world_bearing_rad)
+    camera_y = tag_y - distance_m * math.sin(world_bearing_rad)
+
+    # ---------------------------------------------------------
+    # Convert CAMERA position -> ROBOT CENTER position
+    # ---------------------------------------------------------
+
+    robot_heading_rad = utility._deg_to_rad(robot_heading_deg)
+
+    robot_x = (
+        camera_x
+        - camera_forward_offset_m * math.cos(robot_heading_rad)
+    )
+
+    robot_y = (
+        camera_y
+        - camera_forward_offset_m * math.sin(robot_heading_rad)
+    )
 
     return {
         "tag_id": int(obs["id"]),
+
         "camera_role": camera_role,
+
         "camera_offset_deg": camera_offset_deg,
+
+        "camera_forward_offset_m": camera_forward_offset_m,
+
+        "camera_x_m": camera_x,
+        "camera_y_m": camera_y,
+
         "x_m": robot_x,
         "y_m": robot_y,
+
         "heading_deg": robot_heading_deg,
+
         "distance_m": distance_m,
+
         "angle_deg_cw": angle_deg_cw,
+
         "yaw_deg": yaw_deg,
-        "bearing_robot_deg_ccw": bearing_robot_to_tag_deg_ccw,
-        "snapshot_path": str(obs.get("snapshot_path") or ""),
-        "yaw_corrected_deg": yaw_corrected_deg,
+
+        "bearing_robot_deg_ccw":
+            bearing_robot_to_tag_deg_ccw,
+
+        "snapshot_path":
+            str(obs.get("snapshot_path") or ""),
+
+        "yaw_corrected_deg":
+            yaw_corrected_deg,
     }
 
 def _s3_candidate_pos_distance(c0: Dict[str, Any], c1: Dict[str, Any]) -> float:
@@ -1193,7 +1265,6 @@ def _s3_candidate_weight(c: Dict[str, Any]) -> float:
 
     return float(angle_w * dist_w)
 
-
 def _s3_weighted_circular_mean_deg(vals: list[float], weights: list[float]) -> float:
     sx = 0.0
     sy = 0.0
@@ -1208,13 +1279,11 @@ def _s3_weighted_circular_mean_deg(vals: list[float], weights: list[float]) -> f
 
     return utility._deg_norm_360(math.degrees(math.atan2(sy, sx)))
 
-
 def _s3_weighted_mean(vals: list[float], weights: list[float]) -> float:
     wsum = sum(float(w) for w in weights)
     if wsum <= 0:
         return sum(float(v) for v in vals) / max(1, len(vals))
     return sum(float(v) * float(w) for v, w in zip(vals, weights)) / wsum
-
 
 def _s3_candidate_residuals(cands: list[Dict[str, Any]], x: float, y: float, h: float) -> list[Dict[str, Any]]:
     out = []
@@ -1224,7 +1293,6 @@ def _s3_candidate_residuals(cands: list[Dict[str, Any]], x: float, y: float, h: 
         d["heading_residual_deg"] = float(abs(_angle_diff_deg(float(c["heading_deg"]), h)))
         out.append(d)
     return out
-
 
 def _s3_fuse_candidates(cands: list[Dict[str, Any]]) -> Dict[str, Any]:
     """
