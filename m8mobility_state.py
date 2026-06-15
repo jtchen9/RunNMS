@@ -57,7 +57,8 @@ VALID_STATES = {
 
 # ===== policy thresholds =====
 
-LOCATION_RETRY_LIMIT = 2
+VISIBILITY_TURN_LIMIT = 1
+VISIBILITY_TURN_ANGLE_DEG = 90.0
 UNEXPECTED_EVENT_SUM_LIMIT = 2
 IMMEDIATE_STOP_ERROR_CODES = {
     "TOF_SENSOR_FAIL",
@@ -305,8 +306,11 @@ def process_s1_event(scanner: str, source: str, timer_token: Optional[str] = Non
                 state_hash,
                 {
                     "busy_count": str(new_busy_count),
-                    "need_location_retry": "true",
+                    "need_location_recovery": "true",
+                    "location_recovery_context": "accident",
+                    "location_recovery_phase": "need_report_location",
                     "robot_safety_state": "WAITING_LOCATION_RETRY",
+                    "need_location_retry": "false",
                     "state_detail": f"s1 timeout after {S1_REPORT_TIMEOUT_SEC}s",
                     "state_updated_at": utility.local_ts(),
                 },
@@ -572,36 +576,139 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
     last_error_detail = str(report.get("last_error_detail") or "").strip()
 
     state_hash = key_state(scanner)
-    old_retry_count = int(utility._hget(state_hash, "retry_count", "0") or "0")
     old_collision_veto_count = int(utility._hget(state_hash, "collision_veto_count", "0") or "0")
     old_busy_count = int(utility._hget(state_hash, "busy_count", "0") or "0")
     old_exec_fail_count = int(utility._hget(state_hash, "exec_fail_count", "0") or "0")
+    old_visibility_turn_count = int(utility._hget(state_hash, "visibility_turn_count", "0") or "0")
+    old_context = str(utility._hget(state_hash, "location_recovery_context", "") or "")
+    old_phase = str(utility._hget(state_hash, "location_recovery_phase", "") or "")
+    issued_source = _last_issued_source(scanner)
 
     out = {
         "last_error_code": last_error_code,
         "last_error_detail": last_error_detail[:300],
-        "need_location_retry": "false",
+        "need_location_recovery": "false",
+        "need_location_retry": "false",      # legacy cleared field
+        "retry_count": "0",                  # legacy cleared field
         "stop_experiment": "false",
         "stop_reason": "",
         "robot_safety_state": "NORMAL",
-        "retry_count": str(old_retry_count),
+        "visibility_turn_count": str(old_visibility_turn_count),
+        "location_recovery_context": old_context,
+        "location_recovery_phase": old_phase,
         "collision_veto_count": str(old_collision_veto_count),
         "busy_count": str(old_busy_count),
         "exec_fail_count": str(old_exec_fail_count),
     }
 
-    # Healthy path
-    if not last_error_code and last_exec_status.lower() in ("completed", "accepted", "ok", ""):
+    def recovery_exhausted_detail(code: str) -> Dict[str, Any]:
         out.update({
-            "need_location_retry": "false",
+            "need_location_recovery": "false",
+            "stop_experiment": "true",
+            "stop_reason": "LOCATION_RECOVERY_EXHAUSTED",
+            "robot_safety_state": "UNSAFE_STOP",
+            "location_recovery_phase": "failed",
+        })
+        utility._hset_many(state_hash, out)
+        _save_policy_time(scanner)
+        return {
+            "status": "stop",
+            "transition_to": S7_STOPPED,
+            "detail": f"{code}: location recovery exhausted after visibility_turn_count={old_visibility_turn_count}",
+        }
+
+    def mark_deadspot(code: str) -> Dict[str, Any]:
+        # A no-tag/location failure after a normal mobility command should not
+        # repeat report.location from the same heading.  S4 will issue exactly
+        # one +90-degree visibility turn if still available.
+        if issued_source == "location_recovery_visibility_turn" or old_phase == "after_visibility_turn" or old_visibility_turn_count >= VISIBILITY_TURN_LIMIT:
+            return recovery_exhausted_detail(code)
+
+        out.update({
+            "need_location_recovery": "true",
+            "location_recovery_context": "deadspot",
+            "location_recovery_phase": "need_visibility_turn",
+            "robot_safety_state": "LOCATION_RECOVERY_NEEDED",
+        })
+        utility._hset_many(state_hash, out)
+        _save_policy_time(scanner)
+        return {
+            "status": "retry",
+            "transition_to": S4_WAITING_LOCATION_RETRY,
+            "detail": f"{code}: deadspot recovery needs visibility turn",
+        }
+
+    def mark_accident(code: str, *, collision_veto_count: int, exec_fail_count: int, busy_count: int) -> Dict[str, Any]:
+        unexpected_sum = _unexpected_event_sum(
+            busy_count=busy_count,
+            collision_veto_count=collision_veto_count,
+            exec_fail_count=exec_fail_count,
+        )
+        if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT:
+            out.update({
+                "busy_count": str(busy_count),
+                "collision_veto_count": str(collision_veto_count),
+                "exec_fail_count": str(exec_fail_count),
+                "need_location_recovery": "false",
+                "stop_experiment": "true",
+                "stop_reason": "UNEXPECTED_EVENT_SUM_LIMIT",
+                "robot_safety_state": "UNSAFE_STOP",
+            })
+            utility._hset_many(state_hash, out)
+            _save_policy_time(scanner)
+            return {
+                "status": "stop",
+                "transition_to": S7_STOPPED,
+                "detail": f"{code} sum={unexpected_sum}",
+            }
+
+        out.update({
+            "busy_count": str(busy_count),
+            "collision_veto_count": str(collision_veto_count),
+            "exec_fail_count": str(exec_fail_count),
+            "need_location_recovery": "true",
+            "location_recovery_context": "accident",
+            "location_recovery_phase": "need_report_location",
             "stop_experiment": "false",
             "stop_reason": "",
-            "robot_safety_state": "NORMAL",
-            "retry_count": "0",
-            "collision_veto_count": "0",
-            "busy_count": "0",
-            "exec_fail_count": "0",
+            "robot_safety_state": "LOCATION_RECOVERY_NEEDED",
         })
+        utility._hset_many(state_hash, out)
+        _save_policy_time(scanner)
+        return {
+            "status": "retry",
+            "transition_to": S4_WAITING_LOCATION_RETRY,
+            "detail": f"{code} sum={unexpected_sum}; accident recovery needs report.location",
+        }
+
+    # Healthy path.
+    # Do not reset abnormal counters merely because a recovery report/turn is healthy;
+    # otherwise one accident followed by a successful diagnostic report would erase
+    # the safety history for the same transaction.
+    if not last_error_code and last_exec_status.lower() in ("completed", "accepted", "ok", ""):
+        if _is_location_recovery_source(issued_source):
+            out.update({
+                "need_location_recovery": "false",
+                "stop_experiment": "false",
+                "stop_reason": "",
+                "robot_safety_state": "NORMAL",
+                "busy_count": str(old_busy_count),
+                "collision_veto_count": str(old_collision_veto_count),
+                "exec_fail_count": str(old_exec_fail_count),
+            })
+        else:
+            out.update({
+                "need_location_recovery": "false",
+                "stop_experiment": "false",
+                "stop_reason": "",
+                "robot_safety_state": "NORMAL",
+                "visibility_turn_count": "0",
+                "location_recovery_context": "",
+                "location_recovery_phase": "",
+                "collision_veto_count": "0",
+                "busy_count": "0",
+                "exec_fail_count": "0",
+            })
         utility._hset_many(state_hash, out)
         _save_policy_time(scanner)
         return {
@@ -610,29 +717,16 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
             "detail": "healthy mobility report",
         }
 
-    # No-tag-visible path
-    # This is treated as normal operation for sparse-tag deployment.
-    # Allow S3 to decide whether propagation is safe.
+    # No-tag-visible path.
+    # New policy: do not treat this as normal sparse-tag propagation.
+    # It is a location failure that triggers the +90-degree visibility-turn path.
     if last_error_code in NO_TAG_OK_CODES:
-        out.update({
-            "need_location_retry": "false",
-            "stop_experiment": "false",
-            "stop_reason": "",
-            "robot_safety_state": "NORMAL_NO_TAG",
-            "retry_count": "0",
-        })
-        utility._hset_many(state_hash, out)
-        _save_policy_time(scanner)
-        return {
-            "status": "ok",
-            "transition_to": S3_SOLVING_TRUE_LOCATION,
-            "detail": f"{last_error_code}: continue to s3 for propagation decision",
-        }
+        return mark_deadspot(last_error_code)
 
     # Immediate stop
     if last_error_code in IMMEDIATE_STOP_ERROR_CODES:
         out.update({
-            "need_location_retry": "false",
+            "need_location_recovery": "false",
             "stop_experiment": "true",
             "stop_reason": last_error_code,
             "robot_safety_state": "UNSAFE_STOP",
@@ -657,7 +751,7 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
         if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT:
             out.update({
                 "busy_count": str(busy_count),
-                "need_location_retry": "false",
+                "need_location_recovery": "false",
                 "stop_experiment": "true",
                 "stop_reason": "UNEXPECTED_EVENT_SUM_LIMIT",
                 "robot_safety_state": "UNSAFE_STOP",
@@ -674,7 +768,7 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
 
         out.update({
             "busy_count": str(busy_count),
-            "need_location_retry": "false",
+            "need_location_recovery": "false",
             "stop_experiment": "false",
             "stop_reason": "",
             "robot_safety_state": "WAITING_PREVIOUS_MOTION",
@@ -693,64 +787,49 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
 
     # Collision vetoes
     if last_error_code in COLLISION_ERROR_CODES:
-        veto_count = old_collision_veto_count + 1
-        unexpected_sum = _unexpected_event_sum(
-            busy_count=old_busy_count,
-            collision_veto_count=veto_count,
+        return mark_accident(
+            last_error_code,
+            collision_veto_count=old_collision_veto_count + 1,
             exec_fail_count=old_exec_fail_count,
+            busy_count=old_busy_count,
         )
-
-        out.update({
-            "collision_veto_count": str(veto_count),
-            "need_location_retry": "true",
-            "stop_experiment": "true" if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT else "false",
-            "stop_reason": "UNEXPECTED_EVENT_SUM_LIMIT" if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT else "",
-            "robot_safety_state": "UNSAFE_STOP" if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT else "COLLISION_BLOCKED",
-        })
-        utility._hset_many(state_hash, out)
-        _save_policy_time(scanner)
-        return {
-            "status": "stop" if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT else "retry",
-            "transition_to": S7_STOPPED if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT else S4_WAITING_LOCATION_RETRY,
-            "detail": f"{last_error_code} sum={unexpected_sum}",
-        }
 
     # Recoverable failures
     if last_error_code in RECOVERABLE_ERROR_CODES:
-        retry_count = old_retry_count + 1
-        exec_fail_count = old_exec_fail_count
+        if last_error_code == "LOCATION_CAPTURE_FAIL":
+            # If report.location or a visibility turn was already part of recovery,
+            # then LOCATION_CAPTURE_FAIL means that recovery step failed.  S4 will
+            # either advance to the visibility turn or stop if the turn was already used.
+            if issued_source == "location_recovery_report":
+                out.update({
+                    "need_location_recovery": "true",
+                    "location_recovery_context": old_context or "accident",
+                    "location_recovery_phase": "need_visibility_turn",
+                    "robot_safety_state": "LOCATION_RECOVERY_NEEDED",
+                })
+                utility._hset_many(state_hash, out)
+                _save_policy_time(scanner)
+                return {
+                    "status": "retry",
+                    "transition_to": S4_WAITING_LOCATION_RETRY,
+                    "detail": "LOCATION_CAPTURE_FAIL after recovery report; needs visibility turn",
+                }
 
-        if last_error_code in ("MOVE_EXEC_FAIL", "TURN_EXEC_FAIL"):
-            exec_fail_count += 1
+            return mark_deadspot(last_error_code)
 
-        unexpected_sum = _unexpected_event_sum(
-            busy_count=old_busy_count,
+        # MOVE_EXEC_FAIL / TURN_EXEC_FAIL are abnormal motion-integrity failures.
+        exec_fail_count = old_exec_fail_count + 1
+        return mark_accident(
+            last_error_code,
             collision_veto_count=old_collision_veto_count,
             exec_fail_count=exec_fail_count,
+            busy_count=old_busy_count,
         )
 
-        stop = unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT
-
-        out.update({
-            "retry_count": str(retry_count),
-            "exec_fail_count": str(exec_fail_count),
-            "need_location_retry": "true",
-            "stop_experiment": "true" if stop else "false",
-            "stop_reason": "UNEXPECTED_EVENT_SUM_LIMIT" if stop else "",
-            "robot_safety_state": "UNSAFE_STOP" if stop else "LOCATION_RECOVERY_NEEDED",
-        })
-        utility._hset_many(state_hash, out)
-        _save_policy_time(scanner)
-        return {
-            "status": "stop" if stop else "retry",
-            "transition_to": S7_STOPPED if stop else S4_WAITING_LOCATION_RETRY,
-            "detail": f"{last_error_code} sum={unexpected_sum}",
-        }
-    
     # Unknown error code -> conservative stop
     if last_error_code:
         out.update({
-            "need_location_retry": "false",
+            "need_location_recovery": "false",
             "stop_experiment": "true",
             "stop_reason": f"UNKNOWN_ERROR_CODE:{last_error_code}",
             "robot_safety_state": "UNSAFE_STOP",
@@ -763,24 +842,13 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
             "detail": f"unknown error code {last_error_code}",
         }
 
-    # Strange status but no error code -> retry once
-    retry_count = old_retry_count + 1
-    stop = retry_count >= LOCATION_RETRY_LIMIT
-
-    out.update({
-        "retry_count": str(retry_count),
-        "need_location_retry": "true",
-        "stop_experiment": "true" if stop else "false",
-        "stop_reason": "STATUS_RETRY_EXCEEDED" if stop else "",
-        "robot_safety_state": "UNSAFE_STOP" if stop else "LOCATION_RECOVERY_NEEDED",
-    })
-    utility._hset_many(state_hash, out)
-    _save_policy_time(scanner)
-    return {
-        "status": "stop" if stop else "retry",
-        "transition_to": S7_STOPPED if stop else S4_WAITING_LOCATION_RETRY,
-        "detail": f"unexpected status '{last_exec_status}'",
-    }
+    # Strange status but no error code -> accident-style diagnostic recovery.
+    return mark_accident(
+        f"unexpected status '{last_exec_status}'",
+        collision_veto_count=old_collision_veto_count,
+        exec_fail_count=old_exec_fail_count,
+        busy_count=old_busy_count + 1,
+    )
 
 def _unexpected_event_sum(
     busy_count: int,
@@ -886,6 +954,69 @@ def _last_issued_action(scanner: str) -> str:
     return str(utility._hget(key_pose(scanner), "last_planned_command_action", "") or "").strip()
 
 
+def _last_issued_source(scanner: str) -> str:
+    return str(utility._hget(key_state(scanner), "outgoing_command_source", "") or "").strip()
+
+
+def _is_location_precondition_source(source: str) -> bool:
+    return source in (
+        "location_precondition",
+        "location_precondition_visibility_turn",
+    )
+
+
+def _is_location_recovery_source(source: str) -> bool:
+    return source in (
+        "location_recovery_report",
+        "location_recovery_visibility_turn",
+    )
+
+
+def _clear_location_recovery_fields(scanner: str) -> None:
+    utility._hset_many(
+        key_state(scanner),
+        {
+            "need_location_recovery": "false",
+            "location_recovery_context": "",
+            "location_recovery_phase": "",
+            "visibility_turn_count": "0",
+            "last_visibility_turn_angle_deg": "",
+            "last_location_recovery_action": "",
+            "last_location_recovery_args_json": "",
+            # Legacy fields retained only as cleared values during migration.
+            "need_location_retry": "false",
+            "retry_count": "0",
+        },
+    )
+
+
+def _set_location_recovery_needed(
+    scanner: str,
+    *,
+    context: str,
+    phase: str,
+    detail: str = "",
+) -> None:
+    utility._hset_many(
+        key_state(scanner),
+        {
+            "need_location_recovery": "true",
+            "location_recovery_context": str(context or ""),
+            "location_recovery_phase": str(phase or ""),
+            "robot_safety_state": "LOCATION_RECOVERY_NEEDED",
+            "last_location_recovery_detail": str(detail or "")[:300],
+            # Legacy fields retained only as cleared values during migration.
+            "need_location_retry": "false",
+        },
+    )
+
+
+def _latest_report_location_result_ok(scanner: str) -> bool:
+    report = _load_report_json(scanner)
+    loc = report.get("last_location_result") if isinstance(report, dict) else {}
+    return isinstance(loc, dict) and bool(loc.get("ok"))
+
+
 # ===== s3solving_true_location =====
 
 def s3solving_true_location(scanner: str) -> Dict[str, Any]:
@@ -898,11 +1029,13 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
         _s3_save_true_location(scanner, loc)
         _update_10s_report(scanner)
 
-        # A pure mobility.report.location command is a script-run precondition.
+        # A pure script-run mobility.report.location command is a precondition.
         # After it solves the physical true pose, planned must be reset to
-        # that same pose.  Do not continue to S5, otherwise S5 may build a
-        # correction toward an old planned_location_json.
-        if _last_issued_action(scanner) == "mobility.report.location":
+        # that same pose.  Recovery report.location is different: it refreshes
+        # true pose while planned remains the original target.
+        issued_source = _last_issued_source(scanner)
+
+        if _is_location_precondition_source(issued_source):
             planned = {
                 "location_ok": True,
                 "x_m": float(loc["x_m"]),
@@ -916,8 +1049,6 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
             utility._hset_many(
                 key_state(scanner),
                 {
-                    "need_location_retry": "false",
-                    "retry_count": "0",
                     "collision_veto_count": "0",
                     "busy_count": "0",
                     "exec_fail_count": "0",
@@ -929,30 +1060,51 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
                     "s2_entry_reason": "",
                 },
             )
+            _clear_location_recovery_fields(scanner)
             _set_state(scanner, S0_IDLE, "location precondition solved; planned=true")
             return s0idle(scanner)
+
+        # Recovery success: true pose is updated, but planned pose is deliberately
+        # left unchanged so S5 can correct from recovered true -> original planned.
+        if _is_location_recovery_source(issued_source):
+            utility._hset_many(
+                key_state(scanner),
+                {
+                    "need_location_recovery": "false",
+                    "location_recovery_phase": "solved",
+                    "robot_safety_state": "NORMAL",
+                },
+            )
 
         _set_state(scanner, S5_COMPUTING_CORRECTION, "true location solved")
         return run_state_machine(scanner)
 
     # ---------------------------------------------------------
-    # Case B0: location precondition failed
+    # Case B0: report.location failed
     # ---------------------------------------------------------
     # A failed mobility.report.location must not propagate old true pose and
-    # must not continue to S5.  It should request a location retry.
+    # must not continue to S5.  If it was an accident diagnostic report, S4
+    # may advance to the single visibility turn.  If it was a precondition,
+    # S4 may also use the same single visibility turn as a last location probe.
     if _last_issued_action(scanner) == "mobility.report.location":
-        detail = loc.get("detail", "location precondition failed")
+        detail = loc.get("detail", "location report failed")
+        issued_source = _last_issued_source(scanner)
+        context = "precondition" if _is_location_precondition_source(issued_source) else "accident"
+
         utility._hset_many(
             key_state(scanner),
             {
-                "need_location_retry": "true",
+                "need_location_recovery": "true",
+                "location_recovery_context": context,
+                "location_recovery_phase": "need_visibility_turn",
                 "robot_safety_state": "LOCATION_RECOVERY_NEEDED",
                 "true_propagation_applied": "false",
                 "true_propagation_detail": detail,
                 "true_propagation_time": utility.local_ts(),
+                "need_location_retry": "false",
             },
         )
-        _set_state(scanner, S4_WAITING_LOCATION_RETRY, f"location precondition solve failed: {detail}")
+        _set_state(scanner, S4_WAITING_LOCATION_RETRY, f"location report solve failed: {detail}")
         return run_state_machine(scanner)
 
     # ---------------------------------------------------------
@@ -960,7 +1112,11 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
     # If propagation succeeds, continue to S5 as well.
     # S3 no longer decides "done"; S5 owns that responsibility now.
     # ---------------------------------------------------------
-    if _propagation_allowed(scanner) and _should_propagate_true(scanner):
+    if (
+        _latest_report_location_result_ok(scanner)
+        and _propagation_allowed(scanner)
+        and _should_propagate_true(scanner)
+    ):
         propagated = _propagate_true_by_last_command(scanner)
         if _is_loc_ok(propagated):
             utility._hset_many(
@@ -981,6 +1137,8 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
     propagation_reason = loc.get("detail", "")
     if not _propagation_allowed(scanner):
         propagation_reason = f"{propagation_reason}; propagation disabled by unexpected-event history"
+    elif not _latest_report_location_result_ok(scanner):
+        propagation_reason = f"{propagation_reason}; latest location_result.ok is false"
     elif not _should_propagate_true(scanner):
         propagation_reason = f"{propagation_reason}; propagation precondition failed"
 
@@ -1479,12 +1637,15 @@ def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
     state_hash = key_state(scanner)
     time_hash = key_time(scanner)
 
-    retry_count = utility._to_int(utility._hget(state_hash, "retry_count", "0"), 0)
     stop_experiment = (utility._hget(state_hash, "stop_experiment", "false").lower() == "true")
     stop_reason = utility._hget(state_hash, "stop_reason", "")
-    need_location_retry = (utility._hget(state_hash, "need_location_retry", "false").lower() == "true")
+    need_location_recovery = (utility._hget(state_hash, "need_location_recovery", "false").lower() == "true")
 
-    # If policy already says stop, go straight to stopped
+    context = str(utility._hget(state_hash, "location_recovery_context", "") or "").strip()
+    phase = str(utility._hget(state_hash, "location_recovery_phase", "") or "").strip()
+    visibility_turn_count = utility._to_int(utility._hget(state_hash, "visibility_turn_count", "0"), 0)
+
+    # If policy already says stop, go straight to stopped.
     if stop_experiment:
         return {
             "status": "stop",
@@ -1492,27 +1653,27 @@ def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
             "detail": stop_reason or "policy requested stop",
         }
 
-    # If no retry is needed anymore, return to policy phase caller flow
-    if not need_location_retry:
+    # If no recovery is needed anymore, return to idle.
+    if not need_location_recovery:
         return {
             "status": "ok",
             "transition_to": S0_IDLE,
-            "detail": "no location retry needed",
+            "detail": "no location recovery needed",
         }
 
-    # Retry still allowed: issue mobility.report.location and wait for its report in S1
-    if retry_count < LOCATION_RETRY_LIMIT:
-        now_ts = utility.local_ts()
-        new_retry_count = retry_count + 1
+    now_ts = utility.local_ts()
 
+    # Accident path: first use a harmless report.location diagnostic probe
+    # before changing heading.  This does not consume visibility_turn_count.
+    if context in ("accident", "collision", "exec_failure", "timeout") and phase in ("", "need_report_location"):
         action = "mobility.report.location"
-        args = {}
+        args: Dict[str, Any] = {}
 
         _save_outgoing_command_preview(
             scanner,
             action=action,
             args=args,
-            source="location_retry",
+            source="location_recovery_report",
         )
 
         _save_last_issued_command(
@@ -1524,34 +1685,102 @@ def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
         utility._hset_many(
             state_hash,
             {
-                "retry_count": str(new_retry_count),
-                "need_location_retry": "false",
+                "need_location_recovery": "false",
+                "location_recovery_context": context or "accident",
+                "location_recovery_phase": "after_report_location",
                 "outgoing_command_action": action,
                 "outgoing_command_args_json": args,
-                "outgoing_command_source": "location_retry",
+                "outgoing_command_source": "location_recovery_report",
                 "outgoing_command_updated_at": now_ts,
+                "last_location_recovery_action": action,
+                "last_location_recovery_args_json": args,
             },
         )
 
         utility._hset_many(
             time_hash,
             {
-                "last_retry_requested_at": now_ts,
+                "last_location_recovery_requested_at": now_ts,
             },
         )
 
         return {
             "status": "retry",
             "transition_to": S1_WAITING_REPORT,
-            "detail": f"location retry issued, retry_count={new_retry_count}",
+            "detail": "accident recovery report.location issued",
             "last_retry_requested_at": now_ts,
         }
 
-    # Defensive fallback: retry exhausted -> stop
+    # Deadspot path and accident-after-report path:
+    # issue exactly one +90-degree visibility turn.
+    if phase in ("need_visibility_turn", "after_report_location") or context in ("deadspot", "precondition"):
+        if visibility_turn_count < VISIBILITY_TURN_LIMIT:
+            new_visibility_turn_count = visibility_turn_count + 1
+            action = "mobility.turn"
+            args = {"angle_deg": float(VISIBILITY_TURN_ANGLE_DEG)}
+
+            source = (
+                "location_precondition_visibility_turn"
+                if context == "precondition"
+                else "location_recovery_visibility_turn"
+            )
+
+            _save_outgoing_command_preview(
+                scanner,
+                action=action,
+                args=args,
+                source=source,
+            )
+
+            _save_last_issued_command(
+                scanner,
+                action=action,
+                args=args,
+            )
+
+            utility._hset_many(
+                state_hash,
+                {
+                    "need_location_recovery": "false",
+                    "location_recovery_context": context or "deadspot",
+                    "location_recovery_phase": "after_visibility_turn",
+                    "visibility_turn_count": str(new_visibility_turn_count),
+                    "last_visibility_turn_angle_deg": str(float(VISIBILITY_TURN_ANGLE_DEG)),
+                    "outgoing_command_action": action,
+                    "outgoing_command_args_json": args,
+                    "outgoing_command_source": source,
+                    "outgoing_command_updated_at": now_ts,
+                    "last_location_recovery_action": action,
+                    "last_location_recovery_args_json": args,
+                },
+            )
+
+            utility._hset_many(
+                time_hash,
+                {
+                    "last_location_recovery_requested_at": now_ts,
+                },
+            )
+
+            return {
+                "status": "retry",
+                "transition_to": S1_WAITING_REPORT,
+                "detail": f"visibility turn issued, visibility_turn_count={new_visibility_turn_count}",
+                "last_retry_requested_at": now_ts,
+            }
+
+        return {
+            "status": "stop",
+            "transition_to": S7_STOPPED,
+            "detail": f"location recovery exhausted, visibility_turn_count={visibility_turn_count}",
+        }
+
+    # If we arrive here after a visibility turn already failed, do not send
+    # report.location from the same heading.  The turn report already observed it.
     return {
         "status": "stop",
         "transition_to": S7_STOPPED,
-        "detail": "location retry exhausted",
+        "detail": f"location recovery exhausted in phase={phase}, context={context}",
     }
 
 
@@ -1893,6 +2122,7 @@ def s7stopped(scanner: str) -> Dict[str, Any]:
         key_state(scanner),
         {
             "s2_entry_reason": "",
+            "need_location_recovery": "false",
             "need_location_retry": "false",
             "stop_experiment": "true",
             "stop_reason": reason,

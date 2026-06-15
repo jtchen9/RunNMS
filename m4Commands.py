@@ -609,6 +609,14 @@ def _prepare_mobility_script_run_from_rows(rows: List[Dict[str, Any]]) -> Dict[s
                 "robot_safety_state": "NORMAL",
                 "stop_experiment": "false",
                 "stop_reason": "",
+                "need_location_recovery": "false",
+                "location_recovery_context": "",
+                "location_recovery_phase": "",
+                "visibility_turn_count": "0",
+                "last_visibility_turn_angle_deg": "",
+                "last_location_recovery_action": "",
+                "last_location_recovery_args_json": "",
+                "last_location_recovery_detail": "",
                 "need_location_retry": "false",
                 "retry_count": "0",
                 "busy_count": "0",
@@ -630,6 +638,16 @@ def _prepare_mobility_script_run_from_rows(rows: List[Dict[str, Any]]) -> Dict[s
                 "true_propagation_time": "",
             },
         )
+
+        try:
+            config.r.hdel(
+                key_state(scanner),
+                "need_location_retry",
+                "retry_count",
+            )
+        except Exception:
+            pass
+
 
         utility._hset_many(
             key_time(scanner),
