@@ -200,10 +200,97 @@ def _lookup_tag_world(tag_map: Dict[str, Any], tag_id: Any) -> Dict[str, Any]:
     return tags.get(str(tag_id)) if isinstance(tags.get(str(tag_id)), dict) else {}
 
 
+
+
+def _extract_raw_tag_measurements_from_report(report: Dict[str, Any]) -> Dict[tuple[int, str], Dict[str, Any]]:
+    """
+    Extract raw/library_pose, calibrated_pose, and image_geometry directly
+    from the robot mobility report.
+
+    This is intentionally separate from _s3_extract_visible_tags(), because
+    _s3_extract_visible_tags() only returns the production-calibrated values
+    used by the localization solver.  For calibration debugging we need both
+    raw and calibrated values side by side, especially for yaw sign/branch checks.
+    """
+    out: Dict[tuple[int, str], Dict[str, Any]] = {}
+
+    loc = report.get("last_location_result") or {}
+    if not isinstance(loc, dict):
+        return out
+
+    apr = loc.get("apriltag") or {}
+    if not isinstance(apr, dict):
+        return out
+
+    tags = apr.get("tags") or []
+    if not isinstance(tags, list):
+        return out
+
+    for t in tags:
+        if not isinstance(t, dict):
+            continue
+        try:
+            tag_id = int(t.get("id"))
+            camera_role = str(t.get("camera_role") or "").strip().lower()
+            if camera_role not in ("front", "rear"):
+                continue
+
+            lib = t.get("library_pose") or {}
+            cal = t.get("calibrated_pose") or {}
+            geo = t.get("image_geometry") or {}
+
+            out[(tag_id, camera_role)] = {
+                "tag_id": tag_id,
+                "camera_role": camera_role,
+                "library_pose": lib if isinstance(lib, dict) else {},
+                "calibrated_pose": cal if isinstance(cal, dict) else {},
+                "image_geometry": geo if isinstance(geo, dict) else {},
+                "snapshot_path": str(t.get("snapshot_path") or ""),
+            }
+        except Exception:
+            continue
+
+    return out
+
+
+def _yaw_branch_flag(true_yaw: Any, raw_yaw: Any, cal_yaw: Any) -> str:
+    """
+    Flag suspicious yaw behavior for on-site debugging.
+    The main case we want to catch is sign/branch flip, e.g.
+    true=-15 but raw/cal=+16.
+    """
+    try:
+        ty = float(true_yaw)
+        ry = float(raw_yaw)
+        cy = float(cal_yaw)
+    except Exception:
+        return "-"
+
+    # Ignore near-zero truth where sign is ambiguous / dead-zone may apply.
+    if abs(ty) < 8.0:
+        return "ZERO"
+
+    raw_flip = (ty * ry < 0.0) and abs(ry) > 8.0
+    cal_flip = (ty * cy < 0.0) and abs(cy) > 8.0
+
+    if raw_flip and cal_flip:
+        return "RAW+CAL_FLIP"
+    if raw_flip:
+        return "RAW_FLIP"
+    if cal_flip:
+        return "CAL_FLIP"
+
+    if abs(cy - ty) > 15.0:
+        return "BIG_ERR"
+
+    return "OK"
+
+
 def _make_tag_diagnostics(
     observations: list[Dict[str, Any]],
     estimate: Dict[str, Any],
     tag_map: Dict[str, Any],
+    raw_measurements: Dict[tuple[int, str], Dict[str, Any]],
 ) -> list[Dict[str, Any]]:
     """
     Build one compact diagnostic record per single-tag candidate.
@@ -252,6 +339,10 @@ def _make_tag_diagnostics(
 
         key = _candidate_key(c)
         obs = obs_by_key.get(key, {})
+        raw = raw_measurements.get(key, {}) if isinstance(raw_measurements, dict) else {}
+        lib_pose = raw.get("library_pose") or {}
+        cal_pose = raw.get("calibrated_pose") or {}
+        img_geo = raw.get("image_geometry") or {}
         tag_world = _lookup_tag_world(tag_map, c.get("tag_id"))
         used_diag = used_diag_by_key.get(key, {})
 
@@ -286,6 +377,25 @@ def _make_tag_diagnostics(
                 "yaw_deg": obs.get("yaw_deg", c.get("yaw_deg")),
                 "bearing_robot_deg_ccw": obs.get("bearing_robot_deg_ccw", c.get("bearing_robot_deg_ccw")),
                 "camera_forward_offset_m": obs.get("camera_forward_offset_m", c.get("camera_forward_offset_m")),
+            },
+
+            "raw_vs_calibrated": {
+                "raw_distance_m": lib_pose.get("distance_m"),
+                "cal_distance_m": cal_pose.get("distance_m", obs.get("distance_m", c.get("distance_m"))),
+                "raw_angle_deg": lib_pose.get("angle_deg"),
+                "cal_angle_deg": cal_pose.get("angle_deg", obs.get("angle_deg_cw", c.get("angle_deg_cw"))),
+                "raw_yaw_deg": lib_pose.get("yaw_deg"),
+                "cal_yaw_deg": cal_pose.get("yaw_deg", obs.get("yaw_deg", c.get("yaw_deg"))),
+            },
+
+            "image_geometry": {
+                "center_x": img_geo.get("center_x"),
+                "center_y": img_geo.get("center_y"),
+                "avg_width_px": img_geo.get("avg_width_px"),
+                "avg_height_px": img_geo.get("avg_height_px"),
+                "width_height_ratio": img_geo.get("width_height_ratio"),
+                "perspective_skew_lr": img_geo.get("perspective_skew_lr"),
+                "perspective_skew_tb": img_geo.get("perspective_skew_tb"),
             },
 
             "single_tag_solution": {
@@ -413,6 +523,145 @@ def _print_final_residual_table(tag_diagnostics: list[Dict[str, Any]]) -> None:
     print("=" * 86)
 
 
+
+
+def _print_yaw_calibration_debug_table(tag_diagnostics: list[Dict[str, Any]]) -> None:
+    """
+    Dedicated yaw debug table.
+
+    Purpose:
+    - Show whether yaw sign/branch problem exists before calibration or is
+      introduced by calibration.
+    - Compare TrueYaw (from ground-truth robot pose + tag map) with raw yaw
+      and calibrated yaw from the robot report.
+    """
+    print("\nYaw Calibration / Sign-Branch Debug  (sorted by |CalYaw-TrueYaw|)")
+    print("=" * 132)
+    print(
+        f"{'Tag':>4} {'Cam':>5} "
+        f"{'TrueYaw':>8} {'RawYaw':>8} {'CalYaw':>8} "
+        f"{'RawErr':>8} {'CalErr':>8} {'Flag':>13} "
+        f"{'TrueAng':>8} {'RawAng':>8} {'CalAng':>8} "
+        f"{'RawD':>7} {'CalD':>7} {'WH':>6} {'Skew':>7}"
+    )
+    print("-" * 132)
+
+    if not tag_diagnostics:
+        print("(no yaw diagnostics)")
+        return
+
+    rows = []
+    for d in tag_diagnostics:
+        obs_truth = d.get("manual_truth") or {}
+        rc = d.get("raw_vs_calibrated") or {}
+        geo = d.get("image_geometry") or {}
+
+        true_yaw = obs_truth.get("true_yaw_deg")
+        raw_yaw = rc.get("raw_yaw_deg")
+        cal_yaw = rc.get("cal_yaw_deg")
+
+        try:
+            raw_err = utility._wrap_angle_deg(float(raw_yaw) - float(true_yaw))
+        except Exception:
+            raw_err = None
+        try:
+            cal_err = utility._wrap_angle_deg(float(cal_yaw) - float(true_yaw))
+        except Exception:
+            cal_err = None
+
+        flag = _yaw_branch_flag(true_yaw, raw_yaw, cal_yaw)
+        rows.append((abs(float(cal_err)) if cal_err is not None else -1.0, d, raw_err, cal_err, flag))
+
+    rows.sort(key=lambda x: x[0], reverse=True)
+
+    for _, d, raw_err, cal_err, flag in rows:
+        obs_truth = d.get("manual_truth") or {}
+        rc = d.get("raw_vs_calibrated") or {}
+        geo = d.get("image_geometry") or {}
+        print(
+            f"{int(d.get('tag_id')):>4} {str(d.get('camera_role') or '')[:5]:>5} "
+            f"{_fmt_float(obs_truth.get('true_yaw_deg'), 1, 8)} "
+            f"{_fmt_float(rc.get('raw_yaw_deg'), 1, 8)} "
+            f"{_fmt_float(rc.get('cal_yaw_deg'), 1, 8)} "
+            f"{_fmt_float(raw_err, 1, 8)} "
+            f"{_fmt_float(cal_err, 1, 8)} "
+            f"{flag[:13]:>13} "
+            f"{_fmt_float(obs_truth.get('true_angle_deg'), 1, 8)} "
+            f"{_fmt_float(rc.get('raw_angle_deg'), 1, 8)} "
+            f"{_fmt_float(rc.get('cal_angle_deg'), 1, 8)} "
+            f"{_fmt_float(rc.get('raw_distance_m'), 3, 7)} "
+            f"{_fmt_float(rc.get('cal_distance_m'), 3, 7)} "
+            f"{_fmt_float(geo.get('width_height_ratio'), 3, 6)} "
+            f"{_fmt_float(geo.get('perspective_skew_lr'), 3, 7)}"
+        )
+    print("=" * 132)
+
+
+def _add_manual_truth_to_tag_diagnostics(
+    tag_diagnostics: list[Dict[str, Any]],
+    gt_x_m: float,
+    gt_y_m: float,
+    gt_heading_deg: float,
+) -> None:
+    """
+    Add true distance/angle/yaw implied by the manually supplied robot pose
+    and the tag map. This is independent from the localization solver.
+    """
+    for d in tag_diagnostics:
+        tw = d.get("tag_world") or {}
+        try:
+            tag_x = float(tw["x_m"])
+            tag_y = float(tw["y_m"])
+            tag_yaw = float(tw["yaw_deg"])
+        except Exception:
+            d["manual_truth"] = {}
+            continue
+
+        try:
+            cam_role = str(d.get("camera_role") or "").strip().lower()
+            # Same mechanical offsets/convention as production solver.
+            if cam_role == "front":
+                cam_head = utility._deg_norm_360(float(gt_heading_deg))
+                cam_off_m = 0.055
+            elif cam_role == "rear":
+                cam_head = utility._deg_norm_360(float(gt_heading_deg) + 180.0)
+                cam_off_m = -0.055
+            else:
+                cam_head = utility._deg_norm_360(float(gt_heading_deg))
+                cam_off_m = 0.0
+
+            # Camera center from robot center.
+            hrad = utility._deg_to_rad(float(gt_heading_deg))
+            cam_x = float(gt_x_m) + cam_off_m * math.cos(hrad)
+            cam_y = float(gt_y_m) + cam_off_m * math.sin(hrad)
+
+            dx = tag_x - cam_x
+            dy = tag_y - cam_y
+            true_dist = math.hypot(dx, dy)
+            world_bearing = utility._deg_norm_360(math.degrees(math.atan2(dy, dx)))
+
+            # Production convention: angle_deg > 0 means tag is on camera right side.
+            # World math is CCW-positive, so angle_cw = camera_heading - world_bearing.
+            true_angle_cw = utility._wrap_angle_deg(cam_head - world_bearing)
+
+            # Approximate the same physical relative tag yaw quantity used by solver:
+            # yaw_corrected = tag_yaw_world + 180 - camera_heading.
+            # The measured yaw before correction roughly includes angle coupling, but this
+            # is the best geometry-side truth for sign/branch debugging.
+            true_yaw = utility._wrap_angle_deg(tag_yaw + 180.0 - cam_head + true_angle_cw)
+
+            d["manual_truth"] = {
+                "true_distance_m": true_dist,
+                "true_angle_deg": true_angle_cw,
+                "true_yaw_deg": true_yaw,
+                "camera_x_m": cam_x,
+                "camera_y_m": cam_y,
+                "camera_heading_deg": cam_head,
+            }
+        except Exception:
+            d["manual_truth"] = {}
+
+
 def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, Any]:
     if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, ROBOT_ID):
         raise RuntimeError(f"{ROBOT_ID} is not whitelisted")
@@ -426,10 +675,12 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
 
     observations = _s3_extract_visible_tags(ROBOT_ID)
     front_count, rear_count = _count_by_camera(observations)
+    raw_measurements = _extract_raw_tag_measurements_from_report(report)
 
     estimate = _s3_solve_true_location(ROBOT_ID)
     tag_map = _load_tag_map()
-    tag_diagnostics = _make_tag_diagnostics(observations, estimate, tag_map)
+    tag_diagnostics = _make_tag_diagnostics(observations, estimate, tag_map, raw_measurements)
+    _add_manual_truth_to_tag_diagnostics(tag_diagnostics, gt_x_m, gt_y_m, gt_heading_deg)
 
     est_ok = bool(estimate.get("location_ok"))
 
@@ -452,7 +703,7 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
     )
 
     payload = {
-        "script_version": "phase2a_v2_tag_diagnostics",
+        "script_version": "phase2a_v4_yaw_raw_cal_debug",
         "robot_id": ROBOT_ID,
 
         "ground_truth": {
@@ -477,6 +728,7 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
         "assets": assets,
         "report": report,
         "observations": observations,
+        "raw_measurements": [v for v in raw_measurements.values()],
         "estimate": estimate,
         "tag_diagnostics": tag_diagnostics,
 
@@ -528,6 +780,7 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
     print(f"JSON Log       : {log_file}")
 
     _print_visible_tag_table(observations, tag_map)
+    _print_yaw_calibration_debug_table(tag_diagnostics)
     _print_single_tag_solution_table(tag_diagnostics)
     _print_final_residual_table(tag_diagnostics)
 

@@ -1,0 +1,1313 @@
+{
+  "script_version": "phase2a_v3_observation_reality_check",
+  "robot_id": "twin-scout-delta",
+  "ground_truth": {
+    "x_m": 5.0,
+    "y_m": 3.0,
+    "heading_deg": 90.0
+  },
+  "errors": {
+    "position_error_m": 0.11346739229811649,
+    "heading_error_deg": 0.10687109944029771
+  },
+  "summary": {
+    "estimate_ok": true,
+    "tag_count": 6,
+    "front_count": 4,
+    "rear_count": 2,
+    "tags_used": [
+      34,
+      35,
+      36,
+      37,
+      48,
+      49
+    ]
+  },
+  "assets": {
+    "status": "ok",
+    "detail": "mobility assets ready",
+    "site_name": "DemoRoom",
+    "site_dir": "sitemap\\DemoRoom",
+    "site_json_path": "sitemap\\DemoRoom\\site.json",
+    "static_map_path": "sitemap\\DemoRoom\\restriction_map.npy",
+    "tag_location_path": "sitemap\\DemoRoom\\tag_location.txt",
+    "static_map_shape": [
+      114,
+      114
+    ],
+    "world_width_m": 11.4,
+    "world_height_m": 11.4,
+    "grid_resolution_m": 0.1,
+    "tag_count": 58,
+    "tag_map_key": "nms:mobility:tag_map_json"
+  },
+  "report": {
+    "last_command": "mobility.report.location",
+    "last_command_args": {},
+    "last_command_received_ts": 1781607162.0567732,
+    "last_command_finished_ts": 1781607171.292074,
+    "last_exec_status": "completed",
+    "last_error_code": "",
+    "last_error_detail": "",
+    "last_location_result": {
+      "ok": true,
+      "capture_mode": "dual_camera",
+      "camera_roles": [
+        "front",
+        "rear"
+      ],
+      "av_was_active": false,
+      "av_restarted": false,
+      "snapshots": {
+        "front": "/tmp/location_front_1781607162158.jpg",
+        "rear": "/tmp/location_rear_1781607167423.jpg"
+      },
+      "front": {
+        "ok": true,
+        "camera_role": "front",
+        "snapshot": {
+          "ok": true,
+          "stage": "snapshot",
+          "camera_role": "front",
+          "snapshot_path": "/tmp/location_front_1781607162158.jpg",
+          "video_dev": "/dev/v4l/by-id/usb-webcamvendor_webcamproduct_YGR80PU1200.23071717-video-index0",
+          "width": 1280,
+          "height": 720,
+          "attempt": 1,
+          "detail": {
+            "ok": true,
+            "error": "",
+            "output_path": "/tmp/location_front_1781607162158.jpg",
+            "width": 1280,
+            "height": 720
+          },
+          "error": ""
+        },
+        "apriltag": {
+          "ok": true,
+          "error": "",
+          "image_path": "/tmp/location_front_1781607162158.jpg",
+          "camera_role": "front",
+          "image_width": 1280,
+          "image_height": 720,
+          "count": 4,
+          "tags": [
+            {
+              "id": 34,
+              "library_pose": {
+                "distance_m": 2.978,
+                "angle_deg": 30.2181,
+                "yaw_deg": 42.9676
+              },
+              "calibrated_pose": {
+                "distance_m": 2.9206,
+                "angle_deg": 31.1922,
+                "yaw_deg": 38.4199
+              }
+            },
+            {
+              "id": 35,
+              "library_pose": {
+                "distance_m": 2.3215,
+                "angle_deg": 12.8746,
+                "yaw_deg": 14.5362
+              },
+              "calibrated_pose": {
+                "distance_m": 2.2743,
+                "angle_deg": 12.6642,
+                "yaw_deg": 12.4678
+              }
+            },
+            {
+              "id": 36,
+              "library_pose": {
+                "distance_m": 1.8247,
+                "angle_deg": -14.5831,
+                "yaw_deg": -19.086
+              },
+              "calibrated_pose": {
+                "distance_m": 1.7853,
+                "angle_deg": -16.6689,
+                "yaw_deg": -18.2226
+              }
+            },
+            {
+              "id": 37,
+              "library_pose": {
+                "distance_m": 2.9293,
+                "angle_deg": -29.4492,
+                "yaw_deg": -41.12
+              },
+              "calibrated_pose": {
+                "distance_m": 2.8727,
+                "angle_deg": -32.5503,
+                "yaw_deg": -38.3352
+              }
+            }
+          ],
+          "camera_params": {
+            "fx": 857.2,
+            "fy": 851.8,
+            "cx": 640.0,
+            "cy": 360.0,
+            "tag_size_m": 0.1
+          },
+          "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+        },
+        "snapshot_path": "/tmp/location_front_1781607162158.jpg",
+        "tags": [
+          {
+            "id": 34,
+            "library_pose": {
+              "distance_m": 2.978,
+              "angle_deg": 30.2181,
+              "yaw_deg": 42.9676
+            },
+            "calibrated_pose": {
+              "distance_m": 2.9206,
+              "angle_deg": 31.1922,
+              "yaw_deg": 38.4199
+            }
+          },
+          {
+            "id": 35,
+            "library_pose": {
+              "distance_m": 2.3215,
+              "angle_deg": 12.8746,
+              "yaw_deg": 14.5362
+            },
+            "calibrated_pose": {
+              "distance_m": 2.2743,
+              "angle_deg": 12.6642,
+              "yaw_deg": 12.4678
+            }
+          },
+          {
+            "id": 36,
+            "library_pose": {
+              "distance_m": 1.8247,
+              "angle_deg": -14.5831,
+              "yaw_deg": -19.086
+            },
+            "calibrated_pose": {
+              "distance_m": 1.7853,
+              "angle_deg": -16.6689,
+              "yaw_deg": -18.2226
+            }
+          },
+          {
+            "id": 37,
+            "library_pose": {
+              "distance_m": 2.9293,
+              "angle_deg": -29.4492,
+              "yaw_deg": -41.12
+            },
+            "calibrated_pose": {
+              "distance_m": 2.8727,
+              "angle_deg": -32.5503,
+              "yaw_deg": -38.3352
+            }
+          }
+        ],
+        "count": 4,
+        "error": ""
+      },
+      "rear": {
+        "ok": true,
+        "camera_role": "rear",
+        "snapshot": {
+          "ok": true,
+          "stage": "snapshot",
+          "camera_role": "rear",
+          "snapshot_path": "/tmp/location_rear_1781607167423.jpg",
+          "video_dev": "/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_200901010001-video-index0",
+          "width": 640,
+          "height": 480,
+          "attempt": 1,
+          "detail": {
+            "ok": true,
+            "error": "",
+            "output_path": "/tmp/location_rear_1781607167423.jpg",
+            "width": 640,
+            "height": 480
+          },
+          "error": ""
+        },
+        "apriltag": {
+          "ok": true,
+          "error": "",
+          "image_path": "/tmp/location_rear_1781607167423.jpg",
+          "camera_role": "rear",
+          "image_width": 640,
+          "image_height": 480,
+          "count": 2,
+          "tags": [
+            {
+              "id": 48,
+              "library_pose": {
+                "distance_m": 2.3667,
+                "angle_deg": 11.7018,
+                "yaw_deg": -0.0
+              },
+              "calibrated_pose": {
+                "distance_m": 3.205,
+                "angle_deg": 8.9879,
+                "yaw_deg": 0.584
+              }
+            },
+            {
+              "id": 49,
+              "library_pose": {
+                "distance_m": 2.379,
+                "angle_deg": -12.1339,
+                "yaw_deg": 0.0
+              },
+              "calibrated_pose": {
+                "distance_m": 3.2221,
+                "angle_deg": -9.6278,
+                "yaw_deg": 0.584
+              }
+            }
+          ],
+          "camera_params": {
+            "fx": 554.0,
+            "fy": 554.0,
+            "cx": 320.0,
+            "cy": 240.0,
+            "tag_size_m": 0.1
+          },
+          "snapshot_path": "/tmp/location_rear_1781607167423.jpg"
+        },
+        "snapshot_path": "/tmp/location_rear_1781607167423.jpg",
+        "tags": [
+          {
+            "id": 48,
+            "library_pose": {
+              "distance_m": 2.3667,
+              "angle_deg": 11.7018,
+              "yaw_deg": -0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 3.205,
+              "angle_deg": 8.9879,
+              "yaw_deg": 0.584
+            }
+          },
+          {
+            "id": 49,
+            "library_pose": {
+              "distance_m": 2.379,
+              "angle_deg": -12.1339,
+              "yaw_deg": 0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 3.2221,
+              "angle_deg": -9.6278,
+              "yaw_deg": 0.584
+            }
+          }
+        ],
+        "count": 2,
+        "error": ""
+      },
+      "apriltag": {
+        "ok": true,
+        "capture_mode": "dual_camera",
+        "count": 6,
+        "unique_count": 6,
+        "unique_tag_ids": [
+          34,
+          35,
+          36,
+          37,
+          48,
+          49
+        ],
+        "tags": [
+          {
+            "id": 34,
+            "library_pose": {
+              "distance_m": 2.978,
+              "angle_deg": 30.2181,
+              "yaw_deg": 42.9676
+            },
+            "calibrated_pose": {
+              "distance_m": 2.9206,
+              "angle_deg": 31.1922,
+              "yaw_deg": 38.4199
+            },
+            "camera_role": "front",
+            "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+          },
+          {
+            "id": 35,
+            "library_pose": {
+              "distance_m": 2.3215,
+              "angle_deg": 12.8746,
+              "yaw_deg": 14.5362
+            },
+            "calibrated_pose": {
+              "distance_m": 2.2743,
+              "angle_deg": 12.6642,
+              "yaw_deg": 12.4678
+            },
+            "camera_role": "front",
+            "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+          },
+          {
+            "id": 36,
+            "library_pose": {
+              "distance_m": 1.8247,
+              "angle_deg": -14.5831,
+              "yaw_deg": -19.086
+            },
+            "calibrated_pose": {
+              "distance_m": 1.7853,
+              "angle_deg": -16.6689,
+              "yaw_deg": -18.2226
+            },
+            "camera_role": "front",
+            "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+          },
+          {
+            "id": 37,
+            "library_pose": {
+              "distance_m": 2.9293,
+              "angle_deg": -29.4492,
+              "yaw_deg": -41.12
+            },
+            "calibrated_pose": {
+              "distance_m": 2.8727,
+              "angle_deg": -32.5503,
+              "yaw_deg": -38.3352
+            },
+            "camera_role": "front",
+            "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+          },
+          {
+            "id": 48,
+            "library_pose": {
+              "distance_m": 2.3667,
+              "angle_deg": 11.7018,
+              "yaw_deg": -0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 3.205,
+              "angle_deg": 8.9879,
+              "yaw_deg": 0.584
+            },
+            "camera_role": "rear",
+            "snapshot_path": "/tmp/location_rear_1781607167423.jpg"
+          },
+          {
+            "id": 49,
+            "library_pose": {
+              "distance_m": 2.379,
+              "angle_deg": -12.1339,
+              "yaw_deg": 0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 3.2221,
+              "angle_deg": -9.6278,
+              "yaw_deg": 0.584
+            },
+            "camera_role": "rear",
+            "snapshot_path": "/tmp/location_rear_1781607167423.jpg"
+          }
+        ],
+        "front": {
+          "ok": true,
+          "error": "",
+          "image_path": "/tmp/location_front_1781607162158.jpg",
+          "camera_role": "front",
+          "image_width": 1280,
+          "image_height": 720,
+          "count": 4,
+          "tags": [
+            {
+              "id": 34,
+              "library_pose": {
+                "distance_m": 2.978,
+                "angle_deg": 30.2181,
+                "yaw_deg": 42.9676
+              },
+              "calibrated_pose": {
+                "distance_m": 2.9206,
+                "angle_deg": 31.1922,
+                "yaw_deg": 38.4199
+              }
+            },
+            {
+              "id": 35,
+              "library_pose": {
+                "distance_m": 2.3215,
+                "angle_deg": 12.8746,
+                "yaw_deg": 14.5362
+              },
+              "calibrated_pose": {
+                "distance_m": 2.2743,
+                "angle_deg": 12.6642,
+                "yaw_deg": 12.4678
+              }
+            },
+            {
+              "id": 36,
+              "library_pose": {
+                "distance_m": 1.8247,
+                "angle_deg": -14.5831,
+                "yaw_deg": -19.086
+              },
+              "calibrated_pose": {
+                "distance_m": 1.7853,
+                "angle_deg": -16.6689,
+                "yaw_deg": -18.2226
+              }
+            },
+            {
+              "id": 37,
+              "library_pose": {
+                "distance_m": 2.9293,
+                "angle_deg": -29.4492,
+                "yaw_deg": -41.12
+              },
+              "calibrated_pose": {
+                "distance_m": 2.8727,
+                "angle_deg": -32.5503,
+                "yaw_deg": -38.3352
+              }
+            }
+          ],
+          "camera_params": {
+            "fx": 857.2,
+            "fy": 851.8,
+            "cx": 640.0,
+            "cy": 360.0,
+            "tag_size_m": 0.1
+          },
+          "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+        },
+        "rear": {
+          "ok": true,
+          "error": "",
+          "image_path": "/tmp/location_rear_1781607167423.jpg",
+          "camera_role": "rear",
+          "image_width": 640,
+          "image_height": 480,
+          "count": 2,
+          "tags": [
+            {
+              "id": 48,
+              "library_pose": {
+                "distance_m": 2.3667,
+                "angle_deg": 11.7018,
+                "yaw_deg": -0.0
+              },
+              "calibrated_pose": {
+                "distance_m": 3.205,
+                "angle_deg": 8.9879,
+                "yaw_deg": 0.584
+              }
+            },
+            {
+              "id": 49,
+              "library_pose": {
+                "distance_m": 2.379,
+                "angle_deg": -12.1339,
+                "yaw_deg": 0.0
+              },
+              "calibrated_pose": {
+                "distance_m": 3.2221,
+                "angle_deg": -9.6278,
+                "yaw_deg": 0.584
+              }
+            }
+          ],
+          "camera_params": {
+            "fx": 554.0,
+            "fy": 554.0,
+            "cx": 320.0,
+            "cy": 240.0,
+            "tag_size_m": 0.1
+          },
+          "snapshot_path": "/tmp/location_rear_1781607167423.jpg"
+        },
+        "front_count": 4,
+        "rear_count": 2
+      },
+      "error": ""
+    }
+  },
+  "observations": [
+    {
+      "id": 34,
+      "camera_role": "front",
+      "camera_offset_deg": 0.0,
+      "camera_forward_offset_m": 0.055,
+      "distance_m": 2.9206,
+      "angle_deg_cw": 31.1922,
+      "yaw_deg": 38.4199,
+      "bearing_robot_deg_ccw": -31.192200000000014,
+      "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+    },
+    {
+      "id": 35,
+      "camera_role": "front",
+      "camera_offset_deg": 0.0,
+      "camera_forward_offset_m": 0.055,
+      "distance_m": 2.2743,
+      "angle_deg_cw": 12.6642,
+      "yaw_deg": 12.4678,
+      "bearing_robot_deg_ccw": -12.664199999999994,
+      "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+    },
+    {
+      "id": 36,
+      "camera_role": "front",
+      "camera_offset_deg": 0.0,
+      "camera_forward_offset_m": 0.055,
+      "distance_m": 1.7853,
+      "angle_deg_cw": -16.6689,
+      "yaw_deg": -18.2226,
+      "bearing_robot_deg_ccw": 16.668900000000008,
+      "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+    },
+    {
+      "id": 37,
+      "camera_role": "front",
+      "camera_offset_deg": 0.0,
+      "camera_forward_offset_m": 0.055,
+      "distance_m": 2.8727,
+      "angle_deg_cw": -32.5503,
+      "yaw_deg": -38.3352,
+      "bearing_robot_deg_ccw": 32.55029999999999,
+      "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+    },
+    {
+      "id": 48,
+      "camera_role": "rear",
+      "camera_offset_deg": 180.0,
+      "camera_forward_offset_m": -0.055,
+      "distance_m": 3.205,
+      "angle_deg_cw": 8.9879,
+      "yaw_deg": 0.584,
+      "bearing_robot_deg_ccw": 171.01210000000003,
+      "snapshot_path": "/tmp/location_rear_1781607167423.jpg"
+    },
+    {
+      "id": 49,
+      "camera_role": "rear",
+      "camera_offset_deg": 180.0,
+      "camera_forward_offset_m": -0.055,
+      "distance_m": 3.2221,
+      "angle_deg_cw": -9.6278,
+      "yaw_deg": 0.584,
+      "bearing_robot_deg_ccw": -170.37220000000002,
+      "snapshot_path": "/tmp/location_rear_1781607167423.jpg"
+    }
+  ],
+  "estimate": {
+    "location_ok": true,
+    "x_m": 5.0247800605516995,
+    "y_m": 3.110728486461203,
+    "heading_deg": 89.89312890055969,
+    "source": "apriltag",
+    "tags_used": [
+      34,
+      35,
+      36,
+      37,
+      48,
+      49
+    ],
+    "tag_count": 6,
+    "solver_stage": "best_effort_fusion",
+    "updated_at": "2026-06-16-18:53:03",
+    "detail": "2 soft outlier(s) kept in fusion",
+    "candidates": [
+      {
+        "tag_id": 34,
+        "camera_role": "front",
+        "camera_offset_deg": 0.0,
+        "camera_forward_offset_m": 0.055,
+        "camera_x_m": 4.635080936005306,
+        "camera_y_m": 2.9117751091405766,
+        "x_m": 4.628161228545541,
+        "y_m": 2.8572121395671446,
+        "heading_deg": 82.77229999999997,
+        "distance_m": 2.9206,
+        "angle_deg_cw": 31.1922,
+        "yaw_deg": 38.4199,
+        "bearing_robot_deg_ccw": -31.192200000000014,
+        "snapshot_path": "/tmp/location_front_1781607162158.jpg",
+        "yaw_corrected_deg": 7.227699999999999
+      },
+      {
+        "tag_id": 35,
+        "camera_role": "front",
+        "camera_offset_deg": 0.0,
+        "camera_forward_offset_m": 0.055,
+        "camera_x_m": 5.008999314036665,
+        "camera_y_m": 2.9793336999036675,
+        "x_m": 5.009187844133261,
+        "y_m": 2.9243340230282286,
+        "heading_deg": 90.19639999999998,
+        "distance_m": 2.2743,
+        "angle_deg_cw": 12.6642,
+        "yaw_deg": 12.4678,
+        "bearing_robot_deg_ccw": -12.664199999999994,
+        "snapshot_path": "/tmp/location_front_1781607162158.jpg",
+        "yaw_corrected_deg": -0.1963999999999988
+      },
+      {
+        "tag_id": 36,
+        "camera_role": "front",
+        "camera_offset_deg": 0.0,
+        "camera_forward_offset_m": 0.055,
+        "camera_x_m": 5.098280458469325,
+        "camera_y_m": 3.044234975094933,
+        "x_m": 5.09977172062151,
+        "y_m": 2.989255195746581,
+        "heading_deg": 91.55369999999999,
+        "distance_m": 1.7853,
+        "angle_deg_cw": -16.6689,
+        "yaw_deg": -18.2226,
+        "bearing_robot_deg_ccw": 16.668900000000008,
+        "snapshot_path": "/tmp/location_front_1781607162158.jpg",
+        "yaw_corrected_deg": -1.5536999999999992
+      },
+      {
+        "tag_id": 37,
+        "camera_role": "front",
+        "camera_offset_deg": 0.0,
+        "camera_forward_offset_m": 0.055,
+        "camera_x_m": 5.371823909122431,
+        "camera_y_m": 2.9466671690849444,
+        "x_m": 5.377367584519119,
+        "y_m": 2.8919472671927062,
+        "heading_deg": 95.7849,
+        "distance_m": 2.8727,
+        "angle_deg_cw": -32.5503,
+        "yaw_deg": -38.3352,
+        "bearing_robot_deg_ccw": 32.55029999999999,
+        "snapshot_path": "/tmp/location_front_1781607162158.jpg",
+        "yaw_corrected_deg": -5.7849
+      },
+      {
+        "tag_id": 48,
+        "camera_role": "rear",
+        "camera_offset_deg": 180.0,
+        "camera_forward_offset_m": -0.055,
+        "camera_x_m": 4.542667111028838,
+        "camera_y_m": 3.304833515154419,
+        "x_m": 4.5346288409067785,
+        "y_m": 3.3592429464457383,
+        "heading_deg": 98.40390000000002,
+        "distance_m": 3.205,
+        "angle_deg_cw": 8.9879,
+        "yaw_deg": 0.584,
+        "bearing_robot_deg_ccw": 171.01210000000003,
+        "snapshot_path": "/tmp/location_rear_1781607167423.jpg",
+        "yaw_corrected_deg": -8.4039
+      },
+      {
+        "tag_id": 49,
+        "camera_role": "rear",
+        "camera_offset_deg": 180.0,
+        "camera_forward_offset_m": -0.055,
+        "camera_x_m": 5.482841403571304,
+        "camera_y_m": 3.3219326268889406,
+        "x_m": 5.492592212249793,
+        "y_m": 3.376061378307346,
+        "heading_deg": 79.78820000000002,
+        "distance_m": 3.2221,
+        "angle_deg_cw": -9.6278,
+        "yaw_deg": 0.584,
+        "bearing_robot_deg_ccw": -170.37220000000002,
+        "snapshot_path": "/tmp/location_rear_1781607167423.jpg",
+        "yaw_corrected_deg": 10.2118
+      }
+    ],
+    "used_candidates": [
+      {
+        "tag_id": 34,
+        "camera_role": "front",
+        "camera_offset_deg": 0.0,
+        "camera_forward_offset_m": 0.055,
+        "camera_x_m": 4.635080936005306,
+        "camera_y_m": 2.9117751091405766,
+        "x_m": 4.628161228545541,
+        "y_m": 2.8572121395671446,
+        "heading_deg": 82.77229999999997,
+        "distance_m": 2.9206,
+        "angle_deg_cw": 31.1922,
+        "yaw_deg": 38.4199,
+        "bearing_robot_deg_ccw": -31.192200000000014,
+        "snapshot_path": "/tmp/location_front_1781607162158.jpg",
+        "yaw_corrected_deg": 7.227699999999999,
+        "position_residual_m": 0.47071970008109676,
+        "heading_residual_deg": 7.120828900559729,
+        "weight": 0.17954608246047984
+      },
+      {
+        "tag_id": 35,
+        "camera_role": "front",
+        "camera_offset_deg": 0.0,
+        "camera_forward_offset_m": 0.055,
+        "camera_x_m": 5.008999314036665,
+        "camera_y_m": 2.9793336999036675,
+        "x_m": 5.009187844133261,
+        "y_m": 2.9243340230282286,
+        "heading_deg": 90.19639999999998,
+        "distance_m": 2.2743,
+        "angle_deg_cw": 12.6642,
+        "yaw_deg": 12.4678,
+        "bearing_robot_deg_ccw": -12.664199999999994,
+        "snapshot_path": "/tmp/location_front_1781607162158.jpg",
+        "yaw_corrected_deg": -0.1963999999999988,
+        "position_residual_m": 0.18704548433818383,
+        "heading_residual_deg": 0.3032710994402805,
+        "weight": 0.4764827916698545
+      },
+      {
+        "tag_id": 36,
+        "camera_role": "front",
+        "camera_offset_deg": 0.0,
+        "camera_forward_offset_m": 0.055,
+        "camera_x_m": 5.098280458469325,
+        "camera_y_m": 3.044234975094933,
+        "x_m": 5.09977172062151,
+        "y_m": 2.989255195746581,
+        "heading_deg": 91.55369999999999,
+        "distance_m": 1.7853,
+        "angle_deg_cw": -16.6689,
+        "yaw_deg": -18.2226,
+        "bearing_robot_deg_ccw": 16.668900000000008,
+        "snapshot_path": "/tmp/location_front_1781607162158.jpg",
+        "yaw_corrected_deg": -1.5536999999999992,
+        "position_residual_m": 0.14275681923139416,
+        "heading_residual_deg": 1.6605710994402898,
+        "weight": 0.4711891926299014
+      },
+      {
+        "tag_id": 37,
+        "camera_role": "front",
+        "camera_offset_deg": 0.0,
+        "camera_forward_offset_m": 0.055,
+        "camera_x_m": 5.371823909122431,
+        "camera_y_m": 2.9466671690849444,
+        "x_m": 5.377367584519119,
+        "y_m": 2.8919472671927062,
+        "heading_deg": 95.7849,
+        "distance_m": 2.8727,
+        "angle_deg_cw": -32.5503,
+        "yaw_deg": -38.3352,
+        "bearing_robot_deg_ccw": 32.55029999999999,
+        "snapshot_path": "/tmp/location_front_1781607162158.jpg",
+        "yaw_corrected_deg": -5.7849,
+        "position_residual_m": 0.41494961617295845,
+        "heading_residual_deg": 5.891771099440291,
+        "weight": 0.1632304716115637
+      },
+      {
+        "tag_id": 48,
+        "camera_role": "rear",
+        "camera_offset_deg": 180.0,
+        "camera_forward_offset_m": -0.055,
+        "camera_x_m": 4.542667111028838,
+        "camera_y_m": 3.304833515154419,
+        "x_m": 4.5346288409067785,
+        "y_m": 3.3592429464457383,
+        "heading_deg": 98.40390000000002,
+        "distance_m": 3.205,
+        "angle_deg_cw": 8.9879,
+        "yaw_deg": 0.584,
+        "bearing_robot_deg_ccw": 171.01210000000003,
+        "snapshot_path": "/tmp/location_rear_1781607167423.jpg",
+        "yaw_corrected_deg": -8.4039,
+        "position_residual_m": 0.5495522313127378,
+        "heading_residual_deg": 8.51077109944032,
+        "weight": 0.4470148149458916
+      },
+      {
+        "tag_id": 49,
+        "camera_role": "rear",
+        "camera_offset_deg": 180.0,
+        "camera_forward_offset_m": -0.055,
+        "camera_x_m": 5.482841403571304,
+        "camera_y_m": 3.3219326268889406,
+        "x_m": 5.492592212249793,
+        "y_m": 3.376061378307346,
+        "heading_deg": 79.78820000000002,
+        "distance_m": 3.2221,
+        "angle_deg_cw": -9.6278,
+        "yaw_deg": 0.584,
+        "bearing_robot_deg_ccw": -170.37220000000002,
+        "snapshot_path": "/tmp/location_rear_1781607167423.jpg",
+        "yaw_corrected_deg": 10.2118,
+        "position_residual_m": 0.5378194425379554,
+        "heading_residual_deg": 10.104928900559685,
+        "weight": 0.43790514791414387
+      }
+    ],
+    "hard_outliers": [],
+    "soft_outliers": [
+      {
+        "tag_id": 48,
+        "camera_role": "rear",
+        "camera_offset_deg": 180.0,
+        "camera_forward_offset_m": -0.055,
+        "camera_x_m": 4.542667111028838,
+        "camera_y_m": 3.304833515154419,
+        "x_m": 4.5346288409067785,
+        "y_m": 3.3592429464457383,
+        "heading_deg": 98.40390000000002,
+        "distance_m": 3.205,
+        "angle_deg_cw": 8.9879,
+        "yaw_deg": 0.584,
+        "bearing_robot_deg_ccw": 171.01210000000003,
+        "snapshot_path": "/tmp/location_rear_1781607167423.jpg",
+        "yaw_corrected_deg": -8.4039,
+        "position_residual_m": 0.5495522313127378,
+        "heading_residual_deg": 8.51077109944032,
+        "weight": 0.4470148149458916
+      },
+      {
+        "tag_id": 49,
+        "camera_role": "rear",
+        "camera_offset_deg": 180.0,
+        "camera_forward_offset_m": -0.055,
+        "camera_x_m": 5.482841403571304,
+        "camera_y_m": 3.3219326268889406,
+        "x_m": 5.492592212249793,
+        "y_m": 3.376061378307346,
+        "heading_deg": 79.78820000000002,
+        "distance_m": 3.2221,
+        "angle_deg_cw": -9.6278,
+        "yaw_deg": 0.584,
+        "bearing_robot_deg_ccw": -170.37220000000002,
+        "snapshot_path": "/tmp/location_rear_1781607167423.jpg",
+        "yaw_corrected_deg": 10.2118,
+        "position_residual_m": 0.5378194425379554,
+        "heading_residual_deg": 10.104928900559685,
+        "weight": 0.43790514791414387
+      }
+    ]
+  },
+  "tag_diagnostics": [
+    {
+      "tag_id": 49,
+      "camera_role": "rear",
+      "used_in_solution": true,
+      "hard_outlier": false,
+      "soft_outlier": true,
+      "tag_world": {
+        "x_m": 5.45,
+        "y_m": 0.1,
+        "yaw_deg": 90.0,
+        "facing": "up"
+      },
+      "observed": {
+        "distance_m": 3.2221,
+        "angle_deg_cw": -9.6278,
+        "yaw_deg": 0.584,
+        "bearing_robot_deg_ccw": -170.37220000000002,
+        "camera_forward_offset_m": -0.055
+      },
+      "raw_observed": {
+        "distance_m": 2.379,
+        "angle_deg": -12.1339,
+        "yaw_deg": 0.0
+      },
+      "calibrated_pose_from_report": {
+        "distance_m": 3.2221,
+        "angle_deg": -9.6278,
+        "yaw_deg": 0.584
+      },
+      "expected_from_ground_truth": {
+        "camera_x_m": 5.0,
+        "camera_y_m": 2.945,
+        "distance_m": 2.880368899984861,
+        "angle_deg_cw": -8.988138512228716,
+        "yaw_deg": -8.988138512228716,
+        "world_bearing_deg": 278.9881385122287,
+        "camera_heading_deg": 270.0
+      },
+      "observation_error_to_ground_truth": {
+        "distance_m": 0.34173110001513907,
+        "raw_distance_m": -0.5013688999848611,
+        "angle_deg_cw": -0.6396614877712921,
+        "yaw_deg": 9.572138512228719,
+        "distance_correction_ratio": 1.3543926019335857
+      },
+      "image_geometry": {
+        "center_x": null,
+        "center_y": null,
+        "avg_width_px": null,
+        "avg_height_px": null,
+        "width_height_ratio": null,
+        "perspective_skew_lr": null,
+        "perspective_skew_tb": null
+      },
+      "single_tag_solution": {
+        "x_m": 5.492592212249793,
+        "y_m": 3.376061378307346,
+        "heading_deg": 79.78820000000002,
+        "camera_x_m": 5.482841403571304,
+        "camera_y_m": 3.3219326268889406
+      },
+      "residual_to_final": {
+        "position_m": 0.5378194425379554,
+        "heading_deg": 10.104928900559685
+      },
+      "weight": 0.43790514791414387,
+      "snapshot_path": "/tmp/location_rear_1781607167423.jpg"
+    },
+    {
+      "tag_id": 34,
+      "camera_role": "front",
+      "used_in_solution": true,
+      "hard_outlier": false,
+      "soft_outlier": false,
+      "tag_world": {
+        "x_m": 6.45,
+        "y_m": 5.2,
+        "yaw_deg": 270.0,
+        "facing": "down"
+      },
+      "observed": {
+        "distance_m": 2.9206,
+        "angle_deg_cw": 31.1922,
+        "yaw_deg": 38.4199,
+        "bearing_robot_deg_ccw": -31.192200000000014,
+        "camera_forward_offset_m": 0.055
+      },
+      "raw_observed": {
+        "distance_m": 2.978,
+        "angle_deg": 30.2181,
+        "yaw_deg": 42.9676
+      },
+      "calibrated_pose_from_report": {
+        "distance_m": 2.9206,
+        "angle_deg": 31.1922,
+        "yaw_deg": 38.4199
+      },
+      "expected_from_ground_truth": {
+        "camera_x_m": 5.0,
+        "camera_y_m": 3.055,
+        "distance_m": 2.589116644726537,
+        "angle_deg_cw": 34.05832670457124,
+        "yaw_deg": 34.0583267045713,
+        "world_bearing_deg": 55.94167329542876,
+        "camera_heading_deg": 90.0
+      },
+      "observation_error_to_ground_truth": {
+        "distance_m": 0.33148335527346307,
+        "raw_distance_m": 0.3888833552734634,
+        "angle_deg_cw": -2.8661267045712293,
+        "yaw_deg": 4.361573295428684,
+        "distance_correction_ratio": 0.9807253190060442
+      },
+      "image_geometry": {
+        "center_x": null,
+        "center_y": null,
+        "avg_width_px": null,
+        "avg_height_px": null,
+        "width_height_ratio": null,
+        "perspective_skew_lr": null,
+        "perspective_skew_tb": null
+      },
+      "single_tag_solution": {
+        "x_m": 4.628161228545541,
+        "y_m": 2.8572121395671446,
+        "heading_deg": 82.77229999999997,
+        "camera_x_m": 4.635080936005306,
+        "camera_y_m": 2.9117751091405766
+      },
+      "residual_to_final": {
+        "position_m": 0.47071970008109676,
+        "heading_deg": 7.120828900559729
+      },
+      "weight": 0.17954608246047984,
+      "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+    },
+    {
+      "tag_id": 48,
+      "camera_role": "rear",
+      "used_in_solution": true,
+      "hard_outlier": false,
+      "soft_outlier": true,
+      "tag_world": {
+        "x_m": 4.51,
+        "y_m": 0.1,
+        "yaw_deg": 90.0,
+        "facing": "up"
+      },
+      "observed": {
+        "distance_m": 3.205,
+        "angle_deg_cw": 8.9879,
+        "yaw_deg": 0.584,
+        "bearing_robot_deg_ccw": 171.01210000000003,
+        "camera_forward_offset_m": -0.055
+      },
+      "raw_observed": {
+        "distance_m": 2.3667,
+        "angle_deg": 11.7018,
+        "yaw_deg": -0.0
+      },
+      "calibrated_pose_from_report": {
+        "distance_m": 3.205,
+        "angle_deg": 8.9879,
+        "yaw_deg": 0.584
+      },
+      "expected_from_ground_truth": {
+        "camera_x_m": 5.0,
+        "camera_y_m": 2.945,
+        "distance_m": 2.8868884633805996,
+        "angle_deg_cw": 9.772290656270059,
+        "yaw_deg": 9.772290656270059,
+        "world_bearing_deg": 260.22770934372994,
+        "camera_heading_deg": 270.0
+      },
+      "observation_error_to_ground_truth": {
+        "distance_m": 0.3181115366194005,
+        "raw_distance_m": -0.5201884633805998,
+        "angle_deg_cw": -0.7843906562700624,
+        "yaw_deg": -9.188290656270055,
+        "distance_correction_ratio": 1.354206278784806
+      },
+      "image_geometry": {
+        "center_x": null,
+        "center_y": null,
+        "avg_width_px": null,
+        "avg_height_px": null,
+        "width_height_ratio": null,
+        "perspective_skew_lr": null,
+        "perspective_skew_tb": null
+      },
+      "single_tag_solution": {
+        "x_m": 4.5346288409067785,
+        "y_m": 3.3592429464457383,
+        "heading_deg": 98.40390000000002,
+        "camera_x_m": 4.542667111028838,
+        "camera_y_m": 3.304833515154419
+      },
+      "residual_to_final": {
+        "position_m": 0.5495522313127378,
+        "heading_deg": 8.51077109944032
+      },
+      "weight": 0.4470148149458916,
+      "snapshot_path": "/tmp/location_rear_1781607167423.jpg"
+    },
+    {
+      "tag_id": 37,
+      "camera_role": "front",
+      "used_in_solution": true,
+      "hard_outlier": false,
+      "soft_outlier": false,
+      "tag_world": {
+        "x_m": 3.59,
+        "y_m": 5.2,
+        "yaw_deg": 270.0,
+        "facing": "down"
+      },
+      "observed": {
+        "distance_m": 2.8727,
+        "angle_deg_cw": -32.5503,
+        "yaw_deg": -38.3352,
+        "bearing_robot_deg_ccw": 32.55029999999999,
+        "camera_forward_offset_m": 0.055
+      },
+      "raw_observed": {
+        "distance_m": 2.9293,
+        "angle_deg": -29.4492,
+        "yaw_deg": -41.12
+      },
+      "calibrated_pose_from_report": {
+        "distance_m": 2.8727,
+        "angle_deg": -32.5503,
+        "yaw_deg": -38.3352
+      },
+      "expected_from_ground_truth": {
+        "camera_x_m": 5.0,
+        "camera_y_m": 3.055,
+        "distance_m": 2.5669290991377225,
+        "angle_deg_cw": -33.31862521260899,
+        "yaw_deg": -33.31862521260899,
+        "world_bearing_deg": 123.31862521260898,
+        "camera_heading_deg": 90.0
+      },
+      "observation_error_to_ground_truth": {
+        "distance_m": 0.30577090086227754,
+        "raw_distance_m": 0.3623709008622775,
+        "angle_deg_cw": 0.7683252126089997,
+        "yaw_deg": -5.016574787390994,
+        "distance_correction_ratio": 0.980677977673847
+      },
+      "image_geometry": {
+        "center_x": null,
+        "center_y": null,
+        "avg_width_px": null,
+        "avg_height_px": null,
+        "width_height_ratio": null,
+        "perspective_skew_lr": null,
+        "perspective_skew_tb": null
+      },
+      "single_tag_solution": {
+        "x_m": 5.377367584519119,
+        "y_m": 2.8919472671927062,
+        "heading_deg": 95.7849,
+        "camera_x_m": 5.371823909122431,
+        "camera_y_m": 2.9466671690849444
+      },
+      "residual_to_final": {
+        "position_m": 0.41494961617295845,
+        "heading_deg": 5.891771099440291
+      },
+      "weight": 0.1632304716115637,
+      "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+    },
+    {
+      "tag_id": 35,
+      "camera_role": "front",
+      "used_in_solution": true,
+      "hard_outlier": false,
+      "soft_outlier": false,
+      "tag_world": {
+        "x_m": 5.5,
+        "y_m": 5.2,
+        "yaw_deg": 270.0,
+        "facing": "down"
+      },
+      "observed": {
+        "distance_m": 2.2743,
+        "angle_deg_cw": 12.6642,
+        "yaw_deg": 12.4678,
+        "bearing_robot_deg_ccw": -12.664199999999994,
+        "camera_forward_offset_m": 0.055
+      },
+      "raw_observed": {
+        "distance_m": 2.3215,
+        "angle_deg": 12.8746,
+        "yaw_deg": 14.5362
+      },
+      "calibrated_pose_from_report": {
+        "distance_m": 2.2743,
+        "angle_deg": 12.6642,
+        "yaw_deg": 12.4678
+      },
+      "expected_from_ground_truth": {
+        "camera_x_m": 5.0,
+        "camera_y_m": 3.055,
+        "distance_m": 2.202504256522561,
+        "angle_deg_cw": 13.1213555904244,
+        "yaw_deg": 13.1213555904244,
+        "world_bearing_deg": 76.8786444095756,
+        "camera_heading_deg": 90.0
+      },
+      "observation_error_to_ground_truth": {
+        "distance_m": 0.071795743477439,
+        "raw_distance_m": 0.11899574347743869,
+        "angle_deg_cw": -0.45715559042440645,
+        "yaw_deg": -0.6535555904243893,
+        "distance_correction_ratio": 0.979668317897911
+      },
+      "image_geometry": {
+        "center_x": null,
+        "center_y": null,
+        "avg_width_px": null,
+        "avg_height_px": null,
+        "width_height_ratio": null,
+        "perspective_skew_lr": null,
+        "perspective_skew_tb": null
+      },
+      "single_tag_solution": {
+        "x_m": 5.009187844133261,
+        "y_m": 2.9243340230282286,
+        "heading_deg": 90.19639999999998,
+        "camera_x_m": 5.008999314036665,
+        "camera_y_m": 2.9793336999036675
+      },
+      "residual_to_final": {
+        "position_m": 0.18704548433818383,
+        "heading_deg": 0.3032710994402805
+      },
+      "weight": 0.4764827916698545,
+      "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+    },
+    {
+      "tag_id": 36,
+      "camera_role": "front",
+      "used_in_solution": true,
+      "hard_outlier": false,
+      "soft_outlier": false,
+      "tag_world": {
+        "x_m": 4.54,
+        "y_m": 4.74,
+        "yaw_deg": 270.0,
+        "facing": "down"
+      },
+      "observed": {
+        "distance_m": 1.7853,
+        "angle_deg_cw": -16.6689,
+        "yaw_deg": -18.2226,
+        "bearing_robot_deg_ccw": 16.668900000000008,
+        "camera_forward_offset_m": 0.055
+      },
+      "raw_observed": {
+        "distance_m": 1.8247,
+        "angle_deg": -14.5831,
+        "yaw_deg": -19.086
+      },
+      "calibrated_pose_from_report": {
+        "distance_m": 1.7853,
+        "angle_deg": -16.6689,
+        "yaw_deg": -18.2226
+      },
+      "expected_from_ground_truth": {
+        "camera_x_m": 5.0,
+        "camera_y_m": 3.055,
+        "distance_m": 1.746661100500037,
+        "angle_deg_cw": -15.269503784230068,
+        "yaw_deg": -15.269503784230096,
+        "world_bearing_deg": 105.26950378423007,
+        "camera_heading_deg": 90.0
+      },
+      "observation_error_to_ground_truth": {
+        "distance_m": 0.03863889949996313,
+        "raw_distance_m": 0.07803889949996301,
+        "angle_deg_cw": -1.39939621576994,
+        "yaw_deg": -2.9530962157699037,
+        "distance_correction_ratio": 0.9784074094371679
+      },
+      "image_geometry": {
+        "center_x": null,
+        "center_y": null,
+        "avg_width_px": null,
+        "avg_height_px": null,
+        "width_height_ratio": null,
+        "perspective_skew_lr": null,
+        "perspective_skew_tb": null
+      },
+      "single_tag_solution": {
+        "x_m": 5.09977172062151,
+        "y_m": 2.989255195746581,
+        "heading_deg": 91.55369999999999,
+        "camera_x_m": 5.098280458469325,
+        "camera_y_m": 3.044234975094933
+      },
+      "residual_to_final": {
+        "position_m": 0.14275681923139416,
+        "heading_deg": 1.6605710994402898
+      },
+      "weight": 0.4711891926299014,
+      "snapshot_path": "/tmp/location_front_1781607162158.jpg"
+    }
+  ],
+  "metadata": {
+    "report_time": "2026-06-16-18:53:02",
+    "direct_command_stream_id": "1781607162043-0",
+    "trial": "P2A-001",
+    "notes": ""
+  }
+}
