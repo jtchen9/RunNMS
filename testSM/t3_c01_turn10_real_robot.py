@@ -27,7 +27,7 @@ from m8mobility_state_store import key_state, key_time, key_report, key_pose, _s
 # Editable settings
 # ============================================================
 
-SCANNER = "twin-scout-delta"
+SCANNER = "twin-scout-charlie"
 NMS_BASE = "http://localhost:8000"
 
 TEST_ID = "C01"
