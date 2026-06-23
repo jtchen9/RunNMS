@@ -483,24 +483,44 @@ def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
 
 def _register_experiment_status(
     *,
-    t0_str: str,
-    last_execute_at_str: str,
-    item_count: int,
-    source: str,
-    scenario_name: str = "",
+    experiment_id: str,
+    session_id: Optional[str],
+    start_at_str: str,
+    end_at_str: str,
+    command_count: int,
+    replace_existing: bool,
 ) -> Dict[str, Any]:
-    now = utility.local_ts()
-    session_id = f"exp-{now}"
+    """
+    Write one coherent experiment-registration record.
+
+    Final registry fields:
+        experiment_id
+        session_id
+        lab_id
+        registered_at
+        start_at
+        end_at
+        guard_sec
+        command_count
+        state
+        time_format
+    """
+    registered_at = utility.local_ts()
+
+    clean_session_id = (session_id or "").strip() or None
 
     fields = {
-        "session_id": session_id,
-        "scenario_name": str(scenario_name or ""),
-        "registered_at": now,
-        "t0": t0_str,
-        "last_execute_at": last_execute_at_str,
-        "item_count": str(int(item_count)),
-        "source": str(source or ""),
+        "experiment_id": str(experiment_id or ""),
+        "session_id": "" if clean_session_id is None else clean_session_id,
+        "lab_id": str(config.NMS_NAME),
+        "registered_at": registered_at,
+        "start_at": start_at_str,
+        "end_at": end_at_str,
+        "guard_sec": "3600",
+        "command_count": str(int(command_count)),
+        "state": "registered",
         "time_format": config.TIME_FMT,
+        "replace_existing": "true" if replace_existing else "false",
     }
 
     xid = config.r.xadd(
@@ -510,31 +530,51 @@ def _register_experiment_status(
         approximate=True,
     )
 
-    return {
+    # Return JSON-facing value with session_id as real null, not "".
+    result = {
         "stream_id": xid,
         **fields,
     }
+    result["session_id"] = clean_session_id
 
+    return result
 
 
 def _is_mobility_csv_row(row: Dict[str, Any]) -> bool:
     return (row.get("category") or "").strip().lower() == "mobility"
 
 
-def _prepare_mobility_script_run_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _prepare_mobility_script_run_from_rows(
+    rows: List[Dict[str, Any]],
+    *,
+    replace_existing: bool = False,
+) -> Dict[str, Any]:
     """
-    Production preflight for script/CSV mobility runs.
+    Production preflight for CSV mobility experiment registration.
 
-    Invariants before accepting a new mobility script:
+    Always enforced:
+    - identify mobility scanners in this CSV
+    - first mobility row for each scanner must be mobility.report.location
+
+    If replace_existing is False:
+    - do NOT clear old global stop latch
+    - do NOT clear old scheduled mobility rows
+    - do NOT clear old per-robot command streams
+    - do NOT reset per-robot mobility state
+    - do NOT clear stale planned pose
+
+    This allows multiple future experiments to coexist in Redis queues, provided
+    they later pass same-lab time-conflict checks.
+
+    If replace_existing is True:
     - old global stop latch is cleared
     - old scheduled mobility rows are cleared
     - old per-robot command streams are cleared for scanners in this script
     - per-robot mobility state is reset to S0/NORMAL
     - stale planned pose and last-issued command mirrors are cleared
-    - first mobility row for each scanner must be mobility.report.location
 
     Why first-row location is required:
-    mobility.report.location is now a precondition command.  Its report refreshes
+    mobility.report.location is now a precondition command. Its report refreshes
     true_location_json and S3 aligns planned_location_json=true_location_json.
     Script movement commands then start from a well-defined pose.
     """
@@ -564,6 +604,7 @@ def _prepare_mobility_script_run_from_rows(rows: List[Dict[str, Any]]) -> Dict[s
     if not mobility_scanners:
         return {
             "mobility_preflight": "skipped",
+            "replace_existing": replace_existing,
             "mobility_scanners": [],
             "detail": "no mobility rows",
         }
@@ -583,6 +624,23 @@ def _prepare_mobility_script_run_from_rows(rows: List[Dict[str, Any]]) -> Dict[s
             ),
         )
 
+    # Normal experiment registration path:
+    # preserve previous future experiments and queued commands.
+    if not replace_existing:
+        return {
+            "mobility_preflight": "ok",
+            "replace_existing": False,
+            "mobility_scanners": sorted(mobility_scanners),
+            "old_mobility_cmd_stream_len": None,
+            "reset_scanners": [],
+            "detail": (
+                "validated mobility first-row precondition only; "
+                "existing command queues and mobility state were preserved"
+            ),
+        }
+
+    # Explicit replacement path:
+    # destructive cleanup is allowed only here.
     _save_stop(False, "")
 
     old_mobility_len = 0
@@ -590,6 +648,7 @@ def _prepare_mobility_script_run_from_rows(rows: List[Dict[str, Any]]) -> Dict[s
         old_mobility_len = int(config.r.xlen(config.KEY_MOBILITY_CMD_STREAM))
     except Exception:
         old_mobility_len = -1
+
     config.r.delete(config.KEY_MOBILITY_CMD_STREAM)
 
     reset_scanners = []
@@ -648,7 +707,6 @@ def _prepare_mobility_script_run_from_rows(rows: List[Dict[str, Any]]) -> Dict[s
         except Exception:
             pass
 
-
         utility._hset_many(
             key_time(scanner),
             {
@@ -678,11 +736,15 @@ def _prepare_mobility_script_run_from_rows(rows: List[Dict[str, Any]]) -> Dict[s
 
     return {
         "mobility_preflight": "ok",
+        "replace_existing": True,
         "mobility_scanners": reset_scanners,
         "old_mobility_cmd_stream_len": old_mobility_len,
-        "detail": "cleared stop latch, old mobility schedule, robot command streams, stale planned pose",
+        "reset_scanners": reset_scanners,
+        "detail": (
+            "cleared stop latch, old mobility schedule, robot command streams, "
+            "and stale planned pose because replace_existing=true"
+        ),
     }
-
 
 
 def _enqueue_script_or_csv_item(
@@ -742,7 +804,6 @@ def _enqueue_script_or_csv_item(
         maxlen=5000,
         approximate=True,
     )
-
 
 
 def _mobility_enqueue_core(
@@ -1086,194 +1147,264 @@ def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
     }
 
 
-@router.post("/cmd/_load_script", tags=["4 Commands (Polling)"])
-def cmd_load_script(script: ScriptLoad) -> Dict[str, Any]:
-    try:
-        t0_dt = utility.parse_local_dt(script.t0)
-    except Exception:
-        raise HTTPException(status_code=400, detail=f"Invalid t0; expected like '{utility.local_ts()}' (format {config.TIME_FMT})")
+# @router.post("/cmd/_load_script", tags=["4 Commands (Polling)"])
+# def cmd_load_script(script: ScriptLoad) -> Dict[str, Any]:
+#     try:
+#         t0_dt = utility.parse_local_dt(script.t0)
+#     except Exception:
+#         raise HTTPException(status_code=400, detail=f"Invalid t0; expected like '{utility.local_ts()}' (format {config.TIME_FMT})")
 
-    # Normalize JSON script items into the same row shape used by CSV loaders.
-    # This guarantees /cmd/_load_script, /cmd/_load_csv, and /cmd/_load_csv_file
-    # share the same mobility preflight, stop-latch clearing, queue clearing,
-    # stale planned-pose clearing, and first-row mobility.report.location rule.
-    rows: List[Dict[str, Any]] = []
-    for it in script.items:
-        rows.append({
-            "scanner": (it.scanner or "").strip(),
-            "t_offset_sec": str(int(it.t_offset_sec)),
-            "category": (it.category or "scan").strip() or "scan",
-            "action": (it.action or "").strip(),
-            "args_json": json.dumps(it.args or {}, ensure_ascii=False),
-        })
+#     # Normalize JSON script items into the same row shape used by CSV loaders.
+#     # This guarantees /cmd/_load_script, /cmd/_load_csv, and /cmd/_load_csv_file
+#     # share the same mobility preflight, stop-latch clearing, queue clearing,
+#     # stale planned-pose clearing, and first-row mobility.report.location rule.
+#     rows: List[Dict[str, Any]] = []
+#     for it in script.items:
+#         rows.append({
+#             "scanner": (it.scanner or "").strip(),
+#             "t_offset_sec": str(int(it.t_offset_sec)),
+#             "category": (it.category or "scan").strip() or "scan",
+#             "action": (it.action or "").strip(),
+#             "args_json": json.dumps(it.args or {}, ensure_ascii=False),
+#         })
 
-    preflight = _prepare_mobility_script_run_from_rows(rows)
+#     preflight = _prepare_mobility_script_run_from_rows(rows)
 
-    added = 0
-    skipped_not_whitelisted = 0
-    bad_rows = 0
+#     added = 0
+#     skipped_not_whitelisted = 0
+#     bad_rows = 0
 
-    for it in script.items:
-        scanner = (it.scanner or "").strip()
-        if not scanner:
-            bad_rows += 1
-            continue
+#     for it in script.items:
+#         scanner = (it.scanner or "").strip()
+#         if not scanner:
+#             bad_rows += 1
+#             continue
 
-        if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
-            skipped_not_whitelisted += 1
-            continue
+#         if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
+#             skipped_not_whitelisted += 1
+#             continue
 
-        try:
-            offset = int(it.t_offset_sec)
-        except Exception:
-            bad_rows += 1
-            continue
+#         try:
+#             offset = int(it.t_offset_sec)
+#         except Exception:
+#             bad_rows += 1
+#             continue
 
-        category = (it.category or "scan").strip() or "scan"
-        action = (it.action or "").strip()
-        if not action:
-            bad_rows += 1
-            continue
+#         category = (it.category or "scan").strip() or "scan"
+#         action = (it.action or "").strip()
+#         if not action:
+#             bad_rows += 1
+#             continue
 
-        execute_at = (t0_dt + timedelta(seconds=offset)).strftime(config.TIME_FMT)
+#         execute_at = (t0_dt + timedelta(seconds=offset)).strftime(config.TIME_FMT)
 
-        _enqueue_script_or_csv_item(
-            scanner=scanner,
-            category=category,
-            action=action,
-            execute_at=execute_at,
-            args=it.args or {},
-        )
-        added += 1
+#         _enqueue_script_or_csv_item(
+#             scanner=scanner,
+#             category=category,
+#             action=action,
+#             execute_at=execute_at,
+#             args=it.args or {},
+#         )
+#         added += 1
 
-    last_execute_at = t0_dt
-    for it in script.items:
-        try:
-            cand = t0_dt + timedelta(seconds=int(it.t_offset_sec))
-            if cand > last_execute_at:
-                last_execute_at = cand
-        except Exception:
-            pass
+#     last_execute_at = t0_dt
+#     for it in script.items:
+#         try:
+#             cand = t0_dt + timedelta(seconds=int(it.t_offset_sec))
+#             if cand > last_execute_at:
+#                 last_execute_at = cand
+#         except Exception:
+#             pass
 
-    exp = _register_experiment_status(
-        t0_str=t0_dt.strftime(config.TIME_FMT),
-        last_execute_at_str=last_execute_at.strftime(config.TIME_FMT),
-        item_count=added,
-        source="load_script",
-        scenario_name="",
-    )
+#     exp = _register_experiment_status(
+#         t0_str=t0_dt.strftime(config.TIME_FMT),
+#         last_execute_at_str=last_execute_at.strftime(config.TIME_FMT),
+#         item_count=added,
+#         source="load_script",
+#         scenario_name="",
+#     )
 
-    return {
-        "status": "ok",
-        "added": added,
-        "skipped_not_whitelisted": skipped_not_whitelisted,
-        "bad_rows": bad_rows,
-        "t0": t0_dt.strftime(config.TIME_FMT),
-        "time_format": config.TIME_FMT,
-        "preflight": preflight,
-        "experiment": exp,
-    }
+#     return {
+#         "status": "ok",
+#         "added": added,
+#         "skipped_not_whitelisted": skipped_not_whitelisted,
+#         "bad_rows": bad_rows,
+#         "t0": t0_dt.strftime(config.TIME_FMT),
+#         "time_format": config.TIME_FMT,
+#         "preflight": preflight,
+#         "experiment": exp,
+#     }
 
 
-@router.post("/cmd/_load_csv", tags=["4 Commands (Polling)"])
-def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
-    try:
-        t0_dt = utility.parse_local_dt(req.t0)
-    except Exception:
-        raise HTTPException(status_code=400, detail=f"Invalid t0; expected like '{utility.local_ts()}' (format {config.TIME_FMT})")
+# @router.post("/cmd/_load_csv", tags=["4 Commands (Polling)"])
+# def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
+#     try:
+#         t0_dt = utility.parse_local_dt(req.t0)
+#     except Exception:
+#         raise HTTPException(status_code=400, detail=f"Invalid t0; expected like '{utility.local_ts()}' (format {config.TIME_FMT})")
 
-    f = io.StringIO(req.csv_text)
-    reader = csv.DictReader(f)
-    required_cols = {"scanner", "t_offset_sec", "category", "action", "args_json"}
-    if not required_cols.issubset(set(reader.fieldnames or [])):
-        raise HTTPException(status_code=400, detail=f"CSV must have columns: {sorted(list(required_cols))}")
+#     f = io.StringIO(req.csv_text)
+#     reader = csv.DictReader(f)
+#     required_cols = {"scanner", "t_offset_sec", "category", "action", "args_json"}
+#     if not required_cols.issubset(set(reader.fieldnames or [])):
+#         raise HTTPException(status_code=400, detail=f"CSV must have columns: {sorted(list(required_cols))}")
 
-    rows = list(reader)
-    preflight = _prepare_mobility_script_run_from_rows(rows)
+#     rows = list(reader)
+#     preflight = _prepare_mobility_script_run_from_rows(rows)
 
-    added = 0
-    skipped_not_whitelisted = 0
-    bad_rows = 0
+#     added = 0
+#     skipped_not_whitelisted = 0
+#     bad_rows = 0
 
-    for row in rows:
-        scanner = (row.get("scanner") or "").strip()
-        if not scanner:
-            bad_rows += 1
-            continue
-        if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
-            skipped_not_whitelisted += 1
-            continue
+#     for row in rows:
+#         scanner = (row.get("scanner") or "").strip()
+#         if not scanner:
+#             bad_rows += 1
+#             continue
+#         if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
+#             skipped_not_whitelisted += 1
+#             continue
 
-        try:
-            offset = int((row.get("t_offset_sec") or "0").strip())
-        except Exception:
-            bad_rows += 1
-            continue
+#         try:
+#             offset = int((row.get("t_offset_sec") or "0").strip())
+#         except Exception:
+#             bad_rows += 1
+#             continue
 
-        category = (row.get("category") or "scan").strip() or "scan"
-        action = (row.get("action") or "").strip()
-        if not action:
-            bad_rows += 1
-            continue
+#         category = (row.get("category") or "scan").strip() or "scan"
+#         action = (row.get("action") or "").strip()
+#         if not action:
+#             bad_rows += 1
+#             continue
 
-        args_s = (row.get("args_json") or "").strip()
-        if args_s:
-            try:
-                args = json.loads(args_s)
-            except Exception:
-                bad_rows += 1
-                continue
-        else:
-            args = {}
+#         args_s = (row.get("args_json") or "").strip()
+#         if args_s:
+#             try:
+#                 args = json.loads(args_s)
+#             except Exception:
+#                 bad_rows += 1
+#                 continue
+#         else:
+#             args = {}
 
-        execute_at = (t0_dt + timedelta(seconds=offset)).strftime(config.TIME_FMT)
+#         execute_at = (t0_dt + timedelta(seconds=offset)).strftime(config.TIME_FMT)
 
-        _enqueue_script_or_csv_item(
-            scanner=scanner,
-            category=category,
-            action=action,
-            execute_at=execute_at,
-            args=args,
-        )
-        added += 1
+#         _enqueue_script_or_csv_item(
+#             scanner=scanner,
+#             category=category,
+#             action=action,
+#             execute_at=execute_at,
+#             args=args,
+#         )
+#         added += 1
 
-    last_execute_at = t0_dt
-    f2 = io.StringIO(req.csv_text)
-    reader2 = csv.DictReader(f2)
+#     last_execute_at = t0_dt
+#     f2 = io.StringIO(req.csv_text)
+#     reader2 = csv.DictReader(f2)
 
-    for row in reader2:
-        try:
-            offset = int((row.get("t_offset_sec") or "0").strip())
-            cand = t0_dt + timedelta(seconds=offset)
-            if cand > last_execute_at:
-                last_execute_at = cand
-        except Exception:
-            continue
+#     for row in reader2:
+#         try:
+#             offset = int((row.get("t_offset_sec") or "0").strip())
+#             cand = t0_dt + timedelta(seconds=offset)
+#             if cand > last_execute_at:
+#                 last_execute_at = cand
+#         except Exception:
+#             continue
 
-    exp = _register_experiment_status(
-        t0_str=t0_dt.strftime(config.TIME_FMT),
-        last_execute_at_str=last_execute_at.strftime(config.TIME_FMT),
-        item_count=added,
-        source="load_csv",
-        scenario_name="",
-    )
+#     exp = _register_experiment_status(
+#         t0_str=t0_dt.strftime(config.TIME_FMT),
+#         last_execute_at_str=last_execute_at.strftime(config.TIME_FMT),
+#         item_count=added,
+#         source="load_csv",
+#         scenario_name="",
+#     )
 
-    return {
-        "status": "ok",
-        "t0": t0_dt.strftime(config.TIME_FMT),
-        "time_format": config.TIME_FMT,
-        "added": added,
-        "skipped_not_whitelisted": skipped_not_whitelisted,
-        "bad_rows": bad_rows,
-        "preflight": preflight,
-        "experiment": exp,
-    }
+#     return {
+#         "status": "ok",
+#         "t0": t0_dt.strftime(config.TIME_FMT),
+#         "time_format": config.TIME_FMT,
+#         "added": added,
+#         "skipped_not_whitelisted": skipped_not_whitelisted,
+#         "bad_rows": bad_rows,
+#         "preflight": preflight,
+#         "experiment": exp,
+#     }
+
 
 @router.post("/cmd/_load_csv_file", tags=["4 Commands (Polling)"])
 async def cmd_load_csv_file(
     t0: str = Form(..., description=f"Absolute local time, format: {config.TIME_FMT}"),
-    csv_file: UploadFile = File(..., description="Upload a CSV file with columns: scanner,t_offset_sec,category,action,args_json"),
-) -> Dict[str, Any]:
+    session_id: Optional[str] = Form(
+        None,
+        description="Optional session id under the experiment id. If omitted, stored as null.",
+    ),
+    replace_existing: bool = Form(
+        False,
+        description="If true, clear existing queued commands before loading this CSV. Default false preserves previously registered future experiments.",
+    ),
+    csv_file: UploadFile = File(
+        ...,
+        description="Upload a CSV file with columns: scanner,t_offset_sec,category,action,args_json",
+    ),
+) -> Dict[str, Any]:   
+    """
+    Register and load one CSV-backed experiment.
+
+    Final settled experiment-registration contract:
+
+    - Only this endpoint, /cmd/_load_csv_file, registers experiments.
+      The older /cmd/_load_script and /cmd/_load_csv APIs are deprecated/removed
+      to avoid multiple inconsistent registration paths.
+
+    - experiment_id is derived from the uploaded CSV filename stem.
+      Example:
+          M2_test.csv -> experiment_id = "M2_test"
+
+    - session_id is optional input below experiment_id.
+      If omitted, session_id is stored as null.
+      The web server uses experiment_id, not session_id, to decide whether data
+      belongs to a long-term experiment database.
+
+    - lab_id is config.NMS_NAME.
+      This identifies which NMS/lab instance registered the experiment, because
+      multiple NMSs may report to the same web server.
+
+    - registered_at is the NMS local time when this endpoint accepts the CSV.
+
+    - start_at is the parsed t0 input.
+
+    - end_at is derived as:
+          start_at + maximum valid t_offset_sec in the accepted CSV rows
+
+    - guard_sec is the required preparation gap between experiments in the same
+      lab. Current value: 3600 seconds.
+
+    - command_count is the number of accepted/enqueued CSV rows.
+
+    - state is initially "registered".
+      Later states may be derived or updated as: "running", "completed",
+      or "cancelled".
+
+    - Same-lab experiment registration must reject time conflicts:
+          existing.start_at < new.end_at + guard_sec
+          AND
+          existing.end_at   > new.start_at - guard_sec
+
+    - The registry stream is:
+          config.KEY_EXPERIMENT_REGISTRY = "nms:experiment:registry"
+
+    Registry fields written by this endpoint:
+        experiment_id
+        session_id
+        lab_id
+        registered_at
+        start_at
+        end_at
+        guard_sec
+        command_count
+        state
+        time_format
+    """
     try:
         t0_dt = utility.parse_local_dt(t0)
     except Exception:
@@ -1282,9 +1413,15 @@ async def cmd_load_csv_file(
             detail=f"Invalid t0; expected like '{utility.local_ts()}' (format {config.TIME_FMT})"
         )
 
-    filename = (csv_file.filename or "").lower()
-    if not filename.endswith(".csv"):
+    original_filename = (csv_file.filename or "").strip()
+    filename_lower = original_filename.lower()
+
+    if not filename_lower.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Uploaded file must be a .csv file")
+
+    experiment_id = original_filename.rsplit(".", 1)[0].strip()
+    if not experiment_id:
+        raise HTTPException(status_code=400, detail="CSV filename must provide a non-empty experiment_id")
 
     try:
         raw_bytes = await csv_file.read()
@@ -1313,11 +1450,15 @@ async def cmd_load_csv_file(
         )
 
     rows = list(reader)
-    preflight = _prepare_mobility_script_run_from_rows(rows)
+    preflight = _prepare_mobility_script_run_from_rows(
+        rows,
+        replace_existing=replace_existing,
+    )
 
     added = 0
     skipped_not_whitelisted = 0
     bad_rows = 0
+    last_execute_at = t0_dt
 
     for row in rows:
         scanner = (row.get("scanner") or "").strip()
@@ -1351,7 +1492,8 @@ async def cmd_load_csv_file(
         else:
             args = {}
 
-        execute_at = (t0_dt + timedelta(seconds=offset)).strftime(config.TIME_FMT)
+        execute_at_dt = t0_dt + timedelta(seconds=offset)
+        execute_at = execute_at_dt.strftime(config.TIME_FMT)
 
         _enqueue_script_or_csv_item(
             scanner=scanner,
@@ -1360,27 +1502,28 @@ async def cmd_load_csv_file(
             execute_at=execute_at,
             args=args,
         )
+
         added += 1
 
-    f2 = io.StringIO(text)
-    reader2 = csv.DictReader(f2)
+        if execute_at_dt > last_execute_at:
+            last_execute_at = execute_at_dt
 
-    last_execute_at = t0_dt
-    for row in reader2:
-        try:
-            offset = int((row.get("t_offset_sec") or "0").strip())
-            cand = t0_dt + timedelta(seconds=offset)
-            if cand > last_execute_at:
-                last_execute_at = cand
-        except Exception:
-            continue
+    if added <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "CSV contained no accepted commands; experiment was not registered. "
+                f"bad_rows={bad_rows}, skipped_not_whitelisted={skipped_not_whitelisted}"
+            ),
+        )
 
     exp = _register_experiment_status(
-        t0_str=t0_dt.strftime(config.TIME_FMT),
-        last_execute_at_str=last_execute_at.strftime(config.TIME_FMT),
-        item_count=added,
-        source="load_csv_file",
-        scenario_name=csv_file.filename or "",
+        experiment_id=experiment_id,
+        session_id=session_id,
+        start_at_str=t0_dt.strftime(config.TIME_FMT),
+        end_at_str=last_execute_at.strftime(config.TIME_FMT),
+        command_count=added,
+        replace_existing=replace_existing,
     )
 
     return {
@@ -1388,6 +1531,7 @@ async def cmd_load_csv_file(
         "t0": t0_dt.strftime(config.TIME_FMT),
         "time_format": config.TIME_FMT,
         "filename": csv_file.filename or "",
+        "replace_existing": replace_existing,
         "added": added,
         "skipped_not_whitelisted": skipped_not_whitelisted,
         "bad_rows": bad_rows,

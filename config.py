@@ -1,6 +1,10 @@
 from pathlib import Path
 import redis
 
+# Unique identity of this NMS/lab instance.
+# Used as lab_id in experiment registration and northbound reports.
+NMS_NAME = "DemoRoom"
+
 # ======================
 # Constants / Config  (NO getenv; lab-only hardcoded)
 #
