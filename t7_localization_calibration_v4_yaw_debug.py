@@ -46,7 +46,7 @@ from m8mobility_state_store import key_report, key_time
 LOG_DIR = Path("location_data")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-ROBOT_ID = "twin-scout-delta"
+ROBOT_ID = "twin-scout-charlie"
 TRIAL = "P2A-001"
 NOTES = ""
 
