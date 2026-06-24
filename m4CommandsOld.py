@@ -481,18 +481,6 @@ def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
     }
 
 
-def _redis_text(v: Any) -> str:
-    if v is None:
-        return ""
-    if isinstance(v, bytes):
-        return v.decode("utf-8", errors="replace")
-    return str(v)
-
-
-def _nms_lab_id() -> str:
-    return str(getattr(config, "NMS_NAME", "DemoRoom") or "DemoRoom")
-
-
 def _register_experiment_status(
     *,
     experiment_id: str,
@@ -514,26 +502,25 @@ def _register_experiment_status(
         end_at
         guard_sec
         command_count
-        replace_existing
         state
         time_format
     """
     registered_at = utility.local_ts()
+
     clean_session_id = (session_id or "").strip() or None
 
     fields = {
         "experiment_id": str(experiment_id or ""),
-        # Redis streams store strings only. Use empty string internally for null.
         "session_id": "" if clean_session_id is None else clean_session_id,
-        "lab_id": _nms_lab_id(),
+        "lab_id": str(config.NMS_NAME),
         "registered_at": registered_at,
         "start_at": start_at_str,
         "end_at": end_at_str,
         "guard_sec": "3600",
         "command_count": str(int(command_count)),
-        "replace_existing": "true" if replace_existing else "false",
         "state": "registered",
         "time_format": config.TIME_FMT,
+        "replace_existing": "true" if replace_existing else "false",
     }
 
     xid = config.r.xadd(
@@ -543,101 +530,84 @@ def _register_experiment_status(
         approximate=True,
     )
 
+    # Return JSON-facing value with session_id as real null, not "".
     result = {
         "stream_id": xid,
         **fields,
     }
-    # API-facing contract uses JSON null when the caller omitted session_id.
     result["session_id"] = clean_session_id
-    result["replace_existing"] = bool(replace_existing)
-    return result
 
+    return result
 
 
 def _is_mobility_csv_row(row: Dict[str, Any]) -> bool:
     return (row.get("category") or "").strip().lower() == "mobility"
 
 
-def _analyze_csv_rows_for_experiment(
+def _prepare_mobility_script_run_from_rows(
     rows: List[Dict[str, Any]],
     *,
-    t0_dt,
+    replace_existing: bool = False,
 ) -> Dict[str, Any]:
     """
-    Dry-analyze CSV rows before any Redis mutation.
+    Production preflight for CSV mobility experiment registration.
 
-    This function is intentionally read-only except whitelist checks. It does not:
-    - clear stop latches
-    - clear command queues
-    - reset mobility state
-    - enqueue commands
-    - write experiment registry records
+    Always enforced:
+    - identify mobility scanners in this CSV
+    - first mobility row for each scanner must be mobility.report.location
 
-    It validates rows, builds accepted enqueue items, computes end_at from accepted
-    rows only, and enforces the mobility first-row precondition.
+    If replace_existing is False:
+    - do NOT clear old global stop latch
+    - do NOT clear old scheduled mobility rows
+    - do NOT clear old per-robot command streams
+    - do NOT reset per-robot mobility state
+    - do NOT clear stale planned pose
+
+    This allows multiple future experiments to coexist in Redis queues, provided
+    they later pass same-lab time-conflict checks.
+
+    If replace_existing is True:
+    - old global stop latch is cleared
+    - old scheduled mobility rows are cleared
+    - old per-robot command streams are cleared for scanners in this script
+    - per-robot mobility state is reset to S0/NORMAL
+    - stale planned pose and last-issued command mirrors are cleared
+
+    Why first-row location is required:
+    mobility.report.location is now a precondition command. Its report refreshes
+    true_location_json and S3 aligns planned_location_json=true_location_json.
+    Script movement commands then start from a well-defined pose.
     """
-    accepted_items: List[Dict[str, Any]] = []
-    skipped_not_whitelisted = 0
-    bad_rows = 0
-    last_execute_at = t0_dt
-
     scanner_first: Dict[str, Dict[str, Any]] = {}
     mobility_scanners = set()
 
     for row in rows:
         scanner = (row.get("scanner") or "").strip()
         if not scanner:
-            bad_rows += 1
             continue
-
         if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
-            skipped_not_whitelisted += 1
+            continue
+        if not _is_mobility_csv_row(row):
             continue
 
+        action = (row.get("action") or "").strip()
         try:
             offset = int((row.get("t_offset_sec") or "0").strip())
         except Exception:
-            bad_rows += 1
-            continue
+            offset = 0
 
-        category = (row.get("category") or "scan").strip() or "scan"
-        action = (row.get("action") or "").strip()
-        if not action:
-            bad_rows += 1
-            continue
+        mobility_scanners.add(scanner)
+        old = scanner_first.get(scanner)
+        if old is None or offset < int(old.get("offset", 0)):
+            scanner_first[scanner] = {"offset": offset, "action": action}
 
-        args_s = (row.get("args_json") or "").strip()
-        if args_s:
-            try:
-                args = json.loads(args_s)
-            except Exception:
-                bad_rows += 1
-                continue
-        else:
-            args = {}
-
-        execute_at_dt = t0_dt + timedelta(seconds=offset)
-        execute_at = execute_at_dt.strftime(config.TIME_FMT)
-
-        item = {
-            "scanner": scanner,
-            "category": category,
-            "action": action,
-            "execute_at": execute_at,
-            "execute_at_dt": execute_at_dt,
-            "args": args,
-            "offset": offset,
+    if not mobility_scanners:
+        return {
+            "mobility_preflight": "skipped",
+            "replace_existing": replace_existing,
+            "mobility_scanners": [],
+            "detail": "no mobility rows",
         }
-        accepted_items.append(item)
-
-        if execute_at_dt > last_execute_at:
-            last_execute_at = execute_at_dt
-
-        if category.strip().lower() == "mobility":
-            mobility_scanners.add(scanner)
-            old = scanner_first.get(scanner)
-            if old is None or offset < int(old.get("offset", 0)):
-                scanner_first[scanner] = {"offset": offset, "action": action}
 
     bad_first = {
         scanner: info
@@ -654,70 +624,23 @@ def _analyze_csv_rows_for_experiment(
             ),
         )
 
-    if not accepted_items:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "CSV contained no accepted commands; experiment was not registered. "
-                f"bad_rows={bad_rows}, skipped_not_whitelisted={skipped_not_whitelisted}"
-            ),
-        )
-
-    preflight = {
-        "mobility_preflight": "ok" if mobility_scanners else "skipped",
-        "mobility_scanners": sorted(mobility_scanners),
-        "detail": (
-            "validated mobility first-row precondition; no Redis mutation performed"
-            if mobility_scanners
-            else "no mobility rows"
-        ),
-    }
-
-    return {
-        "accepted_items": accepted_items,
-        "added": len(accepted_items),
-        "skipped_not_whitelisted": skipped_not_whitelisted,
-        "bad_rows": bad_rows,
-        "last_execute_at": last_execute_at,
-        "mobility_scanners": sorted(mobility_scanners),
-        "preflight": preflight,
-    }
-
-
-def _prepare_mobility_script_replacement_if_requested(
-    *,
-    mobility_scanners: List[str],
-    replace_existing: bool,
-) -> Dict[str, Any]:
-    """
-    Optional destructive cleanup for CSV-backed experiments.
-
-    This must be called only after:
-    - CSV dry analysis has passed
-    - accepted command count is nonzero
-    - same-lab time-conflict check has passed
-
-    replace_existing=False preserves previously registered future experiments.
-    replace_existing=True clears old mobility queues/state before loading this CSV.
-    """
-    if not mobility_scanners:
-        return {
-            "replacement_preflight": "skipped",
-            "replace_existing": bool(replace_existing),
-            "mobility_scanners": [],
-            "detail": "no mobility rows",
-        }
-
+    # Normal experiment registration path:
+    # preserve previous future experiments and queued commands.
     if not replace_existing:
         return {
-            "replacement_preflight": "preserved",
+            "mobility_preflight": "ok",
             "replace_existing": False,
-            "mobility_scanners": list(mobility_scanners),
+            "mobility_scanners": sorted(mobility_scanners),
             "old_mobility_cmd_stream_len": None,
             "reset_scanners": [],
-            "detail": "existing command queues and mobility state were preserved",
+            "detail": (
+                "validated mobility first-row precondition only; "
+                "existing command queues and mobility state were preserved"
+            ),
         }
 
+    # Explicit replacement path:
+    # destructive cleanup is allowed only here.
     _save_stop(False, "")
 
     old_mobility_len = 0
@@ -812,7 +735,7 @@ def _prepare_mobility_script_replacement_if_requested(
         reset_scanners.append(scanner)
 
     return {
-        "replacement_preflight": "cleared",
+        "mobility_preflight": "ok",
         "replace_existing": True,
         "mobility_scanners": reset_scanners,
         "old_mobility_cmd_stream_len": old_mobility_len,
@@ -822,103 +745,6 @@ def _prepare_mobility_script_replacement_if_requested(
             "and stale planned pose because replace_existing=true"
         ),
     }
-
-
-def _check_experiment_time_conflict_or_raise(
-    *,
-    lab_id: str,
-    start_at_dt,
-    end_at_dt,
-    guard_sec: int = 3600,
-) -> Dict[str, Any]:
-    """
-    Reject same-lab experiment registrations that violate the guard interval.
-
-    Conflict rule:
-        existing.start_at < new.end_at + guard_sec
-        AND
-        existing.end_at   > new.start_at - guard_sec
-
-    Exactly one hour of separation is allowed because the inequalities are strict.
-    replace_existing does not bypass this check.
-    """
-    new_guard_start = start_at_dt - timedelta(seconds=guard_sec)
-    new_guard_end = end_at_dt + timedelta(seconds=guard_sec)
-
-    try:
-        entries = config.r.xrange(config.KEY_EXPERIMENT_REGISTRY, min="-", max="+")
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to read experiment registry for conflict check: {e}",
-        )
-
-    checked = 0
-    for stream_id, raw_fields in entries:
-        fields = {
-            _redis_text(k): _redis_text(v)
-            for k, v in dict(raw_fields).items()
-        }
-
-        if fields.get("lab_id", "") != lab_id:
-            continue
-
-        state = fields.get("state", "").strip().lower()
-        if state in {"cancelled", "canceled", "deleted"}:
-            continue
-
-        existing_start_s = fields.get("start_at", "")
-        existing_end_s = fields.get("end_at", "")
-        if not existing_start_s or not existing_end_s:
-            # Old/deprecated registry records are ignored because they do not
-            # contain the settled contract fields needed for conflict checking.
-            continue
-
-        try:
-            existing_start = utility.parse_local_dt(existing_start_s)
-            existing_end = utility.parse_local_dt(existing_end_s)
-        except Exception:
-            continue
-
-        checked += 1
-        if existing_start < new_guard_end and existing_end > new_guard_start:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "error": "experiment_time_conflict",
-                    "lab_id": lab_id,
-                    "guard_sec": guard_sec,
-                    "new_start_at": start_at_dt.strftime(config.TIME_FMT),
-                    "new_end_at": end_at_dt.strftime(config.TIME_FMT),
-                    "conflict_stream_id": _redis_text(stream_id),
-                    "conflict_experiment_id": fields.get("experiment_id", ""),
-                    "conflict_session_id": fields.get("session_id", ""),
-                    "conflict_start_at": existing_start_s,
-                    "conflict_end_at": existing_end_s,
-                },
-            )
-
-    return {
-        "status": "ok",
-        "lab_id": lab_id,
-        "guard_sec": guard_sec,
-        "checked_same_lab_records": checked,
-    }
-
-
-def _prepare_mobility_script_run_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Deprecated compatibility wrapper.
-
-    The production CSV experiment loader no longer uses this destructive helper.
-    Use _analyze_csv_rows_for_experiment() before acceptance and
-    _prepare_mobility_script_replacement_if_requested() only after the conflict
-    check passes.
-    """
-    raise RuntimeError(
-        "_prepare_mobility_script_run_from_rows is deprecated for experiment loading; "
-        "use dry analysis + optional replacement cleanup instead"
-    )
 
 
 def _enqueue_script_or_csv_item(
@@ -978,7 +804,6 @@ def _enqueue_script_or_csv_item(
         maxlen=5000,
         approximate=True,
     )
-
 
 
 def _mobility_enqueue_core(
@@ -1322,30 +1147,188 @@ def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
     }
 
 
-@router.post("/cmd/_load_script", tags=["4 Commands (Polling)"])
-def cmd_load_script(script: ScriptLoad) -> Dict[str, Any]:
-    """
-    Deprecated. /cmd/_load_csv_file is the only supported experiment-registration
-    API. This endpoint is intentionally blocked to prevent inconsistent registry
-    records and queue behavior.
-    """
-    raise HTTPException(
-        status_code=410,
-        detail="/cmd/_load_script is deprecated. Use /cmd/_load_csv_file.",
-    )
+# @router.post("/cmd/_load_script", tags=["4 Commands (Polling)"])
+# def cmd_load_script(script: ScriptLoad) -> Dict[str, Any]:
+#     try:
+#         t0_dt = utility.parse_local_dt(script.t0)
+#     except Exception:
+#         raise HTTPException(status_code=400, detail=f"Invalid t0; expected like '{utility.local_ts()}' (format {config.TIME_FMT})")
+
+#     # Normalize JSON script items into the same row shape used by CSV loaders.
+#     # This guarantees /cmd/_load_script, /cmd/_load_csv, and /cmd/_load_csv_file
+#     # share the same mobility preflight, stop-latch clearing, queue clearing,
+#     # stale planned-pose clearing, and first-row mobility.report.location rule.
+#     rows: List[Dict[str, Any]] = []
+#     for it in script.items:
+#         rows.append({
+#             "scanner": (it.scanner or "").strip(),
+#             "t_offset_sec": str(int(it.t_offset_sec)),
+#             "category": (it.category or "scan").strip() or "scan",
+#             "action": (it.action or "").strip(),
+#             "args_json": json.dumps(it.args or {}, ensure_ascii=False),
+#         })
+
+#     preflight = _prepare_mobility_script_run_from_rows(rows)
+
+#     added = 0
+#     skipped_not_whitelisted = 0
+#     bad_rows = 0
+
+#     for it in script.items:
+#         scanner = (it.scanner or "").strip()
+#         if not scanner:
+#             bad_rows += 1
+#             continue
+
+#         if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
+#             skipped_not_whitelisted += 1
+#             continue
+
+#         try:
+#             offset = int(it.t_offset_sec)
+#         except Exception:
+#             bad_rows += 1
+#             continue
+
+#         category = (it.category or "scan").strip() or "scan"
+#         action = (it.action or "").strip()
+#         if not action:
+#             bad_rows += 1
+#             continue
+
+#         execute_at = (t0_dt + timedelta(seconds=offset)).strftime(config.TIME_FMT)
+
+#         _enqueue_script_or_csv_item(
+#             scanner=scanner,
+#             category=category,
+#             action=action,
+#             execute_at=execute_at,
+#             args=it.args or {},
+#         )
+#         added += 1
+
+#     last_execute_at = t0_dt
+#     for it in script.items:
+#         try:
+#             cand = t0_dt + timedelta(seconds=int(it.t_offset_sec))
+#             if cand > last_execute_at:
+#                 last_execute_at = cand
+#         except Exception:
+#             pass
+
+#     exp = _register_experiment_status(
+#         t0_str=t0_dt.strftime(config.TIME_FMT),
+#         last_execute_at_str=last_execute_at.strftime(config.TIME_FMT),
+#         item_count=added,
+#         source="load_script",
+#         scenario_name="",
+#     )
+
+#     return {
+#         "status": "ok",
+#         "added": added,
+#         "skipped_not_whitelisted": skipped_not_whitelisted,
+#         "bad_rows": bad_rows,
+#         "t0": t0_dt.strftime(config.TIME_FMT),
+#         "time_format": config.TIME_FMT,
+#         "preflight": preflight,
+#         "experiment": exp,
+#     }
 
 
-@router.post("/cmd/_load_csv", tags=["4 Commands (Polling)"])
-def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
-    """
-    Deprecated. /cmd/_load_csv_file is the only supported experiment-registration
-    API. This endpoint is intentionally blocked to prevent inconsistent registry
-    records and queue behavior.
-    """
-    raise HTTPException(
-        status_code=410,
-        detail="/cmd/_load_csv is deprecated. Use /cmd/_load_csv_file.",
-    )
+# @router.post("/cmd/_load_csv", tags=["4 Commands (Polling)"])
+# def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
+#     try:
+#         t0_dt = utility.parse_local_dt(req.t0)
+#     except Exception:
+#         raise HTTPException(status_code=400, detail=f"Invalid t0; expected like '{utility.local_ts()}' (format {config.TIME_FMT})")
+
+#     f = io.StringIO(req.csv_text)
+#     reader = csv.DictReader(f)
+#     required_cols = {"scanner", "t_offset_sec", "category", "action", "args_json"}
+#     if not required_cols.issubset(set(reader.fieldnames or [])):
+#         raise HTTPException(status_code=400, detail=f"CSV must have columns: {sorted(list(required_cols))}")
+
+#     rows = list(reader)
+#     preflight = _prepare_mobility_script_run_from_rows(rows)
+
+#     added = 0
+#     skipped_not_whitelisted = 0
+#     bad_rows = 0
+
+#     for row in rows:
+#         scanner = (row.get("scanner") or "").strip()
+#         if not scanner:
+#             bad_rows += 1
+#             continue
+#         if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
+#             skipped_not_whitelisted += 1
+#             continue
+
+#         try:
+#             offset = int((row.get("t_offset_sec") or "0").strip())
+#         except Exception:
+#             bad_rows += 1
+#             continue
+
+#         category = (row.get("category") or "scan").strip() or "scan"
+#         action = (row.get("action") or "").strip()
+#         if not action:
+#             bad_rows += 1
+#             continue
+
+#         args_s = (row.get("args_json") or "").strip()
+#         if args_s:
+#             try:
+#                 args = json.loads(args_s)
+#             except Exception:
+#                 bad_rows += 1
+#                 continue
+#         else:
+#             args = {}
+
+#         execute_at = (t0_dt + timedelta(seconds=offset)).strftime(config.TIME_FMT)
+
+#         _enqueue_script_or_csv_item(
+#             scanner=scanner,
+#             category=category,
+#             action=action,
+#             execute_at=execute_at,
+#             args=args,
+#         )
+#         added += 1
+
+#     last_execute_at = t0_dt
+#     f2 = io.StringIO(req.csv_text)
+#     reader2 = csv.DictReader(f2)
+
+#     for row in reader2:
+#         try:
+#             offset = int((row.get("t_offset_sec") or "0").strip())
+#             cand = t0_dt + timedelta(seconds=offset)
+#             if cand > last_execute_at:
+#                 last_execute_at = cand
+#         except Exception:
+#             continue
+
+#     exp = _register_experiment_status(
+#         t0_str=t0_dt.strftime(config.TIME_FMT),
+#         last_execute_at_str=last_execute_at.strftime(config.TIME_FMT),
+#         item_count=added,
+#         source="load_csv",
+#         scenario_name="",
+#     )
+
+#     return {
+#         "status": "ok",
+#         "t0": t0_dt.strftime(config.TIME_FMT),
+#         "time_format": config.TIME_FMT,
+#         "added": added,
+#         "skipped_not_whitelisted": skipped_not_whitelisted,
+#         "bad_rows": bad_rows,
+#         "preflight": preflight,
+#         "experiment": exp,
+#     }
 
 
 @router.post("/cmd/_load_csv_file", tags=["4 Commands (Polling)"])
@@ -1357,17 +1340,13 @@ async def cmd_load_csv_file(
     ),
     replace_existing: bool = Form(
         False,
-        description=(
-            "If true, clear existing queued commands and reset mobility state after "
-            "the same-lab time-conflict check passes. Default false preserves "
-            "previously registered future experiments."
-        ),
+        description="If true, clear existing queued commands before loading this CSV. Default false preserves previously registered future experiments.",
     ),
     csv_file: UploadFile = File(
         ...,
         description="Upload a CSV file with columns: scanner,t_offset_sec,category,action,args_json",
     ),
-) -> Dict[str, Any]:
+) -> Dict[str, Any]:   
     """
     Register and load one CSV-backed experiment.
 
@@ -1382,8 +1361,7 @@ async def cmd_load_csv_file(
           M2_test.csv -> experiment_id = "M2_test"
 
     - session_id is optional input below experiment_id.
-      If omitted, session_id is stored as null in the API response and as an
-      empty string in the Redis stream.
+      If omitted, session_id is stored as null.
       The web server uses experiment_id, not session_id, to decide whether data
       belongs to a long-term experiment database.
 
@@ -1402,35 +1380,18 @@ async def cmd_load_csv_file(
       lab. Current value: 3600 seconds.
 
     - command_count is the number of accepted/enqueued CSV rows.
-      If command_count would be zero, the endpoint rejects the request and does
-      not register an experiment.
-
-    - replace_existing controls queue cleanup only after conflict checking:
-          false: preserve existing queued commands and append this experiment
-          true:  after the time-conflict check passes, clear old queues/state
-                 before enqueueing this experiment
-      It does not bypass same-lab time-conflict checking.
 
     - state is initially "registered".
       Later states may be derived or updated as: "running", "completed",
       or "cancelled".
 
-    - Same-lab experiment registration rejects time conflicts:
+    - Same-lab experiment registration must reject time conflicts:
           existing.start_at < new.end_at + guard_sec
           AND
           existing.end_at   > new.start_at - guard_sec
 
     - The registry stream is:
           config.KEY_EXPERIMENT_REGISTRY = "nms:experiment:registry"
-
-    Safe mutation order:
-        1. parse/decode CSV
-        2. dry-analyze accepted rows and compute end_at
-        3. reject if command_count == 0
-        4. check same-lab time conflict
-        5. if replace_existing=true, clear old queues/state
-        6. enqueue accepted commands
-        7. write registry record
 
     Registry fields written by this endpoint:
         experiment_id
@@ -1441,7 +1402,6 @@ async def cmd_load_csv_file(
         end_at
         guard_sec
         command_count
-        replace_existing
         state
         time_format
     """
@@ -1490,37 +1450,71 @@ async def cmd_load_csv_file(
         )
 
     rows = list(reader)
-
-    analysis = _analyze_csv_rows_for_experiment(
+    preflight = _prepare_mobility_script_run_from_rows(
         rows,
-        t0_dt=t0_dt,
-    )
-
-    added = int(analysis["added"])
-    skipped_not_whitelisted = int(analysis["skipped_not_whitelisted"])
-    bad_rows = int(analysis["bad_rows"])
-    last_execute_at = analysis["last_execute_at"]
-    accepted_items = analysis["accepted_items"]
-
-    conflict_check = _check_experiment_time_conflict_or_raise(
-        lab_id=_nms_lab_id(),
-        start_at_dt=t0_dt,
-        end_at_dt=last_execute_at,
-        guard_sec=3600,
-    )
-
-    replacement = _prepare_mobility_script_replacement_if_requested(
-        mobility_scanners=analysis["mobility_scanners"],
         replace_existing=replace_existing,
     )
 
-    for item in accepted_items:
+    added = 0
+    skipped_not_whitelisted = 0
+    bad_rows = 0
+    last_execute_at = t0_dt
+
+    for row in rows:
+        scanner = (row.get("scanner") or "").strip()
+        if not scanner:
+            bad_rows += 1
+            continue
+
+        if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
+            skipped_not_whitelisted += 1
+            continue
+
+        try:
+            offset = int((row.get("t_offset_sec") or "0").strip())
+        except Exception:
+            bad_rows += 1
+            continue
+
+        category = (row.get("category") or "scan").strip() or "scan"
+        action = (row.get("action") or "").strip()
+        if not action:
+            bad_rows += 1
+            continue
+
+        args_s = (row.get("args_json") or "").strip()
+        if args_s:
+            try:
+                args = json.loads(args_s)
+            except Exception:
+                bad_rows += 1
+                continue
+        else:
+            args = {}
+
+        execute_at_dt = t0_dt + timedelta(seconds=offset)
+        execute_at = execute_at_dt.strftime(config.TIME_FMT)
+
         _enqueue_script_or_csv_item(
-            scanner=item["scanner"],
-            category=item["category"],
-            action=item["action"],
-            execute_at=item["execute_at"],
-            args=item["args"],
+            scanner=scanner,
+            category=category,
+            action=action,
+            execute_at=execute_at,
+            args=args,
+        )
+
+        added += 1
+
+        if execute_at_dt > last_execute_at:
+            last_execute_at = execute_at_dt
+
+    if added <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "CSV contained no accepted commands; experiment was not registered. "
+                f"bad_rows={bad_rows}, skipped_not_whitelisted={skipped_not_whitelisted}"
+            ),
         )
 
     exp = _register_experiment_status(
@@ -1532,21 +1526,12 @@ async def cmd_load_csv_file(
         replace_existing=replace_existing,
     )
 
-    preflight = {
-        **analysis["preflight"],
-        "conflict_check": conflict_check,
-        "replacement": replacement,
-    }
-
     return {
         "status": "ok",
         "t0": t0_dt.strftime(config.TIME_FMT),
         "time_format": config.TIME_FMT,
         "filename": csv_file.filename or "",
-        "experiment_id": experiment_id,
-        "session_id": (session_id or "").strip() or None,
-        "lab_id": _nms_lab_id(),
-        "replace_existing": bool(replace_existing),
+        "replace_existing": replace_existing,
         "added": added,
         "skipped_not_whitelisted": skipped_not_whitelisted,
         "bad_rows": bad_rows,
