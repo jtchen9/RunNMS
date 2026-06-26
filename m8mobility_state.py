@@ -1234,7 +1234,7 @@ def _s3_extract_visible_tags(scanner: str) -> list[Dict[str, Any]]:
         },
         "rear": {
             "heading_offset_deg": 180.0,
-            "forward_offset_m": -0.055,
+            "forward_offset_m": -0.075,
         },
     }
 
