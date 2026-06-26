@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 grid resolution: 0.1 m
-heading resolution: 5�X
+heading resolution: 5 degree
 front offset: +0.055 m
 rear offset: -0.075 m
-front usable half-FOV: ��35�X
-rear usable half-FOV: ��15�X
-distance range: 0.4�V4.0 m
-inner robot �� tags 31�V58 only
-outer robot �� tags 1�V30 only
+front usable half-FOV: \pm 35 degree
+rear usable half-FOV: \pm 15 degree
+distance range: 0.4-4.0 m
+inner robot: tags 31-58 only
+outer robot: tags 1-30 only
 no doorway exceptions
 ==============
 outputs:
@@ -18,10 +18,10 @@ optional PNG heatmaps
 ==============
 Quick Test commands:
  
-python t8_build_preferred_heading_matrices.py --mode points --tag-file "sitemap\DemoRoom\tag_location.txt" --output-dir preferred_heading_test --points "2,2;2,4;6,2;6,4;8,2;8,4;2,8;6,8;9,8" --no-png
+python t2_build_preferred_heading_matrices.py --mode points --tag-file "..\sitemap\DemoRoom\tag_location.txt" --output-dir "output\preferred_heading_test" --points "2,2;2,4;6,2;6,4;8,2;8,4;2,8;6,8;9,8" --no-png
 ==============
 Full matrix run:
-python t8_build_preferred_heading_matrices.py --mode full --tag-file "sitemap\DemoRoom\tag_location.txt" --output-dir preferred_heading_full   
+python t2_build_preferred_heading_matrices.py --mode full --tag-file "..\sitemap\DemoRoom\tag_location.txt" --output-dir "output\preferred_heading_full"   
 (ptional heatmaps are also generated unless you add "--no-png")
 (save only 2D outputs, add "--no-3d-matrices"
 ==============

@@ -1,0 +1,88 @@
+STEP 2 TAG/CAMERA RESIDUAL STATISTICS
+========================================================================
+Input rows: 290
+Unique tags: 28
+Tag/camera groups: 52
+
+Camera-level summary:
+camera_role  obs_count  unique_tags  gt_pose_count  distance_mean_clean  distance_median  distance_std_clean  distance_outliers  angle_mean_clean  angle_median  angle_std_clean  angle_outliers  yaw_mean_clean  yaw_median  yaw_std_clean  yaw_outliers  single_pos_err_mean_clean  single_pos_err_median  single_pos_err_std_clean  single_pos_err_outliers  single_heading_err_mean_clean  single_heading_err_median  single_heading_err_std_clean  single_heading_err_outliers
+      front        227           28             63               -1.258           -0.800               4.958                 37            -1.506        -1.700            3.080              17          -3.993      -3.900          6.542            40                     36.998                 34.360                    33.719                       36                          6.251                      5.100                         5.731                           37
+       rear         63           24             37                2.314            0.100               8.239                  3             4.969         4.900            3.924               1          -2.766      -1.713         14.111             0                     47.313                 47.990                    23.181                        7                         13.577                     14.286                         9.007                            0
+
+Suggested-use counts:
+suggested_use
+WEAK_OR_INSPECT            21
+TRUSTED_FIRST_PASS         18
+USE_DIST_ANGLE_WEAK_YAW    13
+
+Top 15 worst tag/camera groups by median single-tag position error:
+ tag_id camera_role  obs_count  single_pos_err_median  single_heading_err_median  distance_mean_clean  angle_mean_clean  yaw_mean_clean                                                                        diagnosis_flags           suggested_use
+     54        rear          1                253.930                     32.505               28.940             0.425         -32.080 LOW_COUNT|DIST_STEADY_BIAS|YAW_STEADY_BIAS|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     55        rear          1                194.760                     30.212               24.720            -1.775         -31.987 LOW_COUNT|DIST_STEADY_BIAS|YAW_STEADY_BIAS|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     40       front         15                153.570                     26.900               -1.207            -1.400         -32.621                               YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     53       front          4                 94.445                     17.322               -1.340            -0.564          13.482                               YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     43       front          8                 84.405                     15.500               -6.215             1.543          19.014                               YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     53        rear          1                 76.170                      6.897                5.630             7.778          14.675                        LOW_COUNT|ANGLE_STEADY_BIAS|YAW_STEADY_BIAS|SINGLE_POSE_BAD_POS         WEAK_OR_INSPECT
+     50       front          8                 76.135                     13.203               -1.667            -1.752           8.184                               YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     40        rear          4                 75.330                     19.529               -0.007             4.707         -13.232                          ANGLE_STEADY_BIAS|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     41        rear          5                 70.050                     23.300               -0.760             7.375          -7.300             ANGLE_STEADY_BIAS|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     51       front          8                 67.140                      7.882                1.761            -2.395          -8.336                                                                    SINGLE_POSE_BAD_POS      TRUSTED_FIRST_PASS
+     48        rear          4                 64.875                     15.500                5.100             4.610          -9.989             ANGLE_STEADY_BIAS|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     51        rear          3                 63.810                      9.239                1.413             5.786          10.271                                                    YAW_STEADY_BIAS|SINGLE_POSE_BAD_POS USE_DIST_ANGLE_WEAK_YAW
+     44       front          4                 63.670                     11.431              -15.623             3.589          -8.226           DIST_STEADY_BIAS|YAW_STEADY_BIAS|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     52        rear          3                 55.840                     15.062               -0.945             9.363           3.963             ANGLE_STEADY_BIAS|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     50        rear          3                 54.800                     12.160               -3.145             3.370          18.434                            YAW_STEADY_BIAS|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+
+Top 15 yaw-unstable tag/camera groups:
+ tag_id camera_role  obs_count  yaw_mean_clean  yaw_std_clean  yaw_outliers  single_heading_err_median                                                                                 diagnosis_flags           suggested_use
+     43       front          8          19.014         28.962             0                     15.500                                        YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     40       front         15         -32.621         28.422             0                     26.900                                        YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     53       front          4          13.482         28.311             0                     17.322                                        YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     50       front          8           8.184         21.203             0                     13.203                                        YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     38        rear          3           0.967         18.699             0                     11.500                                                            YAW_UNSTABLE|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     37        rear          2          -4.600         18.526             0                     13.200            LOW_COUNT|ANGLE_STEADY_BIAS|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     36        rear          3          -2.971         16.536             0                     10.600                                                            YAW_UNSTABLE|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     52        rear          3           3.963         16.271             0                     15.062                      ANGLE_STEADY_BIAS|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     35        rear          2          -4.404         15.692             0                     17.193 LOW_COUNT|DIST_UNSTABLE|ANGLE_UNSTABLE|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     58       front          7           7.536         15.571             0                      9.626                                                                                    YAW_UNSTABLE USE_DIST_ANGLE_WEAK_YAW
+     42       front         12           1.087         14.638             1                      9.050                                                                                    YAW_UNSTABLE USE_DIST_ANGLE_WEAK_YAW
+     41        rear          5          -7.300         14.487             0                     23.300                      ANGLE_STEADY_BIAS|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     46        rear          2           0.050         14.071             0                     12.150                              LOW_COUNT|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     49        rear          5           1.051         13.922             0                      6.580                                                                                    YAW_UNSTABLE USE_DIST_ANGLE_WEAK_YAW
+     48        rear          4          -9.989         13.896             0                     15.500                      ANGLE_STEADY_BIAS|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+
+Top 15 distance-unstable tag/camera groups:
+ tag_id camera_role  obs_count  distance_mean_clean  distance_std_clean  distance_outliers  single_pos_err_median                                                                                 diagnosis_flags           suggested_use
+     35        rear          2                3.510              10.904                  0                 50.575 LOW_COUNT|DIST_UNSTABLE|ANGLE_UNSTABLE|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     49        rear          5                6.618               9.764                  0                 35.490                                                                                    YAW_UNSTABLE USE_DIST_ANGLE_WEAK_YAW
+     34        rear          3               -2.113               7.663                  0                 47.180                                                                  YAW_STEADY_BIAS|ANGLE_UNSTABLE         WEAK_OR_INSPECT
+     57        rear          4               18.198               7.538                  0                 50.520                                   ANGLE_STEADY_BIAS|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     46        rear          2                2.600               6.788                  0                 51.790                              LOW_COUNT|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     57       front         12               19.360               6.287                  2                 47.155                                                                  ANGLE_STEADY_BIAS|YAW_UNSTABLE         WEAK_OR_INSPECT
+     55       front         12               14.927               5.625                  0                 31.770                                                                               ANGLE_STEADY_BIAS         WEAK_OR_INSPECT
+     41        rear          5               -0.760               5.501                  0                 70.050                      ANGLE_STEADY_BIAS|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     56        rear          2               12.735               5.424                  0                 47.080                                             LOW_COUNT|ANGLE_STEADY_BIAS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     33        rear          3               -0.607               5.330                  0                 33.600                                                                                  ANGLE_UNSTABLE         WEAK_OR_INSPECT
+     58       front          7               18.289               5.200                  0                 27.330                                                                                    YAW_UNSTABLE USE_DIST_ANGLE_WEAK_YAW
+     39        rear          2               -3.550               5.162                  0                 27.365                                                                                       LOW_COUNT      TRUSTED_FIRST_PASS
+     48        rear          4                5.100               5.010                  0                 64.875                      ANGLE_STEADY_BIAS|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     58        rear          2               18.665               4.674                  0                 30.420                                                    LOW_COUNT|DIST_STEADY_BIAS|ANGLE_STEADY_BIAS         WEAK_OR_INSPECT
+     43       front          8               -6.215               4.624                  0                 84.405                                        YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+
+Top 15 angle-unstable tag/camera groups:
+ tag_id camera_role  obs_count  angle_mean_clean  angle_std_clean  angle_outliers  single_pos_err_median                                                                                 diagnosis_flags           suggested_use
+     35        rear          2            -1.498            8.623               0                 50.575 LOW_COUNT|DIST_UNSTABLE|ANGLE_UNSTABLE|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     34        rear          3             2.644            8.401               0                 47.180                                                                  YAW_STEADY_BIAS|ANGLE_UNSTABLE         WEAK_OR_INSPECT
+     33        rear          3             3.222            7.446               0                 33.600                                                                                  ANGLE_UNSTABLE         WEAK_OR_INSPECT
+     51        rear          3             5.786            5.706               0                 63.810                                                             YAW_STEADY_BIAS|SINGLE_POSE_BAD_POS USE_DIST_ANGLE_WEAK_YAW
+     33       front          9             1.156            4.966               0                 15.430                                                                                   OK_FIRST_PASS      TRUSTED_FIRST_PASS
+     44       front          4             3.589            4.165               0                 63.670                    DIST_STEADY_BIAS|YAW_STEADY_BIAS|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING         WEAK_OR_INSPECT
+     58       front          7             3.700            4.094               0                 27.330                                                                                    YAW_UNSTABLE USE_DIST_ANGLE_WEAK_YAW
+     43       front          8             1.543            3.987               0                 84.405                                        YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     49       front         10            -2.545            3.456               1                 44.405                                                                                   OK_FIRST_PASS      TRUSTED_FIRST_PASS
+     36        rear          3             3.212            3.161               0                 40.350                                                            YAW_UNSTABLE|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     46        rear          2             3.000            3.111               0                 51.790                              LOW_COUNT|YAW_UNSTABLE|SINGLE_POSE_BAD_POS|SINGLE_POSE_BAD_HEADING USE_DIST_ANGLE_WEAK_YAW
+     57       front         12            -4.927            2.916               1                 47.155                                                                  ANGLE_STEADY_BIAS|YAW_UNSTABLE         WEAK_OR_INSPECT
+     32       front          8            -0.338            2.886               1                 19.350                                                                                   OK_FIRST_PASS      TRUSTED_FIRST_PASS
+     41       front         13            -1.472            2.854               0                 27.280                                                                                   OK_FIRST_PASS      TRUSTED_FIRST_PASS
+     34       front         11            -0.682            2.852               2                 16.700                                                                                   OK_FIRST_PASS      TRUSTED_FIRST_PASS

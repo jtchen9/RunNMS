@@ -9,6 +9,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import config
 import utility
+from pathlib import Path
+import sys
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from m8mobility_map import _ensure_mobility_assets_ready, _load_tag_map
 from m8mobility_state import _s3_extract_visible_tags, _s3_solve_true_location
