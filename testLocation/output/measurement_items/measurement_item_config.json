@@ -1,0 +1,27 @@
+{
+  "input_csv": "D:\\Data\\_Action\\_RunNMS\\testLocation\\input\\step1_observations.csv",
+  "output_dir": "D:\\Data\\_Action\\_RunNMS\\testLocation\\output\\measurement_items",
+  "modes_tested": [
+    "distance_only",
+    "distance_angle",
+    "distance_angle_yaw"
+  ],
+  "max_detail_groups": 10,
+  "measurement_weights": {
+    "front": {
+      "distance": 1.0,
+      "angle": 0.5,
+      "yaw": 0.05
+    },
+    "rear": {
+      "distance": 0.5,
+      "angle": 0.2,
+      "yaw": 0.01
+    }
+  },
+  "item_sigma": {
+    "distance": 0.05,
+    "angle": 3.0,
+    "yaw": 10.0
+  }
+}

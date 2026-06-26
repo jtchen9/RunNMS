@@ -1,0 +1,28 @@
+MEASUREMENT ITEM TEST SUMMARY
+================================================================================
+input rows: 290
+group count: 63
+
+[distance_only]
+  groups: 63
+  avg observations/group: 4.60
+  avg items/group: 4.60
+  avg distance items/group: 4.60
+  avg angle items/group: 0.00
+  avg yaw items/group: 0.00
+
+[distance_angle]
+  groups: 63
+  avg observations/group: 4.60
+  avg items/group: 9.21
+  avg distance items/group: 4.60
+  avg angle items/group: 4.60
+  avg yaw items/group: 0.00
+
+[distance_angle_yaw]
+  groups: 63
+  avg observations/group: 4.60
+  avg items/group: 13.81
+  avg distance items/group: 4.60
+  avg angle items/group: 4.60
+  avg yaw items/group: 4.60

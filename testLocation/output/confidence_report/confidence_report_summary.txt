@@ -1,0 +1,56 @@
+CONFIDENCE REPORT TEST SUMMARY
+================================================================================
+group count: 63
+Old data includes many non-preferred orientations, so many BAD/FAILED results are expected.
+
+Confidence counts:
+confidence
+GOOD        36
+MARGINAL    25
+FAILED       2
+
+Update/correction permission counts:
+ok_for_true_location_update: 61
+ok_for_correction_motion: 36
+
+[GOOD] n=36
+  pos_err_cm: median=5.272 cm, p90=25.059 cm, max=32.574 cm
+  heading_err_deg: median=1.328 deg, p90=4.141 deg, max=7.188 deg
+  distance_rms_cm: median=2.982 cm, p90=5.098 cm, max=7.882 cm
+  angle_rms_deg: median=2.824 deg, p90=4.602 deg, max=5.807 deg
+  distance_bearing_span_deg: median=168.820 deg, p90=220.494 deg, max=231.074 deg
+
+[MARGINAL] n=25
+  pos_err_cm: median=10.005 cm, p90=28.086 cm, max=41.052 cm
+  heading_err_deg: median=3.438 deg, p90=6.000 deg, max=11.094 deg
+  distance_rms_cm: median=6.612 cm, p90=10.094 cm, max=12.214 cm
+  angle_rms_deg: median=2.983 deg, p90=6.769 deg, max=7.495 deg
+  distance_bearing_span_deg: median=174.652 deg, p90=216.976 deg, max=221.808 deg
+
+[FAILED] n=2
+  pos_err_cm: median=25.000 cm, p90=25.000 cm, max=25.000 cm
+  heading_err_deg: median=20.000 deg, p90=20.000 deg, max=20.000 deg
+  distance_bearing_span_deg: median=0.000 deg, p90=0.000 deg, max=0.000 deg
+
+Worst 20 accepted-for-update groups by position error:
+               group_key confidence  gt_x  gt_y  gt_h    est_x    est_y     est_h  pos_err_cm  heading_err_deg  distance_items  angle_items  distance_bearing_span_deg  distance_rms_cm  angle_rms_deg                                               reason
+625_x9.000_y4.000_h180.0   MARGINAL   9.0   4.0 180.0 8.737500 3.684375 168.90625   41.051844         11.09375               4            3                 168.730048         9.890688       2.982582 marginal_but_usable_for_true_location_not_correction
+625_x7.000_y3.000_h180.0       GOOD   7.0   3.0 180.0 6.950000 3.321875 178.90625   32.573535          1.09375               4            4                 166.667988         7.882336       1.964430            good_distance_angle_geometry_yaw_coherent
+  624_x5.000_y3.000_h0.0   MARGINAL   5.0   3.0   0.0 4.906250 3.290625 355.31250   30.537183          4.68750               4            4                 190.421470         8.369553       3.031592 marginal_but_usable_for_true_location_not_correction
+  625_x9.000_y4.000_h0.0   MARGINAL   9.0   4.0   0.0 8.715625 4.025000 356.40625   28.547179          3.59375               2            2                  32.208045         0.244833       0.684884 marginal_but_usable_for_true_location_not_correction
+  625_x7.000_y4.000_h0.0       GOOD   7.0   4.0   0.0 6.784375 4.184375 356.25000   28.370457          3.75000               5            5                  69.150899         3.843739       2.947006            good_distance_angle_geometry_yaw_coherent
+  625_x9.000_y3.000_h0.0       GOOD   9.0   3.0   0.0 8.721875 3.043750 357.96875   28.154498          2.03125               3            3                  71.418577         0.823016       2.700395            good_distance_angle_geometry_yaw_coherent
+  624_x5.000_y4.000_h0.0   MARGINAL   5.0   4.0   0.0 4.875000 4.243750 356.56250   27.393259          3.43750               5            5                 198.615190         8.909790       5.931345 marginal_but_usable_for_true_location_not_correction
+625_x8.000_y4.000_h180.0   MARGINAL   8.0   4.0 180.0 7.825000 3.809375 172.34375   25.877189          7.65625               5            3                 173.334964         8.443650       1.772325 marginal_but_usable_for_true_location_not_correction
+  625_x8.000_y4.000_h0.0       GOOD   8.0   4.0   0.0 7.746875 4.040625 356.09375   25.636430          3.90625               4            4                  67.037539         0.468136       1.669199            good_distance_angle_geometry_yaw_coherent
+  625_x8.000_y3.000_h0.0       GOOD   8.0   3.0   0.0 7.762500 3.059375 357.81250   24.480940          2.18750               4            4                  54.954418         0.810767       1.882630            good_distance_angle_geometry_yaw_coherent
+  625_x7.000_y3.000_h0.0       GOOD   7.0   3.0   0.0 6.778125 3.075000   0.31250   23.420827          0.31250               3            3                  54.575089         2.434377       3.239066            good_distance_angle_geometry_yaw_coherent
+ 625_x9.000_y4.000_h90.0   MARGINAL   9.0   4.0  90.0 8.784375 3.928125  85.62500   22.728871          4.37500               2            2                  52.647706         1.597947       3.345386 marginal_but_usable_for_true_location_not_correction
+  625_x6.000_y4.000_h0.0   MARGINAL   6.0   4.0   0.0 5.831250 4.125000 358.12500   21.000372          1.87500               6            7                 183.827135         8.384141       3.178434 marginal_but_usable_for_true_location_not_correction
+ 625_x9.000_y3.000_h90.0   MARGINAL   9.0   3.0  90.0 8.793750 2.965625  88.43750   20.909496          1.56250               6            5                 216.550218         3.361163       6.922079 marginal_but_usable_for_true_location_not_correction
+  624_x4.000_y3.000_h0.0   MARGINAL   4.0   3.0   0.0 4.143750 2.940625   6.25000   15.552959          6.25000               5            5                 175.803186        10.504035       4.693552 marginal_but_usable_for_true_location_not_correction
+  625_x6.000_y2.000_h0.0       GOOD   6.0   2.0   0.0 5.859375 1.940625 356.40625   15.264593          3.59375               4            4                  65.957637         3.172234       2.099603            good_distance_angle_geometry_yaw_coherent
+  624_x4.000_y4.000_h0.0       GOOD   4.0   4.0   0.0 3.950000 4.140625   1.25000   14.924942          1.25000               3            3                 170.093857         5.471044       5.723138            good_distance_angle_geometry_yaw_coherent
+  624_x3.000_y4.000_h0.0       GOOD   3.0   4.0   0.0 2.918750 4.115625 355.46875   14.131774          4.53125               5            5                 204.361304         6.510342       4.488376            good_distance_angle_geometry_yaw_coherent
+624_x3.000_y4.000_h270.0   MARGINAL   3.0   4.0 270.0 3.118750 3.987500 264.37500   11.940608          5.62500               5            5                 177.737154         6.611667       7.054525 marginal_but_usable_for_true_location_not_correction
+ 625_x8.000_y3.000_h90.0   MARGINAL   8.0   3.0  90.0 7.884375 2.993750  90.15625   11.579380          0.15625               6            5                 221.808397         3.917597       6.538893 marginal_but_usable_for_true_location_not_correction

@@ -1,0 +1,26 @@
+GEOMETRY CHECK SUMMARY
+================================================================================
+rows: 290
+ok rows: 290
+bad rows: 0
+
+Measured - predicted residuals:
+distance: mean=2.353 cm, median=-0.349 cm, p90_abs=20.979 cm, max_abs=36.407 cm
+angle: mean=0.094 deg, median=-1.040 deg, p90_abs=8.091 deg, max_abs=12.702 deg
+yaw: mean=-3.485 deg, median=-3.715 deg, p90_abs=29.904 deg, max_abs=105.130 deg
+
+Existing true_* - newly predicted deltas:
+These may not be near zero if step1_observations.csv was built with old tag coordinates or old camera offsets.
+true distance delta: mean=0.816 cm, median=0.009 cm, p90_abs=4.364 cm, max_abs=8.990 cm
+true angle delta: mean=-0.119 deg, median=-0.000 deg, p90_abs=2.064 deg, max_abs=6.774 deg
+true yaw delta: mean=-0.119 deg, median=-0.000 deg, p90_abs=2.064 deg, max_abs=6.774 deg
+
+Per-camera measured residual summary:
+[front] n=227
+  meas_distance_residual_cm: mean=1.494 cm, median=-0.627 cm, p90_abs=20.585 cm
+  meas_angle_residual_deg: mean=-1.197 deg, median=-2.054 deg, p90_abs=6.143 deg
+  meas_yaw_residual_deg: mean=-3.684 deg, median=-3.899 deg, p90_abs=35.486 deg
+[rear] n=63
+  meas_distance_residual_cm: mean=5.450 cm, median=2.647 cm, p90_abs=20.835 cm
+  meas_angle_residual_deg: mean=4.743 deg, median=4.757 deg, p90_abs=10.990 deg
+  meas_yaw_residual_deg: mean=-2.770 deg, median=-2.053 deg, p90_abs=20.443 deg

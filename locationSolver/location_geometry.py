@@ -60,6 +60,20 @@ def abs_angle_error_deg(a_deg: float, b_deg: float) -> float:
     return abs(wrap_angle_deg(a_deg - b_deg))
 
 
+def bearing_world_deg(x0_m: float, y0_m: float, x1_m: float, y1_m: float) -> float:
+    """
+    World bearing from point (x0_m, y0_m) to point (x1_m, y1_m).
+
+    Returns angle in degrees using project convention:
+        0 deg   = +x
+        90 deg  = +y
+        180 deg = -x
+        270 deg = -y
+    """
+    import math
+    return deg_norm_360(math.degrees(math.atan2(y1_m - y0_m, x1_m - x0_m)))
+
+
 def camera_pose_from_robot_pose(
     robot_pose: RobotPose,
     camera_cfg: Mapping[str, float],

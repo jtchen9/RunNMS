@@ -1,0 +1,15 @@
+{
+  "input_csv": "D:\\Data\\_Action\\_RunNMS\\testLocation\\input\\step1_observations.csv",
+  "tag_file": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\tag_location.txt",
+  "output_dir": "D:\\Data\\_Action\\_RunNMS\\testLocation\\output\\geometry_check",
+  "camera_config": {
+    "front": {
+      "heading_offset_deg": 0.0,
+      "forward_offset_m": 0.055
+    },
+    "rear": {
+      "heading_offset_deg": 180.0,
+      "forward_offset_m": -0.075
+    }
+  }
+}

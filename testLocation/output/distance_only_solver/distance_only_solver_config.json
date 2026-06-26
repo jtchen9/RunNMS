@@ -1,0 +1,41 @@
+{
+  "input_csv": "D:\\Data\\_Action\\_RunNMS\\testLocation\\input\\step1_observations.csv",
+  "tag_file": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\tag_location.txt",
+  "output_dir": "D:\\Data\\_Action\\_RunNMS\\testLocation\\output\\distance_only_solver",
+  "initial_mode": "perturbed",
+  "initial_x_offset_m": 0.2,
+  "initial_y_offset_m": -0.15,
+  "camera_config": {
+    "front": {
+      "heading_offset_deg": 0.0,
+      "forward_offset_m": 0.055
+    },
+    "rear": {
+      "heading_offset_deg": 180.0,
+      "forward_offset_m": -0.075
+    }
+  },
+  "measurement_weights": {
+    "front": {
+      "distance": 1.0,
+      "angle": 0.5,
+      "yaw": 0.05
+    },
+    "rear": {
+      "distance": 0.5,
+      "angle": 0.2,
+      "yaw": 0.01
+    }
+  },
+  "solver_config": {
+    "sigma_distance_m": 0.05,
+    "search_initial_step_m": 0.2,
+    "search_min_step_m": 0.002,
+    "max_iterations": 200,
+    "robust_clip_sigma": 3.0,
+    "x_min": -1.0,
+    "x_max": 12.5,
+    "y_min": -1.0,
+    "y_max": 12.5
+  }
+}
