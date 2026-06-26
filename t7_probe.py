@@ -18,7 +18,8 @@ from m8mobility_state_store import key_report, key_time
 ROBOT_ID = "twin-scout-delta"
 WAIT_TIMEOUT_SEC = 60
 POLL_EVERY_SEC = 1.0
-CAMERA_OFFSET_M = 0.055
+CAMERA_OFFSET_M1 = 0.055
+CAMERA_OFFSET_M2 = 0.055
 
 
 def _parse_args():
@@ -90,10 +91,10 @@ def _camera_pose_from_robot(
 
     if camera_role == "front":
         cam_h = utility._deg_norm_360(robot_h)
-        off = CAMERA_OFFSET_M
+        off = CAMERA_OFFSET_M1
     elif camera_role == "rear":
         cam_h = utility._deg_norm_360(robot_h + 180.0)
-        off = -CAMERA_OFFSET_M
+        off = -CAMERA_OFFSET_M2
     else:
         cam_h = utility._deg_norm_360(robot_h)
         off = 0.0

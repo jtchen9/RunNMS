@@ -18,7 +18,8 @@ from m8mobility_state_store import key_report, key_time
 ROBOT_ID = "twin-scout-delta"
 WAIT_TIMEOUT_SEC = 60
 POLL_EVERY_SEC = 1.0
-CAMERA_OFFSET_M = 0.055
+CAMERA_OFFSET_M1 = 0.055
+CAMERA_OFFSET_M2 = 0.075
 
 
 def _parse_args():
@@ -90,10 +91,10 @@ def _camera_pose_from_robot(
 
     if camera_role == "front":
         cam_h = utility._deg_norm_360(robot_h)
-        off = CAMERA_OFFSET_M
+        off = CAMERA_OFFSET_M1
     elif camera_role == "rear":
         cam_h = utility._deg_norm_360(robot_h + 180.0)
-        off = -CAMERA_OFFSET_M
+        off = -CAMERA_OFFSET_M2
     else:
         cam_h = utility._deg_norm_360(robot_h)
         off = 0.0
@@ -153,7 +154,8 @@ def _expected_obs_from_truth(
 def estimate_robot_pose_from_one_tag(
     obs: Dict[str, Any],
     tag_world: Dict[str, Any],
-    camera_offset_m: float = CAMERA_OFFSET_M,
+    camera_offset_m1: float = CAMERA_OFFSET_M1,
+    camera_offset_m2: float = CAMERA_OFFSET_M2,
 ) -> Dict[str, Any]:
     try:
         cam = str(obs.get("camera_role") or "").strip().lower()
@@ -186,10 +188,10 @@ def estimate_robot_pose_from_one_tag(
 
         if cam == "front":
             robot_h = utility._deg_norm_360(cam_h)
-            off = camera_offset_m
+            off = camera_offset_m1
         else:
             robot_h = utility._deg_norm_360(cam_h - 180.0)
-            off = -camera_offset_m
+            off = -camera_offset_m2
 
         hr = math.radians(robot_h)
         robot_x = cam_x - off * math.cos(hr)

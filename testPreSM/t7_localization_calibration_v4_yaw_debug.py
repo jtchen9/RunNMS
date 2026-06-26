@@ -625,7 +625,7 @@ def _add_manual_truth_to_tag_diagnostics(
                 cam_off_m = 0.055
             elif cam_role == "rear":
                 cam_head = utility._deg_norm_360(float(gt_heading_deg) + 180.0)
-                cam_off_m = -0.055
+                cam_off_m = -0.075
             else:
                 cam_head = utility._deg_norm_360(float(gt_heading_deg))
                 cam_off_m = 0.0
