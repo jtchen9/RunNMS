@@ -493,6 +493,54 @@ def _nms_lab_id() -> str:
     return str(getattr(config, "NMS_NAME", "DemoRoom") or "DemoRoom")
 
 
+def _session_id_to_redis(session_id: Optional[str]) -> str:
+    """Redis stream fields are strings; absent session_id is stored as empty string."""
+    return (session_id or "").strip()
+
+
+def _delete_stream_entries_for_experiment(
+    *,
+    stream_key: str,
+    lab_id: str,
+    experiment_id: str,
+) -> int:
+    """
+    Delete entries from one Redis stream only when the stream row itself carries
+    the same lab_id + experiment_id. This keeps replace_existing scoped.
+    """
+    target_lab_id = str(lab_id or "")
+    target_experiment_id = str(experiment_id or "")
+    delete_ids = []
+
+    try:
+        entries = config.r.xrange(stream_key, min="-", max="+")
+    except Exception:
+        return 0
+
+    for xid, raw_fields in entries:
+        try:
+            fields = {
+                _redis_text(k): _redis_text(v)
+                for k, v in dict(raw_fields).items()
+            }
+        except Exception:
+            continue
+
+        if (
+            fields.get("lab_id", "") == target_lab_id
+            and fields.get("experiment_id", "") == target_experiment_id
+        ):
+            delete_ids.append(xid)
+
+    if not delete_ids:
+        return 0
+
+    try:
+        return int(config.r.xdel(stream_key, *delete_ids))
+    except Exception:
+        return 0
+
+
 def _register_experiment_status(
     *,
     experiment_id: str,
@@ -581,6 +629,7 @@ def _analyze_csv_rows_for_experiment(
     bad_rows = 0
     last_execute_at = t0_dt
 
+    accepted_scanners = set()
     scanner_first: Dict[str, Dict[str, Any]] = {}
     mobility_scanners = set()
 
@@ -629,6 +678,7 @@ def _analyze_csv_rows_for_experiment(
             "offset": offset,
         }
         accepted_items.append(item)
+        accepted_scanners.add(scanner)
 
         if execute_at_dt > last_execute_at:
             last_execute_at = execute_at_dt
@@ -665,6 +715,7 @@ def _analyze_csv_rows_for_experiment(
 
     preflight = {
         "mobility_preflight": "ok" if mobility_scanners else "skipped",
+        "scanners": sorted(accepted_scanners),
         "mobility_scanners": sorted(mobility_scanners),
         "detail": (
             "validated mobility first-row precondition; no Redis mutation performed"
@@ -679,6 +730,7 @@ def _analyze_csv_rows_for_experiment(
         "skipped_not_whitelisted": skipped_not_whitelisted,
         "bad_rows": bad_rows,
         "last_execute_at": last_execute_at,
+        "scanners": sorted(accepted_scanners),
         "mobility_scanners": sorted(mobility_scanners),
         "preflight": preflight,
     }
@@ -928,23 +980,51 @@ def _enqueue_script_or_csv_item(
     action: str,
     execute_at: str,
     args: Dict[str, Any],
+    lab_id: str,
+    experiment_id: str,
+    session_id: Optional[str],
 ) -> None:
     """
     Dispatch one scheduled row to the correct internal queue.
 
-    - traffic rows  -> NMS traffic command stream
-    - mobility rows -> NMS mobility scheduled-command stream
-    - everything else -> existing robot/AP command stream
+    Every queued command carries experiment metadata:
+        lab_id
+        experiment_id
+        session_id
+
+    This is required so replace_existing=true can remove only old commands
+    belonging to the same experiment_id, without touching other experiments.
     """
     category_n = (category or "").strip().lower()
     action_n = (action or "").strip()
+    session_id_s = _session_id_to_redis(session_id)
+
+    # Keep experiment metadata both as stream fields and inside args_json.
+    # Stream fields are for Redis-side deletion/filtering.
+    # args_json metadata is useful for downstream consumers/debugging.
+    args2 = dict(args or {})
+    args2.setdefault("_experiment", {})
+    if isinstance(args2["_experiment"], dict):
+        args2["_experiment"].update(
+            {
+                "lab_id": lab_id,
+                "experiment_id": experiment_id,
+                "session_id": session_id_s or None,
+            }
+        )
 
     if category_n == "traffic" or action_n in ("traffic.session.start", "traffic.session.stop"):
+        # If m7Traffic._traffic_enqueue_core does not yet accept these metadata
+        # fields, update that helper similarly so the resulting Redis stream row
+        # carries lab_id, experiment_id, and session_id.
         m7Traffic._traffic_enqueue_core(
             scanner=scanner,
             action=action_n,
             execute_at=execute_at,
-            args_json=json.dumps(args or {}, ensure_ascii=False),
+            args_json=json.dumps(args2, ensure_ascii=False),
+            lab_id=lab_id,
+            experiment_id=experiment_id,
+            session_id=session_id_s,
         )
         return
 
@@ -953,8 +1033,11 @@ def _enqueue_script_or_csv_item(
             scanner=scanner,
             action=action_n,
             execute_at=execute_at,
-            args=args or {},
+            args=args2,
             source="script_or_csv",
+            lab_id=lab_id,
+            experiment_id=experiment_id,
+            session_id=session_id_s,
         )
         return
 
@@ -962,10 +1045,10 @@ def _enqueue_script_or_csv_item(
         _handle_ap_meta_row(
             scanner=scanner,
             action=action_n,
-            args=args or {},
+            args=args2,
         )
         return
-    
+
     config.r.xadd(
         config.key_cmd_stream(scanner),
         {
@@ -973,12 +1056,14 @@ def _enqueue_script_or_csv_item(
             "action": action,
             "execute_at": execute_at,
             "created_at": utility.local_ts(),
-            "args_json": json.dumps(args or {}, ensure_ascii=False),
+            "args_json": json.dumps(args2, ensure_ascii=False),
+            "lab_id": lab_id,
+            "experiment_id": experiment_id,
+            "session_id": session_id_s,
         },
         maxlen=5000,
         approximate=True,
     )
-
 
 
 def _mobility_enqueue_core(
@@ -988,6 +1073,9 @@ def _mobility_enqueue_core(
     execute_at: str,
     args: Dict[str, Any],
     source: str,
+    lab_id: str = "",
+    experiment_id: str = "",
+    session_id: str = "",
 ) -> Dict[str, Any]:
     m1Registry.require_whitelisted(scanner)
 
@@ -1002,6 +1090,9 @@ def _mobility_enqueue_core(
             "created_at": created_at,
             "args_json": json.dumps(args or {}, ensure_ascii=False),
             "source": source,
+            "lab_id": str(lab_id or ""),
+            "experiment_id": str(experiment_id or ""),
+            "session_id": str(session_id or ""),
         },
         maxlen=20000,
         approximate=True,
@@ -1149,6 +1240,159 @@ def _collect_due_commands(scanner: str, limit: int, server_now_str: str) -> Dict
             "expired": skipped_expired,
             "bad_time": skipped_bad_time,
         },
+    }
+
+
+def _replace_existing_experiment_if_requested(
+    *,
+    replace_existing: bool,
+    lab_id: str,
+    experiment_id: str,
+    scanners: List[str],
+    mobility_scanners: List[str],
+) -> Dict[str, Any]:
+    """
+    If replace_existing is true, delete only previous queued commands and
+    registry records belonging to the same lab_id + experiment_id.
+
+    Other experiments in the same lab must not be affected.
+    """
+    if not replace_existing:
+        return {
+            "replace_existing": False,
+            "deleted_registry_entries": 0,
+            "deleted_mobility_cmd_entries": 0,
+            "deleted_robot_cmd_entries": {},
+            "deleted_traffic_cmd_entries": 0,
+            "reset_scanners": [],
+            "detail": "replace_existing=false; existing commands and registry records preserved",
+        }
+
+    deleted_registry_entries = _delete_stream_entries_for_experiment(
+        stream_key=config.KEY_EXPERIMENT_REGISTRY,
+        lab_id=lab_id,
+        experiment_id=experiment_id,
+    )
+
+    deleted_mobility_cmd_entries = _delete_stream_entries_for_experiment(
+        stream_key=config.KEY_MOBILITY_CMD_STREAM,
+        lab_id=lab_id,
+        experiment_id=experiment_id,
+    )
+
+    deleted_traffic_cmd_entries = _delete_stream_entries_for_experiment(
+        stream_key=config.KEY_TRAFFIC_CMD_STREAM,
+        lab_id=lab_id,
+        experiment_id=experiment_id,
+    )
+
+    deleted_robot_cmd_entries: Dict[str, int] = {}
+
+    for scanner in sorted(set(scanners or [])):
+        try:
+            stream_key = config.key_cmd_stream(scanner)
+        except Exception:
+            continue
+
+        deleted_robot_cmd_entries[scanner] = _delete_stream_entries_for_experiment(
+            stream_key=stream_key,
+            lab_id=lab_id,
+            experiment_id=experiment_id,
+        )
+
+    # Mobility state is not experiment-scoped. Reset only mobility scanners
+    # involved in the replacement CSV, and only after acceptance.
+    _save_stop(False, "")
+
+    reset_scanners = []
+    for scanner in sorted(set(mobility_scanners or [])):
+        utility._hset_many(
+            key_state(scanner),
+            {
+                "state": "s0idle",
+                "state_detail": "experiment replacement: reset before CSV",
+                "mobility_ready": "true",
+                "mobility_ready_reason": "experiment replacement",
+                "robot_safety_state": "NORMAL",
+                "stop_experiment": "false",
+                "stop_reason": "",
+                "need_location_recovery": "false",
+                "location_recovery_context": "",
+                "location_recovery_phase": "",
+                "visibility_turn_count": "0",
+                "last_visibility_turn_angle_deg": "",
+                "last_location_recovery_action": "",
+                "last_location_recovery_args_json": "",
+                "last_location_recovery_detail": "",
+                "need_location_retry": "false",
+                "retry_count": "0",
+                "busy_count": "0",
+                "collision_veto_count": "0",
+                "exec_fail_count": "0",
+                "correction_attempt_count": "-1",
+                "outgoing_command_action": "",
+                "outgoing_command_args_json": "",
+                "outgoing_command_source": "",
+                "outgoing_command_updated_at": "",
+                "pending_sequence_json": "",
+                "pending_sequence_len": "0",
+                "pending_sequence_reason": "",
+                "last_error_code": "",
+                "last_error_detail": "",
+                "s2_entry_reason": "",
+                "true_propagation_applied": "",
+                "true_propagation_detail": "",
+                "true_propagation_time": "",
+            },
+        )
+
+        try:
+            config.r.hdel(
+                key_state(scanner),
+                "need_location_retry",
+                "retry_count",
+            )
+        except Exception:
+            pass
+
+        utility._hset_many(
+            key_time(scanner),
+            {
+                "policy_updated_at": utility.local_ts(),
+                "s1_timer_token": "",
+                "s1_timer_started_at": "",
+                "busy_retry_token": "",
+                "busy_retry_started_at": "",
+                "last_planned_command_issued_at": "",
+                "planned_location_updated_at": "",
+            },
+        )
+
+        try:
+            config.r.hdel(
+                key_pose(scanner),
+                "planned_location_json",
+                "last_planned_command_action",
+                "last_planned_command_args_json",
+                "last_planned_command_source",
+                "last_planned_command_updated_at",
+            )
+        except Exception:
+            pass
+
+        reset_scanners.append(scanner)
+
+    return {
+        "replace_existing": True,
+        "deleted_registry_entries": deleted_registry_entries,
+        "deleted_mobility_cmd_entries": deleted_mobility_cmd_entries,
+        "deleted_robot_cmd_entries": deleted_robot_cmd_entries,
+        "deleted_traffic_cmd_entries": deleted_traffic_cmd_entries,
+        "reset_scanners": reset_scanners,
+        "detail": (
+            "replaced only entries matching same lab_id + experiment_id; "
+            "other experiments were preserved"
+        ),
     }
 
 
@@ -1509,9 +1753,12 @@ async def cmd_load_csv_file(
         guard_sec=3600,
     )
 
-    replacement = _prepare_mobility_script_replacement_if_requested(
-        mobility_scanners=analysis["mobility_scanners"],
+    replacement = _replace_existing_experiment_if_requested(
         replace_existing=replace_existing,
+        lab_id=_nms_lab_id(),
+        experiment_id=experiment_id,
+        scanners=analysis["scanners"],
+        mobility_scanners=analysis["mobility_scanners"],
     )
 
     for item in accepted_items:
@@ -1521,6 +1768,9 @@ async def cmd_load_csv_file(
             action=item["action"],
             execute_at=item["execute_at"],
             args=item["args"],
+            lab_id=_nms_lab_id(),
+            experiment_id=experiment_id,
+            session_id=session_id,
         )
 
     exp = _register_experiment_status(

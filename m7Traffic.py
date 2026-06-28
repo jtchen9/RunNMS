@@ -234,6 +234,9 @@ def _traffic_enqueue_core(
     action: str,
     execute_at: Optional[str],
     args_json: str,
+    lab_id: str = "",
+    experiment_id: str = "",
+    session_id: str = "",
 ) -> Dict[str, Any]:
     m1Registry.require_whitelisted(scanner)
 
@@ -251,6 +254,9 @@ def _traffic_enqueue_core(
             "execute_at": execute_at_norm,
             "created_at": created_at,
             "args_json": args_json,
+            "lab_id": str(lab_id or ""),
+            "experiment_id": str(experiment_id or ""),
+            "session_id": str(session_id or ""),
         },
         maxlen=config.TRAFFIC_CMD_MAXLEN,
         approximate=True,

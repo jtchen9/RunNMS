@@ -1,4 +1,5 @@
 scanner,t_offset_sec,category,action,args_json
 twin-scout-julia,180,mobility,mobility.report.location,{}
+twin-scout-julia,300,traffic,traffic.session.start,"{""session_id"": ""debug-tcp-300s-002"", ""ac"": ""be"", ""protocol"": ""tcp"", ""duration_sec"": 300, ""reverse"": true}"
 twin-scout-julia,300,mobility,mobility.turn_move_turn.forward,"{""distance_m"": 1.0, ""pre_angle"": 0, ""post_angle"": 0}"
 twin-scout-julia,315,scan,scan.start,{}
