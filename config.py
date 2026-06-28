@@ -77,6 +77,10 @@ WEB_NMS_STATUS_URL: str = f"{WEB_BASE}/nms/report_status"
 
 STATUS_EVERY_SEC: int = 10
 NORTHBOUND_UPLOAD_EVERY_SEC: int = 60
+# Internal NMS-only attribution window after experiment end_at.
+# This is not sent to the web server; it only controls which experiment identity
+# NMS attaches to 10-second and 1-minute northbound reports.
+NORTHBOUND_EXPERIMENT_WRAPUP_SEC: int = 120
 UPLOAD_BATCH_MAX_BYTES: int = 100_000  # hard cap per POST (≈100KB)
 
 KEY_NB_LAST_UPLOAD: str = f"{KEY_PREFIX}nb:last_upload"

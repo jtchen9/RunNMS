@@ -592,7 +592,6 @@ def _register_experiment_status(
     )
 
     result = {
-        "stream_id": xid,
         **fields,
     }
     # API-facing contract uses JSON null when the caller omitted session_id.

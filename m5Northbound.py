@@ -3,6 +3,7 @@ import json
 import asyncio
 import requests
 from fastapi import APIRouter
+from datetime import timedelta
 
 import config
 import utility
@@ -134,15 +135,20 @@ def _post_upload_scan_batch(
     items: List[Dict[str, Any]],
     iperf3_sessions: Optional[List[Dict[str, Any]]] = None,
     ap_traffic_reports: Optional[List[Dict[str, Any]]] = None,
+    experiment: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str, int, int]:
     """
     Returns (ok, detail, accepted, rejected).
     We treat HTTP 2xx + JSON status=ok as ok.
     """
     payload = {
+        "schema_version": 2,
+        "report_type": "scan_batch",
         "nms_id": config.NMS_ID,
+        "lab_id": _northbound_lab_id(),
         "time": utility.local_ts(),
         "time_format": config.TIME_FMT,
+        "experiment": experiment or _build_experiment_snapshot(),
         "items": items,
         "iperf3_sessions": iperf3_sessions or [],
         "ap_traffic_reports": ap_traffic_reports or [],
@@ -169,6 +175,7 @@ def _post_upload_scan_batch(
         return False, f"web returned {j}", 0, 0
     except Exception as e:
         return False, f"post failed: {e}", 0, 0
+
     
 
 def _northbound_upload_once() -> Dict[str, Any]:
@@ -201,10 +208,16 @@ def _northbound_upload_once() -> Dict[str, Any]:
     oversize_deleted = 0
     iperf3_bad_json_deleted = 0
 
+    experiment_snapshot = _build_experiment_snapshot()
+
     envelope_base = {
+        "schema_version": 2,
+        "report_type": "scan_batch",
         "nms_id": config.NMS_ID,
+        "lab_id": _northbound_lab_id(),
         "time": utility.local_ts(),
         "time_format": config.TIME_FMT,
+        "experiment": experiment_snapshot,
         "items": [],
         "iperf3_sessions": [],
         "ap_traffic_reports": [],
@@ -293,6 +306,7 @@ def _northbound_upload_once() -> Dict[str, Any]:
         selected_items,
         iperf3_sessions=selected_iperf3_sessions,
         ap_traffic_reports=ap_traffic_reports,
+        experiment=experiment_snapshot,
     )
 
     # -------------------------
@@ -395,90 +409,219 @@ def _collect_traffic_events(limit: int = 200) -> Tuple[List[Dict[str, Any]], Lis
     return out, ids
 
 
+def _northbound_lab_id() -> str:
+    return str(getattr(config, "NMS_NAME", config.NMS_ID) or config.NMS_ID)
+
+
+def _int_or_default(v: Any, default: int = 0) -> int:
+    try:
+        s = str(v or "").strip()
+        return int(s) if s != "" else int(default)
+    except Exception:
+        return int(default)
+
+
+def _bool_from_redis(v: Any) -> bool:
+    return str(v or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _empty_experiment_snapshot(
+    *,
+    state: str = "idle",
+    next_scheduled_at: Optional[str] = None,
+    idle_duration_sec: int = 0,
+) -> Dict[str, Any]:
+    return {
+        "state": state,
+        "experiment_id": None,
+        "session_id": None,
+        "lab_id": _northbound_lab_id(),
+        "registered_at": None,
+        "start_at": None,
+        "end_at": None,
+        "command_count": 0,
+        "replace_existing": False,
+        "elapsed_sec": 0,
+        "remaining_sec": 0,
+        "next_scheduled_at": next_scheduled_at,
+        "idle_duration_sec": max(0, int(idle_duration_sec)),
+    }
+
+
+def _experiment_record_from_stream_row(stream_id: str, fields: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    start_at_s = str(fields.get("start_at") or "").strip()
+    end_at_s = str(fields.get("end_at") or "").strip()
+
+    # Backward compatibility for old debug records only. New CSV registration
+    # writes start_at/end_at.
+    if not start_at_s:
+        start_at_s = str(fields.get("t0") or "").strip()
+    if not end_at_s:
+        end_at_s = str(fields.get("last_execute_at") or "").strip()
+
+    if not start_at_s or not end_at_s:
+        return None
+
+    try:
+        start_dt = utility.parse_local_dt(start_at_s)
+        end_dt = utility.parse_local_dt(end_at_s)
+    except Exception:
+        return None
+
+    guard_sec = _int_or_default(fields.get("guard_sec"), 3600)
+    wrapup_sec = _int_or_default(
+        getattr(config, "NORTHBOUND_EXPERIMENT_WRAPUP_SEC", guard_sec),
+        guard_sec,
+    )
+    wrapup_until_dt = end_dt + timedelta(seconds=wrapup_sec)
+
+    experiment_id = str(fields.get("experiment_id") or fields.get("scenario_name") or "").strip() or None
+    session_id = str(fields.get("session_id") or "").strip() or None
+    lab_id = str(fields.get("lab_id") or _northbound_lab_id()).strip() or _northbound_lab_id()
+
+    return {
+        "state": str(fields.get("state") or "registered").strip() or "registered",
+        "experiment_id": experiment_id,
+        "session_id": session_id,
+        "lab_id": lab_id,
+        "registered_at": str(fields.get("registered_at") or "").strip() or None,
+        "start_at": start_at_s,
+        "end_at": end_at_s,
+        # Internal only. Do not expose scheduling guard/wrap-up durations in
+        # northbound payloads; NMS resolves attribution before sending.
+        "_guard_sec": guard_sec,
+        "_wrapup_sec": wrapup_sec,
+        "_wrapup_until_s": wrapup_until_dt.strftime(config.TIME_FMT),
+        "command_count": _int_or_default(fields.get("command_count") or fields.get("item_count"), 0),
+        "replace_existing": _bool_from_redis(fields.get("replace_existing")),
+        "_start_dt": start_dt,
+        "_end_dt": end_dt,
+        "_wrapup_until_dt": wrapup_until_dt,
+    }
+
+
+def _public_experiment_snapshot(
+    record: Dict[str, Any],
+    *,
+    state: str,
+    now_dt,
+    next_scheduled_at: Optional[str] = None,
+    idle_duration_sec: int = 0,
+) -> Dict[str, Any]:
+    start_dt = record["_start_dt"]
+    end_dt = record["_end_dt"]
+    wrapup_until_dt = record["_wrapup_until_dt"]
+
+    if state == "scheduled":
+        elapsed_sec = 0
+        remaining_sec = max(0, int((start_dt - now_dt).total_seconds()))
+    elif state == "running":
+        elapsed_sec = max(0, int((now_dt - start_dt).total_seconds()))
+        remaining_sec = max(0, int((end_dt - now_dt).total_seconds()))
+    elif state == "wrapping_up":
+        elapsed_sec = max(0, int((now_dt - start_dt).total_seconds()))
+        remaining_sec = max(0, int((wrapup_until_dt - now_dt).total_seconds()))
+    else:
+        elapsed_sec = 0
+        remaining_sec = 0
+
+    return {
+        "state": state,
+        "experiment_id": record.get("experiment_id"),
+        "session_id": record.get("session_id"),
+        "lab_id": record.get("lab_id") or _northbound_lab_id(),
+        "registered_at": record.get("registered_at"),
+        "start_at": record.get("start_at"),
+        "end_at": record.get("end_at"),
+        "command_count": int(record.get("command_count") or 0),
+        "replace_existing": bool(record.get("replace_existing")),
+        "elapsed_sec": elapsed_sec,
+        "remaining_sec": remaining_sec,
+        "next_scheduled_at": next_scheduled_at,
+        "idle_duration_sec": max(0, int(idle_duration_sec)),
+    }
+
+
 def _build_experiment_snapshot() -> Dict[str, Any]:
-    rows = config.r.xrange(config.KEY_EXPERIMENT_REGISTRY, count=200)
+    """
+    Build the experiment section used by both northbound reports.
+
+    State rules:
+    - running:     start_at <= now <= end_at
+    - wrapping_up: end_at < now <= end_at + NORTHBOUND_EXPERIMENT_WRAPUP_SEC
+                  NMS uses this internal window to keep reports associated with
+                  the previous experiment long enough to flush late data. The
+                  timing policy itself is not sent to the web server.
+    - scheduled:   nearest future experiment
+    - idle:        no current/guard/future experiment
+    """
+    try:
+        rows = config.r.xrange(config.KEY_EXPERIMENT_REGISTRY, count=200)
+    except Exception:
+        return _empty_experiment_snapshot(state="unknown")
 
     if not rows:
-        return {
-            "state": "idle",
-            "session_id": None,
-            "scenario_name": None,
-            "started_at": None,
-            "elapsed_sec": 0,
-            "next_scheduled_at": None,
-            "idle_duration_sec": 0,
-        }
+        return _empty_experiment_snapshot(state="idle")
 
     now_dt = utility.parse_local_dt(utility.local_ts())
 
-    current = None
+    running = None
+    wrapping = None
     future = None
     past_latest = None
 
-    for _, fields in rows:
-        try:
-            t0_dt = utility.parse_local_dt(str(fields.get("t0") or "").strip())
-            last_dt = utility.parse_local_dt(str(fields.get("last_execute_at") or "").strip())
-        except Exception:
+    for xid, fields in rows:
+        rec = _experiment_record_from_stream_row(xid, fields)
+        if rec is None:
             continue
 
-        if t0_dt <= now_dt <= last_dt:
-            current = (fields, t0_dt, last_dt)
-            break
+        state = str(rec.get("state") or "").strip().lower()
+        if state in {"cancelled", "canceled", "deleted"}:
+            continue
 
-        if now_dt < t0_dt:
-            if future is None or t0_dt < future[1]:
-                future = (fields, t0_dt)
+        start_dt = rec["_start_dt"]
+        end_dt = rec["_end_dt"]
+        wrapup_until_dt = rec["_wrapup_until_dt"]
 
-        if now_dt > last_dt:
-            if past_latest is None or last_dt > past_latest[1]:
-                past_latest = (fields, last_dt)
+        if start_dt <= now_dt <= end_dt:
+            if running is None or start_dt > running["_start_dt"]:
+                running = rec
+            continue
 
-    if current is not None:
-        fields, t0_dt, _ = current
-        return {
-            "state": "running",
-            "session_id": fields.get("session_id"),
-            "scenario_name": fields.get("scenario_name") or None,
-            "started_at": fields.get("t0"),
-            "elapsed_sec": max(0, int((now_dt - t0_dt).total_seconds())),
-            "next_scheduled_at": None,
-            "idle_duration_sec": 0,
-        }
+        if end_dt < now_dt <= wrapup_until_dt:
+            if wrapping is None or end_dt > wrapping["_end_dt"]:
+                wrapping = rec
+            continue
+
+        if now_dt < start_dt:
+            if future is None or start_dt < future["_start_dt"]:
+                future = rec
+            continue
+
+        if now_dt > wrapup_until_dt:
+            if past_latest is None or wrapup_until_dt > past_latest["_wrapup_until_dt"]:
+                past_latest = rec
+
+    if running is not None:
+        return _public_experiment_snapshot(running, state="running", now_dt=now_dt)
+
+    if wrapping is not None:
+        return _public_experiment_snapshot(wrapping, state="wrapping_up", now_dt=now_dt)
 
     if future is not None:
-        fields, _ = future
-        return {
-            "state": "scheduled",
-            "session_id": fields.get("session_id"),
-            "scenario_name": fields.get("scenario_name") or None,
-            "started_at": None,
-            "elapsed_sec": 0,
-            "next_scheduled_at": fields.get("t0"),
-            "idle_duration_sec": 0,
-        }
+        return _public_experiment_snapshot(
+            future,
+            state="scheduled",
+            now_dt=now_dt,
+            next_scheduled_at=future.get("start_at"),
+        )
 
     if past_latest is not None:
-        fields, last_dt = past_latest
-        return {
-            "state": "idle",
-            "session_id": fields.get("session_id"),
-            "scenario_name": fields.get("scenario_name") or None,
-            "started_at": None,
-            "elapsed_sec": 0,
-            "next_scheduled_at": None,
-            "idle_duration_sec": max(0, int((now_dt - last_dt).total_seconds())),
-        }
+        idle_duration_sec = int((now_dt - past_latest["_wrapup_until_dt"]).total_seconds())
+        return _empty_experiment_snapshot(state="idle", idle_duration_sec=idle_duration_sec)
 
-    return {
-        "state": "idle",
-        "session_id": None,
-        "scenario_name": None,
-        "started_at": None,
-        "elapsed_sec": 0,
-        "next_scheduled_at": None,
-        "idle_duration_sec": 0,
-    }
+    return _empty_experiment_snapshot(state="idle")
+
 
 
 def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
@@ -588,10 +731,13 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
         traffic_events = []
 
     return {
+        "schema_version": 2,
+        "report_type": "nms_status",
         "nms_id": config.NMS_ID,
+        "lab_id": _northbound_lab_id(),
         "time_local": utility.local_ts(),
         "time_format": config.TIME_FMT,
-        "experiment": _build_experiment_snapshot(),        
+        "experiment": _build_experiment_snapshot(),
         "nms_status": {
             "online": True,
             "detail": "",
@@ -866,17 +1012,25 @@ def list_experiments(limit: int = 50) -> Dict[str, Any]:
     items: List[Dict[str, Any]] = []
 
     for xid, fields in rows:
-        item = {
-            "stream_id": xid,
-            "session_id": fields.get("session_id"),
-            "scenario_name": fields.get("scenario_name") or "",
-            "registered_at": fields.get("registered_at"),
-            "t0": fields.get("t0"),
-            "last_execute_at": fields.get("last_execute_at"),
-            "item_count": int(fields.get("item_count") or 0),
-            "source": fields.get("source") or "",
-            "time_format": fields.get("time_format") or config.TIME_FMT,
-        }
+        rec = _experiment_record_from_stream_row(xid, fields)
+        if rec is None:
+            item = {
+                "raw": dict(fields),
+                "time_format": config.TIME_FMT,
+            }
+        else:
+            item = {
+                "experiment_id": rec.get("experiment_id"),
+                "session_id": rec.get("session_id"),
+                "lab_id": rec.get("lab_id"),
+                "registered_at": rec.get("registered_at"),
+                "start_at": rec.get("start_at"),
+                "end_at": rec.get("end_at"),
+                "command_count": rec.get("command_count"),
+                "replace_existing": rec.get("replace_existing"),
+                "state": rec.get("state"),
+                "time_format": config.TIME_FMT,
+            }
         items.append(item)
 
     return {
