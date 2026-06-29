@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""
+r"""
 grid resolution: 0.1 m
 heading resolution: 5 degree
 front offset: +0.055 m
 rear offset: -0.075 m
-front usable half-FOV: \pm 35 degree
-rear usable half-FOV: \pm 15 degree
-distance range: 0.4-4.0 m
+front usable half-FOV: \pm 35 degree  (hard gate)
+rear usable half-FOV: \pm 15 degree   (hard gate)
+tag incidence limit: 60 degree          (hard gate)
+front distance weight: 0.4-4.0m => 1.0, 4.0-5.0m => 0.7, 5.0-6.0m => 0.4, >6.0m => 0.0
+rear distance weight:  0.4-2.5m => 1.0, 2.5-3.0m => 0.5, >3.0m => 0.0
+rear confidence: 0.6
 inner robot: tags 31-58 only
 outer robot: tags 1-30 only
 no doorway exceptions
@@ -29,7 +32,9 @@ Important adjustable parameters
 --rear-confidence 0.5
 --rear-half-fov-deg 18
 --front-half-fov-deg 35
---distance-max-m 4.0
+--front-distance-max-m 6.0
+--rear-distance-max-m 3.0
+--rear-confidence 0.6
 --min-good-effective 3.0
 --min-good-geometry-span-deg 45
 """
@@ -46,6 +51,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+DEFAULT_TAG_FILE = ROOT_DIR / "sitemap" / "DemoRoom" / "tag_location.txt"
 
 
 def deg_norm_360(a: float) -> float:
@@ -106,6 +115,15 @@ class PlannerCfg:
     outer_y_min: float
     distance_min_m: float
     distance_max_m: float
+    front_distance_full_m: float
+    front_distance_soft1_m: float
+    front_distance_max_m: float
+    front_distance_soft1_weight: float
+    front_distance_soft2_weight: float
+    rear_distance_full_m: float
+    rear_distance_soft_m: float
+    rear_distance_max_m: float
+    rear_distance_soft_weight: float
     tag_incidence_limit_deg: float
     front_forward_offset_m: float
     rear_forward_offset_m: float
@@ -179,6 +197,38 @@ def camera_pose(robot_x: float, robot_y: float, robot_h_deg: float, cam: CameraC
     return cx, cy, ch
 
 
+
+def distance_weight_for_camera(d: float, cam: CameraCfg, cfg: PlannerCfg) -> float:
+    """
+    Camera-specific distance reliability weight.
+
+    Physical gates remain hard:
+      - same-room tag selection
+      - camera FOV
+      - tag incidence
+
+    Distance is reliability-weighted because front/rear survival probability differs.
+    """
+    if d < cfg.distance_min_m:
+        return 0.0
+
+    if cam.name == "rear":
+        if d <= cfg.rear_distance_full_m:
+            return 1.0
+        if d <= cfg.rear_distance_soft_m:
+            return cfg.rear_distance_soft_weight
+        return 0.0
+
+    # front
+    if d <= cfg.front_distance_full_m:
+        return 1.0
+    if d <= cfg.front_distance_soft1_m:
+        return cfg.front_distance_soft1_weight
+    if d <= cfg.front_distance_max_m:
+        return cfg.front_distance_soft2_weight
+    return 0.0
+
+
 def tag_is_good_for_camera(x: float, y: float, h: float, tag: Tag, cam: CameraCfg, cfg: PlannerCfg) -> Tuple[bool, Dict[str, float]]:
     cx, cy, ch = camera_pose(x, y, h, cam)
     dx = tag.x_m - cx
@@ -190,13 +240,15 @@ def tag_is_good_for_camera(x: float, y: float, h: float, tag: Tag, cam: CameraCf
     camera_view_angle = wrap_angle_deg(ch - tag_bearing)
     camera_from_tag_bearing = deg_norm_360(tag_bearing + 180.0)
     tag_incidence = angle_diff_abs(camera_from_tag_bearing, tag.yaw_deg)
+    distance_weight = distance_weight_for_camera(d, cam, cfg)
     ok = (
-        cfg.distance_min_m <= d <= cfg.distance_max_m
+        distance_weight > 0.0
         and abs(camera_view_angle) <= cam.usable_half_fov_deg
         and tag_incidence <= cfg.tag_incidence_limit_deg
     )
     return ok, {
         "distance_m": float(d),
+        "distance_weight": float(distance_weight),
         "camera_view_angle_deg": float(camera_view_angle),
         "tag_incidence_deg": float(tag_incidence),
         "bearing_world_deg": float(tag_bearing),
@@ -208,6 +260,8 @@ def eval_pose_heading(x: float, y: float, h: float, tags: List[Tag], cameras: Li
     eligible = eligible_tags_for_room(tags, room, cfg)
     front_ids: List[int] = []
     rear_ids: List[int] = []
+    front_weighted_count = 0.0
+    rear_weighted_count = 0.0
     bearings: List[float] = []
     tag_debug: List[Dict] = []
     for cam in cameras:
@@ -215,19 +269,26 @@ def eval_pose_heading(x: float, y: float, h: float, tags: List[Tag], cameras: Li
             ok, m = tag_is_good_for_camera(x, y, h, tag, cam, cfg)
             if not ok:
                 continue
+            distance_weight = float(m.get("distance_weight", 1.0))
+            weighted_contribution = cam.confidence * distance_weight
             if cam.name == "front":
                 front_ids.append(tag.tag_id)
+                front_weighted_count += weighted_contribution
             elif cam.name == "rear":
                 rear_ids.append(tag.tag_id)
+                rear_weighted_count += weighted_contribution
             bearings.append(bearing_world_deg(x, y, tag.x_m, tag.y_m))
-            tag_debug.append({"tag_id": tag.tag_id, "camera": cam.name, **m})
+            tag_debug.append({
+                "tag_id": tag.tag_id,
+                "camera": cam.name,
+                "weighted_contribution": float(weighted_contribution),
+                **m,
+            })
     front_good = len(front_ids)
     rear_good = len(rear_ids)
-    front_conf = next(c.confidence for c in cameras if c.name == "front")
-    rear_conf = next(c.confidence for c in cameras if c.name == "rear")
-    effective_good = front_conf * front_good + rear_conf * rear_good
+    effective_good = front_weighted_count + rear_weighted_count
     geometry_span = circular_span_deg(bearings)
-    score = 10.0 * front_conf * front_good + 10.0 * rear_conf * rear_good + cfg.score_geometry_bonus_per_deg * geometry_span
+    score = 10.0 * effective_good + cfg.score_geometry_bonus_per_deg * geometry_span
     if room == "blocked":
         status = "BLOCKED"
     elif effective_good >= cfg.min_good_effective and geometry_span >= cfg.min_good_geometry_span_deg:
@@ -244,6 +305,8 @@ def eval_pose_heading(x: float, y: float, h: float, tags: List[Tag], cameras: Li
         "front_good_count": front_good,
         "rear_good_count": rear_good,
         "effective_good_count": effective_good,
+        "front_weighted_count": front_weighted_count,
+        "rear_weighted_count": rear_weighted_count,
         "good_total_count": front_good + rear_good,
         "geometry_span_deg": geometry_span,
         "score": score,
@@ -308,6 +371,8 @@ def lookup_row_from_best(x: float, y: float, best: Dict, backup: Optional[Dict])
         "best_rear_good_count": int(best["rear_good_count"]),
         "best_good_total_count": int(best["good_total_count"]),
         "best_effective_good_count": round(float(best["effective_good_count"]), 3),
+        "best_front_weighted_count": round(float(best.get("front_weighted_count", best["front_good_count"])), 3),
+        "best_rear_weighted_count": round(float(best.get("rear_weighted_count", best["rear_good_count"])), 3),
         "best_geometry_span_deg": round(float(best["geometry_span_deg"]), 3),
         "best_front_good_tag_ids": " ".join(map(str, best["front_good_tag_ids"])),
         "best_rear_good_tag_ids": " ".join(map(str, best["rear_good_tag_ids"])),
@@ -322,7 +387,8 @@ def write_lookup(rows: List[Dict], path: Path) -> None:
     fieldnames = [
         "x_m", "y_m", "room", "best_heading_deg", "backup_heading_deg", "best_status", "backup_status",
         "best_score", "backup_score", "best_front_good_count", "best_rear_good_count", "best_good_total_count",
-        "best_effective_good_count", "best_geometry_span_deg", "best_front_good_tag_ids", "best_rear_good_tag_ids",
+        "best_effective_good_count", "best_front_weighted_count", "best_rear_weighted_count",
+        "best_geometry_span_deg", "best_front_good_tag_ids", "best_rear_good_tag_ids",
         "best_all_good_tag_ids", "backup_front_good_tag_ids", "backup_rear_good_tag_ids", "backup_all_good_tag_ids",
     ]
     with path.open("w", newline="", encoding="utf-8") as f:
@@ -438,7 +504,7 @@ def run_full_mode(tags: List[Tag], cfg: PlannerCfg, cameras: List[CameraCfg], ou
                     "x_m": round(float(x), 3), "y_m": round(float(y), 3), "room": "blocked",
                     "best_heading_deg": "", "backup_heading_deg": "", "best_status": "BLOCKED", "backup_status": "BLOCKED",
                     "best_score": "", "backup_score": "", "best_front_good_count": 0, "best_rear_good_count": 0,
-                    "best_good_total_count": 0, "best_effective_good_count": 0, "best_geometry_span_deg": 0,
+                    "best_good_total_count": 0, "best_effective_good_count": 0, "best_front_weighted_count": 0, "best_rear_weighted_count": 0, "best_geometry_span_deg": 0,
                     "best_front_good_tag_ids": "", "best_rear_good_tag_ids": "", "best_all_good_tag_ids": "",
                     "backup_front_good_tag_ids": "", "backup_rear_good_tag_ids": "", "backup_all_good_tag_ids": "",
                 }
@@ -515,7 +581,7 @@ def run_full_mode(tags: List[Tag], cfg: PlannerCfg, cameras: List[CameraCfg], ou
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="DemoRoom preferred-heading matrix generator")
     p.add_argument("--mode", choices=["points", "full"], default="points")
-    p.add_argument("--tag-file", default="tag_location(3).txt")
+    p.add_argument("--tag-file", default=str(DEFAULT_TAG_FILE))
     p.add_argument("--output-dir", default="preferred_heading_out")
     p.add_argument("--x-min", type=float, default=0.0)
     p.add_argument("--x-max", type=float, default=11.4)
@@ -526,18 +592,32 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--inner-y-max", type=float, default=5.20)
     p.add_argument("--outer-y-min", type=float, default=5.40)
     p.add_argument("--distance-min-m", type=float, default=0.4)
-    p.add_argument("--distance-max-m", type=float, default=4.0)
+    # Kept for backward compatibility. The final rule uses the
+    # camera-specific distance weights below.
+    p.add_argument("--distance-max-m", type=float, default=6.0)
+
+    p.add_argument("--front-distance-full-m", type=float, default=4.0)
+    p.add_argument("--front-distance-soft1-m", type=float, default=5.0)
+    p.add_argument("--front-distance-max-m", type=float, default=6.0)
+    p.add_argument("--front-distance-soft1-weight", type=float, default=0.7)
+    p.add_argument("--front-distance-soft2-weight", type=float, default=0.4)
+
+    p.add_argument("--rear-distance-full-m", type=float, default=2.5)
+    p.add_argument("--rear-distance-soft-m", type=float, default=3.0)
+    p.add_argument("--rear-distance-max-m", type=float, default=3.0)
+    p.add_argument("--rear-distance-soft-weight", type=float, default=0.5)
+
     p.add_argument("--tag-incidence-limit-deg", type=float, default=60.0)
     p.add_argument("--front-forward-offset-m", type=float, default=0.055)
     p.add_argument("--rear-forward-offset-m", type=float, default=-0.075)
     p.add_argument("--front-half-fov-deg", type=float, default=35.0)
     p.add_argument("--rear-half-fov-deg", type=float, default=15.0)
     p.add_argument("--front-confidence", type=float, default=1.0)
-    p.add_argument("--rear-confidence", type=float, default=0.3)
+    p.add_argument("--rear-confidence", type=float, default=0.6)
     p.add_argument("--min-good-effective", type=float, default=3.0)
     p.add_argument("--min-marginal-effective", type=float, default=2.0)
     p.add_argument("--min-good-geometry-span-deg", type=float, default=45.0)
-    p.add_argument("--score-geometry-bonus-per-deg", type=float, default=0.05)
+    p.add_argument("--score-geometry-bonus-per-deg", type=float, default=0.10)
     p.add_argument("--disable-outer-tags", action="store_true")
     p.add_argument("--disable-inner-tags", action="store_true")
     p.add_argument("--no-3d-matrices", action="store_true", help="Save only reduced 2D matrices, not full y/x/heading matrices.")
@@ -550,11 +630,20 @@ def main() -> None:
     args = build_arg_parser().parse_args()
     tag_file = Path(args.tag_file)
     if not tag_file.exists():
-        tag_file2 = Path(__file__).resolve().parent / args.tag_file
-        if tag_file2.exists():
-            tag_file = tag_file2
+        candidates = [
+            Path(__file__).resolve().parent / args.tag_file,
+            ROOT_DIR / args.tag_file,
+            DEFAULT_TAG_FILE,
+        ]
+        for c in candidates:
+            if c.exists():
+                tag_file = c
+                break
         else:
-            raise FileNotFoundError(f"Tag file not found: {args.tag_file}")
+            raise FileNotFoundError(
+                f"Tag file not found: {args.tag_file}. "
+                f"Expected canonical file at: {DEFAULT_TAG_FILE}"
+            )
     outdir = Path(args.output_dir)
     outdir.mkdir(parents=True, exist_ok=True)
     cfg = PlannerCfg(
@@ -563,6 +652,15 @@ def main() -> None:
         grid_step_m=args.grid_step_m, heading_step_deg=args.heading_step_deg,
         inner_y_max=args.inner_y_max, outer_y_min=args.outer_y_min,
         distance_min_m=args.distance_min_m, distance_max_m=args.distance_max_m,
+        front_distance_full_m=args.front_distance_full_m,
+        front_distance_soft1_m=args.front_distance_soft1_m,
+        front_distance_max_m=args.front_distance_max_m,
+        front_distance_soft1_weight=args.front_distance_soft1_weight,
+        front_distance_soft2_weight=args.front_distance_soft2_weight,
+        rear_distance_full_m=args.rear_distance_full_m,
+        rear_distance_soft_m=args.rear_distance_soft_m,
+        rear_distance_max_m=args.rear_distance_max_m,
+        rear_distance_soft_weight=args.rear_distance_soft_weight,
         tag_incidence_limit_deg=args.tag_incidence_limit_deg,
         front_forward_offset_m=args.front_forward_offset_m, rear_forward_offset_m=args.rear_forward_offset_m,
         front_half_fov_deg=args.front_half_fov_deg, rear_half_fov_deg=args.rear_half_fov_deg,
@@ -590,7 +688,15 @@ def main() -> None:
     print(f"mode: {args.mode}")
     print(f"front offset={cfg.front_forward_offset_m}, rear offset={cfg.rear_forward_offset_m}")
     print(f"front half FOV={cfg.front_half_fov_deg}, rear half FOV={cfg.rear_half_fov_deg}")
-    print(f"distance range={cfg.distance_min_m}..{cfg.distance_max_m} m")
+    print(f"front distance weight: {cfg.distance_min_m}..{cfg.front_distance_full_m}=>1.0, "
+          f"{cfg.front_distance_full_m}..{cfg.front_distance_soft1_m}=>{cfg.front_distance_soft1_weight}, "
+          f"{cfg.front_distance_soft1_m}..{cfg.front_distance_max_m}=>{cfg.front_distance_soft2_weight}")
+    print(f"rear distance weight : {cfg.distance_min_m}..{cfg.rear_distance_full_m}=>1.0, "
+          f"{cfg.rear_distance_full_m}..{cfg.rear_distance_soft_m}=>{cfg.rear_distance_soft_weight}, "
+          f">{cfg.rear_distance_soft_m}=>0.0")
+    print(f"tag incidence limit={cfg.tag_incidence_limit_deg} deg")
+    print(f"front confidence={cfg.front_confidence}, rear confidence={cfg.rear_confidence}")
+    print(f"geometry bonus per degree={cfg.score_geometry_bonus_per_deg}")
     print(f"inner tags enabled={cfg.include_inner_tags}, outer tags enabled={cfg.include_outer_tags}")
     print("room gate: inner y<=%.2f, outer y>=%.2f, middle blocked" % (cfg.inner_y_max, cfg.outer_y_min))
     if args.mode == "points":

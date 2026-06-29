@@ -1,0 +1,2 @@
+front_distance_max_m,rear_distance_max_m,rear_confidence_from_useful_rate,distance_error_good_threshold_m,angle_error_good_threshold_deg,yaw_error_good_threshold_deg,note
+5.0,4.0,1.0,0.15,8.0,25.0,Use front/rear distance limits separately if measured reliability is clearly different.
