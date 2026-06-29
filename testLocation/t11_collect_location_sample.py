@@ -3,53 +3,41 @@ t11_collect_location_sample.py
 
 Field data-collection helper for DemoRoom AprilTag localization.
 
-Purpose
--------
-This script is for COLLECTING NEW DATA in the lab.
+This version is optimized for field collection:
+- sends one direct mobility.report.location command
+- waits for fresh robot report
+- prints short console summary
+- prints compact true-vs-measured tag table including True Distance
+- saves compact JSON/CSV and normalized observation JSON for later t12 analysis
+- does NOT print long debug tables by default
+- does NOT save huge full JSON by default
 
-It does the end-to-end field workflow:
-
-    1. User enters ground-truth x,y.
-    2. Script looks up preferred heading from t2 output.
-    3. User rotates robot to the preferred heading.
-    4. Script sends one direct mobility.report.location command.
-    5. Script waits for a fresh robot mobility report.
-    6. Script extracts front/rear AprilTag observations from NMS.
-    7. Script calls the existing NMS S3 localization solver.
-    8. Script prints a compact console report and diagnostic tables.
-    9. Script saves a complete JSON log for later t12 solver comparison.
-
-This script is intentionally field-facing.  It does not run argparse.
-Change SCANNER_NAME below when using a different robot.
+Change SCANNER_NAME below if using a different robot.
 """
 
 
 from __future__ import annotations
 
 import json
+import csv
 import math
 import time
 import uuid
 import sys
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 import datetime
 
-# When this file is placed under testLocation, make the project root importable.
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-# Important:
-# m8mobility_map.py uses relative paths such as sitemap\DemoRoom\site.json.
-# Therefore t11 must run with project root as current working directory,
-# even when the script is launched from testLocation.
-import os
+# m8mobility_map uses relative sitemap paths; force project root as cwd.
 os.chdir(ROOT_DIR)
 
 import config
 import utility
-
 
 from m8mobility_map import _ensure_mobility_assets_ready, _load_tag_map
 from m8mobility_state import _s3_extract_visible_tags, _s3_solve_true_location
@@ -60,13 +48,19 @@ from m8mobility_state_store import key_report, key_time
 # Adjustable field-test settings
 # ---------------------------------------------------------------------------
 
-SCANNER_NAME = "twin-scout-delta"
+SCANNER_NAME = "twin-scout-charlie"
 
 TRIAL = "T11-COLLECT-001"
 NOTES = ""
 
 WAIT_TIMEOUT_SEC = 60
 POLL_EVERY_SEC = 1.0
+
+# Field-mode console/log switches.
+PRINT_LONG_TABLES = False
+SAVE_FULL_JSON_LOG = False
+SAVE_COMPACT_JSON_LOG = True
+SAVE_COMPACT_CSV_LOG = True
 
 TAG_FILE = ROOT_DIR / "sitemap" / "DemoRoom" / "tag_location.txt"
 
@@ -82,7 +76,6 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 LATEST_OBS_DIR = ROOT_DIR / "testLocation" / "input"
 LATEST_OBS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Keep the old variable name used by the reused Phase-2A functions.
 ROBOT_ID = SCANNER_NAME
 
 
@@ -109,7 +102,6 @@ def _prompt_optional_float(label: str) -> Optional[float]:
 def _find_preferred_heading_files(preferred_dir: Path) -> list[Path]:
     if not preferred_dir.exists():
         return []
-
     files = []
     for suffix in ("*.csv", "*.json"):
         files.extend(preferred_dir.rglob(suffix))
@@ -128,8 +120,6 @@ def _find_preferred_heading_files(preferred_dir: Path) -> list[Path]:
 
 
 def _lookup_preferred_heading_from_csv(path: Path, x_m: float, y_m: float) -> Optional[Dict[str, Any]]:
-    import csv
-
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as f:
             rows = list(csv.DictReader(f))
@@ -163,7 +153,6 @@ def _lookup_preferred_heading_from_csv(path: Path, x_m: float, y_m: float) -> Op
 
     best = None
     best_d2 = None
-
     for r in rows:
         try:
             rx = float(r[x_col])
@@ -171,7 +160,6 @@ def _lookup_preferred_heading_from_csv(path: Path, x_m: float, y_m: float) -> Op
             rh = float(r[h_col])
         except Exception:
             continue
-
         d2 = (rx - x_m) ** 2 + (ry - y_m) ** 2
         if best is None or d2 < best_d2:
             best = {
@@ -182,7 +170,6 @@ def _lookup_preferred_heading_from_csv(path: Path, x_m: float, y_m: float) -> Op
                 "nearest_dist_m": math.sqrt(d2),
             }
             best_d2 = d2
-
     return best
 
 
@@ -191,27 +178,13 @@ def _lookup_preferred_heading(x_m: float, y_m: float) -> Optional[Dict[str, Any]
         if p.suffix.lower() == ".csv":
             result = _lookup_preferred_heading_from_csv(p, x_m, y_m)
         else:
-            # Keep JSON support for later if t2 output format changes.
             result = None
-
         if result is not None:
             return result
-
     return None
 
 
 def _normalize_observations_for_t12(observations: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
-    """
-    Save one simple observation list for later solver-only comparison.
-
-    The existing NMS observation uses:
-        id
-        angle_deg_cw
-
-    The new solver-only files usually use:
-        tag_id
-        angle_deg
-    """
     out = []
     for obs in observations:
         if not isinstance(obs, dict):
@@ -828,6 +801,114 @@ def _add_manual_truth_to_tag_diagnostics(
             d["manual_truth"] = {}
 
 
+
+
+def _print_compact_tag_error_table(tag_diagnostics: list[Dict[str, Any]]) -> None:
+    print("\nCompact Tag Measurement Check")
+    print("=" * 112)
+    print(
+        f"{'Tag':>4} {'Cam':>5} {'Use':>4} "
+        f"{'Dist':>7} {'TrueD':>7} {'DErr':>7} "
+        f"{'Ang':>7} {'TrueA':>7} {'AErr':>7} "
+        f"{'Yaw':>7} {'TrueY':>7} {'YErr':>7}"
+    )
+    print("-" * 112)
+
+    if not tag_diagnostics:
+        print("(no tag diagnostics)")
+        print("=" * 112)
+        return
+
+    for d in sorted(tag_diagnostics, key=lambda x: (str(x.get("camera_role")), int(x.get("tag_id", -1)))):
+        obs = d.get("observed") or {}
+        truth = d.get("manual_truth") or {}
+
+        dist = obs.get("distance_m")
+        true_dist = truth.get("true_distance_m")
+        ang = obs.get("angle_deg_cw")
+        true_ang = truth.get("true_angle_deg")
+        yaw = obs.get("yaw_deg")
+        true_yaw = truth.get("true_yaw_deg")
+
+        try:
+            dist_err = float(dist) - float(true_dist)
+        except Exception:
+            dist_err = None
+        try:
+            ang_err = utility._wrap_angle_deg(float(ang) - float(true_ang))
+        except Exception:
+            ang_err = None
+        try:
+            yaw_err = utility._wrap_angle_deg(float(yaw) - float(true_yaw))
+        except Exception:
+            yaw_err = None
+
+        use = "Y" if d.get("used_in_solution") else "N"
+
+        print(
+            f"{int(d.get('tag_id')):>4} {str(d.get('camera_role') or '')[:5]:>5} {use:>4} "
+            f"{_fmt_float(dist, 3, 7)} {_fmt_float(true_dist, 3, 7)} {_fmt_float(dist_err, 3, 7)} "
+            f"{_fmt_float(ang, 1, 7)} {_fmt_float(true_ang, 1, 7)} {_fmt_float(ang_err, 1, 7)} "
+            f"{_fmt_float(yaw, 1, 7)} {_fmt_float(true_yaw, 1, 7)} {_fmt_float(yaw_err, 1, 7)}"
+        )
+
+    print("=" * 112)
+
+
+def _write_compact_tag_csv(path: Path, tag_diagnostics: list[Dict[str, Any]]) -> None:
+    rows = []
+
+    def safe_err(a, b, angle=False):
+        try:
+            if angle:
+                return utility._wrap_angle_deg(float(a) - float(b))
+            return float(a) - float(b)
+        except Exception:
+            return None
+
+    for d in tag_diagnostics:
+        obs = d.get("observed") or {}
+        truth = d.get("manual_truth") or {}
+        rc = d.get("raw_vs_calibrated") or {}
+        res = d.get("residual_to_final") or {}
+
+        rows.append({
+            "tag_id": d.get("tag_id"),
+            "camera_role": d.get("camera_role"),
+            "used_in_solution": d.get("used_in_solution"),
+            "hard_outlier": d.get("hard_outlier"),
+            "soft_outlier": d.get("soft_outlier"),
+            "meas_distance_m": obs.get("distance_m"),
+            "true_distance_m": truth.get("true_distance_m"),
+            "distance_error_m": safe_err(obs.get("distance_m"), truth.get("true_distance_m")),
+            "meas_angle_deg": obs.get("angle_deg_cw"),
+            "true_angle_deg": truth.get("true_angle_deg"),
+            "angle_error_deg": safe_err(obs.get("angle_deg_cw"), truth.get("true_angle_deg"), angle=True),
+            "meas_yaw_deg": obs.get("yaw_deg"),
+            "true_yaw_deg": truth.get("true_yaw_deg"),
+            "yaw_error_deg": safe_err(obs.get("yaw_deg"), truth.get("true_yaw_deg"), angle=True),
+            "raw_distance_m": rc.get("raw_distance_m"),
+            "cal_distance_m": rc.get("cal_distance_m"),
+            "raw_angle_deg": rc.get("raw_angle_deg"),
+            "cal_angle_deg": rc.get("cal_angle_deg"),
+            "raw_yaw_deg": rc.get("raw_yaw_deg"),
+            "cal_yaw_deg": rc.get("cal_yaw_deg"),
+            "residual_to_final_position_m": res.get("position_m"),
+            "residual_to_final_heading_deg": res.get("heading_deg"),
+            "snapshot_path": d.get("snapshot_path"),
+        })
+
+    if not rows:
+        return
+
+    keys = list(rows[0].keys())
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=keys)
+        w.writeheader()
+        w.writerows(rows)
+
 def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, Any]:
     if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, ROBOT_ID):
         raise RuntimeError(f"{ROBOT_ID} is not whitelisted")
@@ -868,6 +949,16 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
         f"loc_x{gt_x_m:.2f}_y{gt_y_m:.2f}_h{gt_heading_deg:.0f}_{ts}.json"
     )
 
+    compact_json_file = (
+        LOG_DIR /
+        f"compact_x{gt_x_m:.2f}_y{gt_y_m:.2f}_h{gt_heading_deg:.0f}_{ts}.json"
+    )
+
+    compact_csv_file = (
+        LOG_DIR /
+        f"compact_x{gt_x_m:.2f}_y{gt_y_m:.2f}_h{gt_heading_deg:.0f}_{ts}.csv"
+    )
+
     payload = {
         "script_version": "phase2a_v4_yaw_raw_cal_debug",
         "robot_id": ROBOT_ID,
@@ -906,10 +997,50 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
         },
     }
 
-    with log_file.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+    if SAVE_FULL_JSON_LOG:
+        with log_file.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    else:
+        log_file = None
 
-    # Also save a normalized observation-only file for later t12 solver-only analysis.
+    compact_payload = {
+        "script_version": "t11_collect_location_sample_compact",
+        "robot_id": ROBOT_ID,
+        "ground_truth": {
+            "x_m": gt_x_m,
+            "y_m": gt_y_m,
+            "heading_deg": gt_heading_deg,
+        },
+        "errors": {
+            "position_error_m": pos_err,
+            "heading_error_deg": heading_err,
+        },
+        "summary": {
+            "estimate_ok": est_ok,
+            "tag_count": len(observations),
+            "front_count": front_count,
+            "rear_count": rear_count,
+            "tags_used": estimate.get("tags_used", []),
+            "solver_stage": estimate.get("solver_stage", ""),
+            "solver_detail": estimate.get("detail", ""),
+        },
+        "observations": _normalize_observations_for_t12(observations),
+        "tag_diagnostics": tag_diagnostics,
+        "metadata": {
+            "report_time": _read_report_ts(ROBOT_ID),
+            "direct_command_stream_id": direct_cmd_id,
+            "trial": TRIAL,
+            "notes": NOTES,
+        },
+    }
+
+    if SAVE_COMPACT_JSON_LOG:
+        with compact_json_file.open("w", encoding="utf-8") as f:
+            json.dump(compact_payload, f, ensure_ascii=False, indent=2)
+
+    if SAVE_COMPACT_CSV_LOG:
+        _write_compact_tag_csv(compact_csv_file, tag_diagnostics)
+
     normalized_observations = _normalize_observations_for_t12(observations)
     obs_payload = {
         "script_version": "t11_collect_location_sample",
@@ -920,7 +1051,7 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
             "heading_deg": gt_heading_deg,
         },
         "observations": normalized_observations,
-        "source_log_file": str(log_file),
+        "source_log_file": str(compact_json_file),
         "report_time": _read_report_ts(ROBOT_ID),
     }
 
@@ -967,14 +1098,20 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
     print(f"Tags Used      : {estimate.get('tags_used', [])}")
     print(f"Solver Stage   : {estimate.get('solver_stage', '')}")
     print(f"Solver Detail  : {estimate.get('detail', '')}")
-    print(f"JSON Log       : {log_file}")
+    if log_file is not None:
+        print(f"Full JSON Log  : {log_file}")
+    print(f"Compact JSON   : {compact_json_file}")
+    print(f"Compact CSV    : {compact_csv_file}")
     print(f"Obs JSON       : {obs_file}")
     print(f"Latest Obs     : {latest_obs_file}")
 
-    _print_visible_tag_table(observations, tag_map)
-    _print_yaw_calibration_debug_table(tag_diagnostics)
-    _print_single_tag_solution_table(tag_diagnostics)
-    _print_final_residual_table(tag_diagnostics)
+    _print_compact_tag_error_table(tag_diagnostics)
+
+    if PRINT_LONG_TABLES:
+        _print_visible_tag_table(observations, tag_map)
+        _print_yaw_calibration_debug_table(tag_diagnostics)
+        _print_single_tag_solution_table(tag_diagnostics)
+        _print_final_residual_table(tag_diagnostics)
 
     print()
 
@@ -988,7 +1125,6 @@ if __name__ == "__main__":
     print("=" * 72)
     print(f"ROOT_DIR              = {ROOT_DIR}")
     print(f"SCANNER_NAME          = {SCANNER_NAME}")
-    print(f"TAG_FILE              = {TAG_FILE}")
     print(f"PREFERRED_HEADING_DIR = {PREFERRED_HEADING_DIR}")
     print(f"LOG_DIR               = {LOG_DIR}")
     print("")
@@ -997,7 +1133,6 @@ if __name__ == "__main__":
     gt_y_m = _prompt_float("Input ground-truth y_m: ")
 
     preferred = _lookup_preferred_heading(gt_x_m, gt_y_m)
-
     if preferred is None:
         print("")
         print("Preferred-heading lookup failed.")
@@ -1020,7 +1155,6 @@ if __name__ == "__main__":
 
     print("")
     print(f"Please rotate {SCANNER_NAME} to heading {target_heading_deg:.1f} deg.")
-    print("After the robot is correctly oriented and stable, press Enter.")
     input("Press Enter to send mobility.report.location...")
 
     actual_heading = _prompt_optional_float(
@@ -1031,9 +1165,6 @@ if __name__ == "__main__":
 
     print("")
     print("Collecting one fresh mobility.report.location sample...")
-    print("This sends a direct test command and waits for a fresh report.")
-    print("")
-
     run_once(
         gt_x_m=float(gt_x_m),
         gt_y_m=float(gt_y_m),
