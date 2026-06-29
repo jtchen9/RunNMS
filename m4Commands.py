@@ -1565,30 +1565,30 @@ def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
     }
 
 
-@router.post("/cmd/_load_script", tags=["4 Commands (Polling)"])
-def cmd_load_script(script: ScriptLoad) -> Dict[str, Any]:
-    """
-    Deprecated. /cmd/_load_csv_file is the only supported experiment-registration
-    API. This endpoint is intentionally blocked to prevent inconsistent registry
-    records and queue behavior.
-    """
-    raise HTTPException(
-        status_code=410,
-        detail="/cmd/_load_script is deprecated. Use /cmd/_load_csv_file.",
-    )
+# @router.post("/cmd/_load_script", tags=["4 Commands (Polling)"])
+# def cmd_load_script(script: ScriptLoad) -> Dict[str, Any]:
+#     """
+#     Deprecated. /cmd/_load_csv_file is the only supported experiment-registration
+#     API. This endpoint is intentionally blocked to prevent inconsistent registry
+#     records and queue behavior.
+#     """
+#     raise HTTPException(
+#         status_code=410,
+#         detail="/cmd/_load_script is deprecated. Use /cmd/_load_csv_file.",
+#     )
 
 
-@router.post("/cmd/_load_csv", tags=["4 Commands (Polling)"])
-def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
-    """
-    Deprecated. /cmd/_load_csv_file is the only supported experiment-registration
-    API. This endpoint is intentionally blocked to prevent inconsistent registry
-    records and queue behavior.
-    """
-    raise HTTPException(
-        status_code=410,
-        detail="/cmd/_load_csv is deprecated. Use /cmd/_load_csv_file.",
-    )
+# @router.post("/cmd/_load_csv", tags=["4 Commands (Polling)"])
+# def cmd_load_csv(req: CmdLoadCSVReq) -> Dict[str, Any]:
+#     """
+#     Deprecated. /cmd/_load_csv_file is the only supported experiment-registration
+#     API. This endpoint is intentionally blocked to prevent inconsistent registry
+#     records and queue behavior.
+#     """
+#     raise HTTPException(
+#         status_code=410,
+#         detail="/cmd/_load_csv is deprecated. Use /cmd/_load_csv_file.",
+#     )
 
 
 @router.post("/cmd/_load_csv_file", tags=["4 Commands (Polling)"])
@@ -1672,8 +1672,9 @@ async def cmd_load_csv_file(
         3. reject if command_count == 0
         4. check same-lab time conflict
         5. if replace_existing=true, clear old queues/state
-        6. enqueue accepted commands
-        7. write registry record
+        6. if mobility rows exist, resume listed mobility scanners to s0idle
+        7. enqueue accepted commands
+        8. write registry record
 
     Registry fields written by this endpoint:
         experiment_id
@@ -1760,6 +1761,26 @@ async def cmd_load_csv_file(
         mobility_scanners=analysis["mobility_scanners"],
     )
 
+    mobility_start = {
+        "status": "skipped",
+        "mobility_scanners": [],
+        "resumed_scanners": [],
+        "detail": "no mobility rows",
+    }
+
+    if analysis["mobility_scanners"]:
+        resumed = []
+        for scanner in sorted(set(analysis["mobility_scanners"])):
+            m8mobility.manual_resume(scanner)
+            resumed.append(scanner)
+
+        mobility_start = {
+            "status": "ok",
+            "mobility_scanners": sorted(set(analysis["mobility_scanners"])),
+            "resumed_scanners": resumed,
+            "detail": "reused m8mobility.manual_resume before enqueueing mobility CSV rows",
+        }
+
     for item in accepted_items:
         _enqueue_script_or_csv_item(
             scanner=item["scanner"],
@@ -1785,6 +1806,7 @@ async def cmd_load_csv_file(
         **analysis["preflight"],
         "conflict_check": conflict_check,
         "replacement": replacement,
+        "mobility_start": mobility_start,
     }
 
     return {
