@@ -1,55 +1,22 @@
 r"""
 t11_console_collect_clean_data.py
 
-Interactive console script for clean localization data collection.
+Field helper for clean DemoRoom localization data collection.
 
-This file belongs under:
-    D:\Data\_Action\_RunNMS\testLocation
+Normal workflow:
+    1. Put latest robot observation in:
+           testLocation\input\latest_location_observation.json
+       or change DEFAULT_OBSERVATION_FILE below.
+    2. Run this script.
+    3. Enter ground-truth x,y.
+    4. Script looks up preferred heading from t2 output.
+    5. Rotate robot to that heading.
+    6. Press Enter.
+    7. Script reads DEFAULT_OBSERVATION_FILE automatically.
+    8. Script prints a compact console report.
+    9. Script saves detailed timestamped logs automatically.
 
-Purpose
--------
-This script supports the clean-data collection workflow:
-
-    1. User enters known ground-truth x,y.
-    2. Script looks up preferred heading from t2 output if available.
-    3. Script prints a short instruction.
-    4. User manually rotates robot to preferred heading.
-    5. User presses Enter.
-    6. User provides a robot observation file path, or pastes JSON.
-    7. Script runs the full location pipeline.
-    8. Script prints a compact usefulness report on the console.
-    9. Script saves one collection record under output\clean_data_collection.
-
-No argparse is used. This is intentionally interactive.
-
-Expected existing files:
-    D:\Data\_Action\_RunNMS\sitemap\DemoRoom\tag_location.txt
-    D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full\...
-
-Observation input
------------------
-The observation can be provided as:
-
-A) CSV file with columns similar to:
-       tag_id,camera_role,meas_distance_m,meas_angle_deg,meas_yaw_deg
-
-B) JSON file or pasted JSON with one of these shapes:
-
-   [
-     {"tag_id": 40, "camera_role": "front", "distance_m": 1.23, "angle_deg": 4.5, "yaw_deg": -2.1},
-     ...
-   ]
-
-   or
-
-   {
-     "observations": [
-       {"tag_id": 40, "camera_role": "front", "distance_m": 1.23, "angle_deg": 4.5, "yaw_deg": -2.1},
-       ...
-     ]
-   }
-
-Column/key names are intentionally tolerant.
+No argparse is used.
 """
 
 from __future__ import annotations
@@ -102,28 +69,28 @@ def prompt_optional_float(label: str) -> float | None:
         return None
 
 
-def _first_existing_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+def first_existing_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
     for c in candidates:
         if c in df.columns:
             return c
     return None
 
 
-def _first_existing_key(d: dict, candidates: list[str]):
+def first_existing_key(d: dict, candidates: list[str]) -> str | None:
     for c in candidates:
         if c in d:
             return c
     return None
 
 
-def _float_or_nan(v) -> float:
+def float_or_nan(v) -> float:
     try:
         return float(v)
     except Exception:
         return float("nan")
 
 
-def _str_or_empty(v) -> str:
+def str_or_empty(v) -> str:
     try:
         return str(v)
     except Exception:
@@ -133,74 +100,71 @@ def _str_or_empty(v) -> str:
 def load_observations_from_csv(path: Path):
     df = pd.read_csv(path)
 
-    col_tag = _first_existing_col(df, ["tag_id", "tag", "tag_no", "id"])
-    col_cam = _first_existing_col(df, ["camera_role", "camera", "cam_role", "camera_name"])
-    col_d = _first_existing_col(df, ["meas_distance_m", "distance_m", "measured_distance_m", "distance"])
-    col_a = _first_existing_col(df, ["meas_angle_deg", "angle_deg", "measured_angle_deg", "angle_deg_cw", "angle"])
-    col_yaw = _first_existing_col(df, ["meas_yaw_deg", "yaw_deg", "measured_yaw_deg", "yaw"])
+    col_tag = first_existing_col(df, ["tag_id", "tag", "tag_no", "id"])
+    col_cam = first_existing_col(df, ["camera_role", "camera", "cam_role", "camera_name"])
+    col_d = first_existing_col(df, ["meas_distance_m", "distance_m", "measured_distance_m", "distance"])
+    col_a = first_existing_col(df, ["meas_angle_deg", "angle_deg", "measured_angle_deg", "angle_deg_cw", "angle"])
+    col_yaw = first_existing_col(df, ["meas_yaw_deg", "yaw_deg", "measured_yaw_deg", "yaw"])
 
-    missing = []
-    for name, col in [
-        ("tag_id", col_tag),
-        ("camera_role", col_cam),
-        ("distance", col_d),
-        ("angle", col_a),
-        ("yaw", col_yaw),
-    ]:
-        if col is None:
-            missing.append(name)
-
+    missing = [
+        name for name, col in [
+            ("tag_id", col_tag),
+            ("camera_role", col_cam),
+            ("distance", col_d),
+            ("angle", col_a),
+            ("yaw", col_yaw),
+        ]
+        if col is None
+    ]
     if missing:
         raise ValueError(f"CSV missing required columns {missing}. Columns={list(df.columns)}")
 
-    observations = []
+    out = []
     for idx, r in df.iterrows():
-        observations.append(
+        out.append(
             make_tag_observation(
                 tag_id=int(r[col_tag]),
-                camera_role=_str_or_empty(r[col_cam]),
-                distance_m=_float_or_nan(r[col_d]),
-                angle_deg=_float_or_nan(r[col_a]),
-                yaw_deg=_float_or_nan(r[col_yaw]),
+                camera_role=str_or_empty(r[col_cam]),
+                distance_m=float_or_nan(r[col_d]),
+                angle_deg=float_or_nan(r[col_a]),
+                yaw_deg=float_or_nan(r[col_yaw]),
                 source=f"{path.name}:row={idx}",
             )
         )
-
-    return observations
+    return out
 
 
 def normalize_json_observation_record(d: dict, source: str):
-    k_tag = _first_existing_key(d, ["tag_id", "tag", "tag_no", "id"])
-    k_cam = _first_existing_key(d, ["camera_role", "camera", "cam_role", "camera_name"])
-    k_d = _first_existing_key(d, ["meas_distance_m", "distance_m", "measured_distance_m", "distance"])
-    k_a = _first_existing_key(d, ["meas_angle_deg", "angle_deg", "measured_angle_deg", "angle_deg_cw", "angle"])
-    k_yaw = _first_existing_key(d, ["meas_yaw_deg", "yaw_deg", "measured_yaw_deg", "yaw"])
+    k_tag = first_existing_key(d, ["tag_id", "tag", "tag_no", "id"])
+    k_cam = first_existing_key(d, ["camera_role", "camera", "cam_role", "camera_name"])
+    k_d = first_existing_key(d, ["meas_distance_m", "distance_m", "measured_distance_m", "distance"])
+    k_a = first_existing_key(d, ["meas_angle_deg", "angle_deg", "measured_angle_deg", "angle_deg_cw", "angle"])
+    k_yaw = first_existing_key(d, ["meas_yaw_deg", "yaw_deg", "measured_yaw_deg", "yaw"])
 
-    missing = []
-    for name, k in [
-        ("tag_id", k_tag),
-        ("camera_role", k_cam),
-        ("distance", k_d),
-        ("angle", k_a),
-        ("yaw", k_yaw),
-    ]:
-        if k is None:
-            missing.append(name)
-
+    missing = [
+        name for name, key in [
+            ("tag_id", k_tag),
+            ("camera_role", k_cam),
+            ("distance", k_d),
+            ("angle", k_a),
+            ("yaw", k_yaw),
+        ]
+        if key is None
+    ]
     if missing:
         raise ValueError(f"JSON observation missing required keys {missing}: {d}")
 
     return make_tag_observation(
         tag_id=int(d[k_tag]),
-        camera_role=_str_or_empty(d[k_cam]),
-        distance_m=_float_or_nan(d[k_d]),
-        angle_deg=_float_or_nan(d[k_a]),
-        yaw_deg=_float_or_nan(d[k_yaw]),
+        camera_role=str_or_empty(d[k_cam]),
+        distance_m=float_or_nan(d[k_d]),
+        angle_deg=float_or_nan(d[k_a]),
+        yaw_deg=float_or_nan(d[k_yaw]),
         source=source,
     )
 
 
-def load_observations_from_json_text(json_text: str, source: str = "pasted_json"):
+def load_observations_from_json_text(json_text: str, source: str):
     data = json.loads(json_text)
 
     if isinstance(data, dict):
@@ -211,36 +175,21 @@ def load_observations_from_json_text(json_text: str, source: str = "pasted_json"
         elif "detections" in data:
             records = data["detections"]
         else:
-            # Accept one single observation dict.
             records = [data]
     elif isinstance(data, list):
         records = data
     else:
         raise ValueError("JSON must be a list or dict.")
 
-    observations = []
+    out = []
     for i, rec in enumerate(records):
         if not isinstance(rec, dict):
             raise ValueError(f"Observation #{i} is not a dict: {rec}")
-        observations.append(normalize_json_observation_record(rec, source=f"{source}:item={i}"))
+        out.append(normalize_json_observation_record(rec, source=f"{source}:item={i}"))
+    return out
 
-    return observations
 
-
-def load_observations_interactive():
-    print("")
-    print("Observation input options:")
-    print("  1) enter a CSV/JSON file path")
-    print("  2) paste JSON directly")
-    print("")
-
-    text = input("Observation file path or pasted JSON: ").strip()
-
-    # Pasted JSON usually starts with { or [
-    if text.startswith("{") or text.startswith("["):
-        return load_observations_from_json_text(text, source="pasted_json"), "pasted_json"
-
-    path = Path(text.strip('"'))
+def load_observations_from_file(path: Path):
     if not path.is_absolute():
         path = (Path.cwd() / path).resolve()
 
@@ -251,7 +200,13 @@ def load_observations_interactive():
         return load_observations_from_csv(path), str(path)
 
     if path.suffix.lower() == ".json":
-        return load_observations_from_json_text(path.read_text(encoding="utf-8"), source=path.name), str(path)
+        return (
+            load_observations_from_json_text(
+                path.read_text(encoding="utf-8"),
+                source=path.name,
+            ),
+            str(path),
+        )
 
     raise ValueError(f"Unsupported observation file suffix: {path.suffix}")
 
@@ -260,40 +215,32 @@ def find_preferred_heading_files(preferred_dir: Path) -> list[Path]:
     if not preferred_dir.exists():
         return []
 
-    candidates = []
-    for suffix in ["*.csv", "*.json", "*.txt"]:
-        candidates.extend(preferred_dir.rglob(suffix))
+    files = []
+    for suffix in ["*.csv", "*.json"]:
+        files.extend(preferred_dir.rglob(suffix))
 
-    # Prefer filenames that look like lookup/matrix/grid.
-    preferred = []
-    other = []
-    for p in candidates:
+    def priority(p: Path):
         name = p.name.lower()
-        if any(k in name for k in ["preferred", "heading", "lookup", "matrix", "grid"]):
-            preferred.append(p)
-        else:
-            other.append(p)
+        if "preferred_heading_lookup" in name:
+            return 0
+        if "preferred" in name and "heading" in name:
+            return 1
+        if "heading" in name:
+            return 2
+        return 3
 
-    return preferred + other
+    return sorted(files, key=priority)
 
 
 def lookup_heading_from_csv(path: Path, x_m: float, y_m: float):
-    """
-    Tolerant CSV lookup.
-
-    Supports common columns such as:
-        x,y,heading
-        x_m,y_m,preferred_heading_deg
-        grid_x_m,grid_y_m,best_heading_deg
-    """
     try:
         df = pd.read_csv(path)
     except Exception:
         return None
 
-    x_col = _first_existing_col(df, ["x_m", "x", "grid_x_m", "robot_x", "center_x"])
-    y_col = _first_existing_col(df, ["y_m", "y", "grid_y_m", "robot_y", "center_y"])
-    h_col = _first_existing_col(df, [
+    x_col = first_existing_col(df, ["x_m", "x", "grid_x_m", "robot_x", "center_x"])
+    y_col = first_existing_col(df, ["y_m", "y", "grid_y_m", "robot_y", "center_y"])
+    h_col = first_existing_col(df, [
         "preferred_heading_deg",
         "best_heading_deg",
         "heading_deg",
@@ -301,7 +248,6 @@ def lookup_heading_from_csv(path: Path, x_m: float, y_m: float):
         "best_heading",
         "heading",
     ])
-
     if x_col is None or y_col is None or h_col is None:
         return None
 
@@ -310,33 +256,21 @@ def lookup_heading_from_csv(path: Path, x_m: float, y_m: float):
     tmp[y_col] = pd.to_numeric(tmp[y_col], errors="coerce")
     tmp[h_col] = pd.to_numeric(tmp[h_col], errors="coerce")
     tmp = tmp.dropna()
-
     if len(tmp) == 0:
         return None
 
-    dx = tmp[x_col] - x_m
-    dy = tmp[y_col] - y_m
-    dist2 = dx * dx + dy * dy
+    dist2 = (tmp[x_col] - x_m) ** 2 + (tmp[y_col] - y_m) ** 2
     idx = dist2.idxmin()
-
-    nearest_x = float(tmp.loc[idx, x_col])
-    nearest_y = float(tmp.loc[idx, y_col])
-    heading = float(tmp.loc[idx, h_col])
-    nearest_dist_m = math.sqrt(float(dist2.loc[idx]))
-
     return {
-        "heading_deg": heading % 360.0,
+        "heading_deg": float(tmp.loc[idx, h_col]) % 360.0,
         "source_file": str(path),
-        "nearest_x_m": nearest_x,
-        "nearest_y_m": nearest_y,
-        "nearest_dist_m": nearest_dist_m,
+        "nearest_x_m": float(tmp.loc[idx, x_col]),
+        "nearest_y_m": float(tmp.loc[idx, y_col]),
+        "nearest_dist_m": math.sqrt(float(dist2.loc[idx])),
     }
 
 
 def lookup_heading_from_json(path: Path, x_m: float, y_m: float):
-    """
-    Tolerant JSON lookup for list-of-records style files.
-    """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
@@ -347,20 +281,17 @@ def lookup_heading_from_json(path: Path, x_m: float, y_m: float):
             if key in data and isinstance(data[key], list):
                 data = data[key]
                 break
-
     if not isinstance(data, list):
         return None
 
     best = None
     best_d2 = None
-
     for rec in data:
         if not isinstance(rec, dict):
             continue
-
-        kx = _first_existing_key(rec, ["x_m", "x", "grid_x_m", "robot_x", "center_x"])
-        ky = _first_existing_key(rec, ["y_m", "y", "grid_y_m", "robot_y", "center_y"])
-        kh = _first_existing_key(rec, [
+        kx = first_existing_key(rec, ["x_m", "x", "grid_x_m", "robot_x", "center_x"])
+        ky = first_existing_key(rec, ["y_m", "y", "grid_y_m", "robot_y", "center_y"])
+        kh = first_existing_key(rec, [
             "preferred_heading_deg",
             "best_heading_deg",
             "heading_deg",
@@ -368,13 +299,11 @@ def lookup_heading_from_json(path: Path, x_m: float, y_m: float):
             "best_heading",
             "heading",
         ])
-
         if kx is None or ky is None or kh is None:
             continue
-
-        rx = _float_or_nan(rec[kx])
-        ry = _float_or_nan(rec[ky])
-        rh = _float_or_nan(rec[kh])
+        rx = float_or_nan(rec[kx])
+        ry = float_or_nan(rec[ky])
+        rh = float_or_nan(rec[kh])
         if not all(math.isfinite(v) for v in [rx, ry, rh]):
             continue
 
@@ -388,33 +317,24 @@ def lookup_heading_from_json(path: Path, x_m: float, y_m: float):
                 "nearest_dist_m": math.sqrt(d2),
             }
             best_d2 = d2
-
     return best
 
 
 def lookup_preferred_heading(x_m: float, y_m: float, preferred_dir: Path):
-    """
-    Try to find preferred heading from t2 output.
-
-    This is tolerant because t2 output filenames/formats may evolve.
-    If lookup fails, user can enter heading manually.
-    """
-    files = find_preferred_heading_files(preferred_dir)
-
-    for p in files:
-        result = None
+    for p in find_preferred_heading_files(preferred_dir):
         if p.suffix.lower() == ".csv":
             result = lookup_heading_from_csv(p, x_m, y_m)
         elif p.suffix.lower() == ".json":
             result = lookup_heading_from_json(p, x_m, y_m)
+        else:
+            result = None
 
         if result is not None:
             return result
-
     return None
 
 
-def run_full_pipeline_for_one_sample(
+def run_pipeline(
     observations,
     tag_map,
     x_gt_m: float,
@@ -426,22 +346,14 @@ def run_full_pipeline_for_one_sample(
     filter_config,
     confidence_config,
 ):
-    """
-    Run the same pass1 -> item filtering -> filtered solve -> confidence flow
-    used in t10, but for one clean-data sample.
-    """
-    initial_x = x_gt_m
-    initial_y = y_gt_m
-    initial_h = heading_gt_deg
-
     pass1 = solve_distance_angle_yaw_pose(
         observations=observations,
         tag_map=tag_map,
         camera_config=camera_config,
         measurement_weights=measurement_weights,
-        initial_x_m=initial_x,
-        initial_y_m=initial_y,
-        initial_heading_deg=initial_h,
+        initial_x_m=x_gt_m,
+        initial_y_m=y_gt_m,
+        initial_heading_deg=heading_gt_deg,
         solver_config=solver_config,
     )
 
@@ -466,12 +378,8 @@ def run_full_pipeline_for_one_sample(
     filter_shift_pos_cm = 100.0 * math.hypot(filtered.x_m - pass1.x_m, filtered.y_m - pass1.y_m)
     filter_shift_heading_deg = abs_angle_error_deg(filtered.heading_deg, pass1.heading_deg)
 
-    # Match current installed interface: evaluate_pose_confidence(result, tag_map, config=None)
-    confidence = evaluate_pose_confidence(
-        filtered,
-        tag_map,
-        confidence_config,
-    )
+    # Current installed interface uses 3 positional args.
+    confidence = evaluate_pose_confidence(filtered, tag_map, confidence_config)
 
     return {
         "pass1": pass1,
@@ -484,8 +392,25 @@ def run_full_pipeline_for_one_sample(
     }
 
 
+def get_conf_value(conf, names, default=0):
+    """
+    Read a confidence-report value using several possible field names.
+    This keeps t11 tolerant while location_confidence.py is still evolving.
+    """
+    for name in names:
+        if hasattr(conf, name):
+            return getattr(conf, name)
+
+    if hasattr(conf, "to_dict"):
+        d = conf.to_dict()
+        for name in names:
+            if name in d:
+                return d[name]
+
+    return default
+
+
 def print_compact_report(result_pack, x_gt_m: float, y_gt_m: float, heading_gt_deg: float, observation_count: int):
-    pass1 = result_pack["pass1"]
     filtered = result_pack["filtered"]
     conf = result_pack["confidence"]
     counts = result_pack["filter_counts"]
@@ -503,12 +428,78 @@ def print_compact_report(result_pack, x_gt_m: float, y_gt_m: float, heading_gt_d
     print(f"Confidence       : {conf.confidence} ({conf.reason})")
     print("")
     print(f"Observations     : {observation_count}")
-    print(f"Used items       : distance={conf.distance_used_count}, angle={conf.angle_used_count}, yaw={conf.yaw_used_count}")
-    print(f"Used tags        : {conf.tag_used_count}")
-    print(f"Bearing span     : distance={conf.distance_bearing_span_deg:.1f} deg, angle={conf.angle_bearing_span_deg:.1f} deg")
+
+    distance_used_count = get_conf_value(
+        conf,
+        ["distance_used_count", "distance_item_count", "distance_tag_count"],
+        0,
+    )
+    angle_used_count = get_conf_value(
+        conf,
+        ["angle_used_count", "angle_item_count", "angle_tag_count"],
+        0,
+    )
+    yaw_used_count = get_conf_value(
+        conf,
+        ["yaw_used_count", "yaw_item_count", "yaw_tag_count"],
+        0,
+    )
+    tag_used_count = get_conf_value(
+        conf,
+        ["tag_used_count", "used_tag_count", "tag_count"],
+        0,
+    )
+
+    distance_bearing_span_deg = get_conf_value(
+        conf,
+        ["distance_bearing_span_deg", "bearing_span_deg"],
+        0.0,
+    )
+    angle_bearing_span_deg = get_conf_value(
+        conf,
+        ["angle_bearing_span_deg", "bearing_span_deg"],
+        0.0,
+    )
+
+    distance_rms_cm = get_conf_value(
+        conf,
+        ["distance_rms_cm"],
+        0.0,
+    )
+    angle_rms_deg = get_conf_value(
+        conf,
+        ["angle_rms_deg"],
+        0.0,
+    )
+    yaw_rms_deg = get_conf_value(
+        conf,
+        ["yaw_rms_deg"],
+        0.0,
+    )
+
+    distance_max_abs_cm = get_conf_value(
+        conf,
+        ["distance_max_abs_cm", "distance_max_cm"],
+        0.0,
+    )
+    angle_max_abs_deg = get_conf_value(
+        conf,
+        ["angle_max_abs_deg", "angle_max_deg"],
+        0.0,
+    )
+    yaw_max_abs_deg = get_conf_value(
+        conf,
+        ["yaw_max_abs_deg", "yaw_max_deg"],
+        0.0,
+    )
+
+    print(f"Used items       : distance={distance_used_count}, angle={angle_used_count}, yaw={yaw_used_count}")
+    print(f"Used tags        : {tag_used_count}")
+    print(f"Bearing span     : distance={distance_bearing_span_deg:.1f} deg, angle={angle_bearing_span_deg:.1f} deg")
     print("")
-    print(f"Residual RMS     : distance={conf.distance_rms_cm:.1f} cm, angle={conf.angle_rms_deg:.1f} deg, yaw={conf.yaw_rms_deg:.1f} deg")
-    print(f"Residual max     : distance={conf.distance_max_abs_cm:.1f} cm, angle={conf.angle_max_abs_deg:.1f} deg, yaw={conf.yaw_max_abs_deg:.1f} deg")
+    print(f"Residual RMS     : distance={distance_rms_cm:.1f} cm, angle={angle_rms_deg:.1f} deg, yaw={yaw_rms_deg:.1f} deg")
+    print(f"Residual max     : distance={distance_max_abs_cm:.1f} cm, angle={angle_max_abs_deg:.1f} deg, yaw={yaw_max_abs_deg:.1f} deg")
+
     print("")
     print(f"Filter disabled  : total={counts['disabled']}, distance={counts['distance_disabled']}, angle={counts['angle_disabled']}, yaw={counts['yaw_disabled']}")
     print(f"Filter shift     : position={result_pack['filter_shift_pos_cm']:.1f} cm, heading={result_pack['filter_shift_heading_deg']:.1f} deg")
@@ -523,13 +514,30 @@ def print_compact_report(result_pack, x_gt_m: float, y_gt_m: float, heading_gt_d
     print("=" * 72)
 
 
-def write_collection_outputs(
+def write_csv(rows: list[dict], path: Path) -> None:
+    if not rows:
+        return
+
+    keys = []
+    for row in rows:
+        for k in row.keys():
+            if k not in keys:
+                keys.append(k)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=keys)
+        w.writeheader()
+        w.writerows(rows)
+
+
+def write_outputs(
     output_dir: Path,
     sample_id: str,
     x_gt_m: float,
     y_gt_m: float,
     heading_gt_deg: float,
-    preferred_heading_info,
+    preferred,
     observation_source: str,
     observations,
     result_pack,
@@ -553,7 +561,7 @@ def write_collection_outputs(
             "y_m": y_gt_m,
             "heading_deg": heading_gt_deg,
         },
-        "preferred_heading": preferred_heading_info,
+        "preferred_heading": preferred,
         "observation_source": observation_source,
         "observation_count": len(observations),
         "pass1": {
@@ -583,34 +591,27 @@ def write_collection_outputs(
         "config": config_dump,
     }
 
-    (output_dir / f"{sample_id}_summary.json").write_text(
-        json.dumps(summary, indent=2),
-        encoding="utf-8",
-    )
+    summary_path = output_dir / f"{sample_id}_summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
-    # Observation copy in normalized CSV.
-    obs_rows = []
-    for obs in observations:
-        obs_rows.append({
-            "tag_id": obs.tag_id,
-            "camera_role": obs.camera_role,
-            "distance_m": obs.distance_m,
-            "angle_deg": obs.angle_deg,
-            "yaw_deg": obs.yaw_deg,
-            "source": obs.source,
-        })
+    obs_rows = [
+        {
+            "tag_id": o.tag_id,
+            "camera_role": o.camera_role,
+            "distance_m": o.distance_m,
+            "angle_deg": o.angle_deg,
+            "yaw_deg": o.yaw_deg,
+            "source": o.source,
+        }
+        for o in observations
+    ]
     write_csv(obs_rows, output_dir / f"{sample_id}_observations.csv")
 
-    # Item states.
-    state_rows = []
-    for s in result_pack["filter_states"].values():
-        state_rows.append(s.to_dict())
+    state_rows = [s.to_dict() for s in result_pack["filter_states"].values()]
     write_csv(state_rows, output_dir / f"{sample_id}_item_states.csv")
 
-    # Final residuals.
-    residual_rows = []
-    for r in filtered.residuals:
-        residual_rows.append({
+    residual_rows = [
+        {
             "tag_id": r.tag_id,
             "camera_role": r.camera_role,
             "distance_residual_cm": r.distance_residual_cm,
@@ -619,27 +620,12 @@ def write_collection_outputs(
             "angle_weight": r.angle_weight,
             "yaw_residual_deg": r.yaw_residual_deg,
             "yaw_weight": r.yaw_weight,
-        })
+        }
+        for r in filtered.residuals
+    ]
     write_csv(residual_rows, output_dir / f"{sample_id}_final_residuals.csv")
 
-    return output_dir / f"{sample_id}_summary.json"
-
-
-def write_csv(rows: list[dict], path: Path) -> None:
-    if not rows:
-        return
-
-    keys: list[str] = []
-    for row in rows:
-        for k in row.keys():
-            if k not in keys:
-                keys.append(k)
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=keys)
-        w.writeheader()
-        w.writerows(rows)
+    return summary_path
 
 
 if __name__ == "__main__":
@@ -650,6 +636,10 @@ if __name__ == "__main__":
 
     PREFERRED_HEADING_DIR = (
         ROOT_DIR / "testLocation" / "output" / "preferred_heading_full"
+    )
+
+    DEFAULT_OBSERVATION_FILE = (
+        ROOT_DIR / "testLocation" / "input" / "latest_location_observation.json"
     )
 
     OUTPUT_DIR = (
@@ -695,11 +685,10 @@ if __name__ == "__main__":
         yaw_weak_multiplier=0.25,
     )
 
-    # Use installed defaults to avoid interface drift while scripts are evolving.
     confidence_config = ConfidenceConfig()
 
     # -------------------------------------------------------------------------
-    # Interactive collection
+    # Field collection flow
     # -------------------------------------------------------------------------
     print("")
     print("=" * 72)
@@ -708,30 +697,18 @@ if __name__ == "__main__":
     print(f"ROOT_DIR              = {ROOT_DIR}")
     print(f"TAG_FILE              = {TAG_FILE}")
     print(f"PREFERRED_HEADING_DIR = {PREFERRED_HEADING_DIR}")
+    print(f"OBSERVATION_FILE      = {DEFAULT_OBSERVATION_FILE}")
     print(f"OUTPUT_DIR            = {OUTPUT_DIR}")
     print("")
 
     x_gt_m = prompt_float("Input ground-truth x_m: ")
     y_gt_m = prompt_float("Input ground-truth y_m: ")
 
-    preferred = lookup_preferred_heading(
-        x_m=x_gt_m,
-        y_m=y_gt_m,
-        preferred_dir=PREFERRED_HEADING_DIR,
-    )
+    preferred = lookup_preferred_heading(x_gt_m, y_gt_m, PREFERRED_HEADING_DIR)
 
-    if preferred is not None:
-        preferred_heading_deg = preferred["heading_deg"]
-        print("")
-        print("-" * 72)
-        print(f"Preferred heading at x={x_gt_m:.3f}, y={y_gt_m:.3f}: {preferred_heading_deg:.1f} deg")
-        print(f"Lookup source: {preferred['source_file']}")
-        print(f"Nearest lookup point: x={preferred['nearest_x_m']:.3f}, y={preferred['nearest_y_m']:.3f}, distance={preferred['nearest_dist_m']:.3f} m")
-        print("-" * 72)
-    else:
+    if preferred is None:
         print("")
         print("Preferred-heading lookup failed.")
-        print("This may mean t2 output format is different from what t11 can auto-read.")
         preferred_heading_deg = prompt_float("Manually input target heading_deg: ")
         preferred = {
             "heading_deg": preferred_heading_deg,
@@ -740,31 +717,75 @@ if __name__ == "__main__":
             "nearest_y_m": y_gt_m,
             "nearest_dist_m": 0.0,
         }
+    else:
+        preferred_heading_deg = preferred["heading_deg"]
 
+    print("")
+    print("-" * 72)
+    print(f"Preferred heading at x={x_gt_m:.3f}, y={y_gt_m:.3f}: {preferred_heading_deg:.1f} deg")
+    print(f"Lookup source: {preferred['source_file']}")
+    print(f"Nearest lookup point: x={preferred['nearest_x_m']:.3f}, y={preferred['nearest_y_m']:.3f}, distance={preferred['nearest_dist_m']:.3f} m")
+    print("-" * 72)
     print("")
     print(f"Please rotate robot to heading {preferred_heading_deg:.1f} deg.")
     print("After the robot is correctly oriented and stable, press Enter.")
     input("Press Enter to continue...")
 
-    # Allow manual override if the actually achieved heading differs.
-    print("")
     actual_heading = prompt_optional_float(
         f"Input actual heading_deg, or press Enter to use {preferred_heading_deg:.1f}: "
     )
     if actual_heading is None:
         actual_heading = preferred_heading_deg
 
-    observations, observation_source = load_observations_interactive()
+    print("")
+    print("Reading observation from:")
+    print(f"  {DEFAULT_OBSERVATION_FILE}")
+
+    if not DEFAULT_OBSERVATION_FILE.exists():
+        DEFAULT_OBSERVATION_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        example = {
+            "observations": [
+                {
+                    "tag_id": 40,
+                    "camera_role": "front",
+                    "distance_m": 1.23,
+                    "angle_deg": 4.5,
+                    "yaw_deg": -2.1
+                },
+                {
+                    "tag_id": 55,
+                    "camera_role": "rear",
+                    "distance_m": 1.85,
+                    "angle_deg": -6.0,
+                    "yaw_deg": 3.2
+                }
+            ]
+        }
+
+        DEFAULT_OBSERVATION_FILE.write_text(
+            json.dumps(example, indent=2),
+            encoding="utf-8",
+        )
+
+        print("")
+        print("Observation file does not exist yet.")
+        print("A template file has been created:")
+        print(f"  {DEFAULT_OBSERVATION_FILE}")
+        print("")
+        print("Replace this template with the latest robot observation JSON, then run t11 again.")
+        sys.exit(1)
+
+    observations, observation_source = load_observations_from_file(DEFAULT_OBSERVATION_FILE)
 
     sample_id = datetime.now().strftime("clean_%Y%m%d_%H%M%S")
 
-    print("")
     print(f"Loaded observations: {len(observations)}")
     print("Running full location pipeline...")
 
     tag_map = load_tag_map(TAG_FILE)
 
-    result_pack = run_full_pipeline_for_one_sample(
+    result_pack = run_pipeline(
         observations=observations,
         tag_map=tag_map,
         x_gt_m=x_gt_m,
@@ -788,6 +809,7 @@ if __name__ == "__main__":
     config_dump = {
         "tag_file": str(TAG_FILE),
         "preferred_heading_dir": str(PREFERRED_HEADING_DIR),
+        "default_observation_file": str(DEFAULT_OBSERVATION_FILE),
         "output_dir": str(OUTPUT_DIR),
         "camera_config": camera_config,
         "measurement_weights": measurement_weights,
@@ -796,13 +818,13 @@ if __name__ == "__main__":
         "confidence_config": getattr(confidence_config, "__dict__", {}),
     }
 
-    summary_path = write_collection_outputs(
+    summary_path = write_outputs(
         output_dir=OUTPUT_DIR,
         sample_id=sample_id,
         x_gt_m=x_gt_m,
         y_gt_m=y_gt_m,
         heading_gt_deg=actual_heading,
-        preferred_heading_info=preferred,
+        preferred=preferred,
         observation_source=observation_source,
         observations=observations,
         result_pack=result_pack,

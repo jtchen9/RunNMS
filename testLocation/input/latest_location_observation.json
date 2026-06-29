@@ -1,0 +1,18 @@
+{
+  "observations": [
+    {
+      "tag_id": 40,
+      "camera_role": "front",
+      "distance_m": 1.23,
+      "angle_deg": 4.5,
+      "yaw_deg": -2.1
+    },
+    {
+      "tag_id": 55,
+      "camera_role": "rear",
+      "distance_m": 1.85,
+      "angle_deg": -6.0,
+      "yaw_deg": 3.2
+    }
+  ]
+}

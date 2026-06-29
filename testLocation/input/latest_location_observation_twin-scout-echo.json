@@ -1,0 +1,12 @@
+{
+  "script_version": "t11_collect_location_sample",
+  "robot_id": "twin-scout-echo",
+  "ground_truth": {
+    "x_m": 2.0,
+    "y_m": 3.0,
+    "heading_deg": 265.0
+  },
+  "observations": [],
+  "source_log_file": "D:\\Data\\_Action\\_RunNMS\\testLocation\\output\\t11_location_collection\\loc_x2.00_y3.00_h265_20260629_124354.json",
+  "report_time": "2026-06-29-12:43:53"
+}
