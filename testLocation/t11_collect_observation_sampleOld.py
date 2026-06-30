@@ -61,14 +61,6 @@ SAVE_FULL_REPORT_JSON = False
 SAVE_COMPACT_JSON_LOG = True
 SAVE_COMPACT_CSV_LOG = True
 
-# Diagnostic-only yaw keep/flip quantization.
-# This does NOT change robot code, S3, or solver input.
-YAW_EDGE_FRONT_TRUEA_DEG = 30.0
-YAW_EDGE_REAR_TRUEA_DEG = 10.0
-YAW_SMALL_TRUEY_DEG = 8.0
-YAW_ACCEPT_BEST_ERR_DEG = 10.0
-YAW_ACCEPT_SEPARATION_DEG = 15.0
-
 PREFERRED_HEADING_DIR = ROOT_DIR / "testLocation" / "output" / "preferred_heading_full"
 
 LOG_DIR = ROOT_DIR / "testLocation" / "output" / "t11_observation_collection"
@@ -356,202 +348,6 @@ def _num_diff(a: Any, b: Any) -> Optional[float]:
         return None
 
 
-def _yaw_keep_flip_quantization(
-    meas_yaw_deg: Any,
-    true_yaw_deg: Any,
-    true_angle_deg: Any,
-    camera_role: str,
-) -> Dict[str, Any]:
-    """
-    Diagnostic-only yaw branch analysis.
-
-    Observed failure mode:
-    - calibrated geometry/arccos yaw is usually on the right magnitude branch
-    - but its sign can flip
-
-    Therefore we compare only two candidates:
-    - keep: measured yaw
-    - flip: -measured yaw
-
-    If the branch choice is reliable, yaw_quantized_deg is snapped to TrueY
-    for diagnostic evaluation. This does not modify solver input.
-    """
-    y = _safe_float(meas_yaw_deg)
-    ty = _safe_float(true_yaw_deg)
-    ta = _safe_float(true_angle_deg)
-
-    if y is None or ty is None or ta is None:
-        return {
-            "yaw_quant_available": False,
-            "yaw_accepted": False,
-            "yaw_decision": "missing_truth_or_yaw",
-        }
-
-    role = str(camera_role or "").strip().lower()
-    edge_limit = YAW_EDGE_REAR_TRUEA_DEG if role == "rear" else YAW_EDGE_FRONT_TRUEA_DEG
-    truea_abs = abs(float(ta))
-
-    yaw_keep = utility._wrap_angle_deg(float(y))
-    yaw_flip = utility._wrap_angle_deg(-float(y))
-
-    err_keep = utility._wrap_angle_deg(yaw_keep - float(ty))
-    err_flip = utility._wrap_angle_deg(yaw_flip - float(ty))
-
-    abs_keep = abs(float(err_keep))
-    abs_flip = abs(float(err_flip))
-
-    if abs_keep <= abs_flip:
-        best_mode = "keep"
-        best_yaw = yaw_keep
-        best_err = err_keep
-        best_abs_err = abs_keep
-    else:
-        best_mode = "flip"
-        best_yaw = yaw_flip
-        best_err = err_flip
-        best_abs_err = abs_flip
-
-    separation = abs(abs_keep - abs_flip)
-    flip_gain = abs_keep - abs_flip
-
-    edge_flag = truea_abs > edge_limit
-    small_truey_flag = abs(float(ty)) < YAW_SMALL_TRUEY_DEG
-
-    accepted = False
-    quantized_yaw = None
-    quantized_error = None
-
-    if edge_flag:
-        decision = "reject_edge"
-    elif small_truey_flag:
-        decision = "weak_small_true_yaw"
-    elif best_abs_err <= YAW_ACCEPT_BEST_ERR_DEG and separation >= YAW_ACCEPT_SEPARATION_DEG:
-        accepted = True
-        decision = f"accept_{best_mode}_quantized"
-        quantized_yaw = float(ty)
-        quantized_error = 0.0
-    elif best_abs_err <= YAW_ACCEPT_BEST_ERR_DEG:
-        decision = "ambiguous_low_separation"
-    else:
-        decision = "poor_keep_flip_match"
-
-    return {
-        "yaw_quant_available": True,
-
-        "yaw_keep_deg": yaw_keep,
-        "yaw_flip_deg": yaw_flip,
-
-        "yaw_err_keep_deg": err_keep,
-        "yaw_err_flip_deg": err_flip,
-        "yaw_abs_err_keep_deg": abs_keep,
-        "yaw_abs_err_flip_deg": abs_flip,
-
-        "yaw_best_mode": best_mode,
-        "yaw_best_deg": best_yaw,
-        "yaw_best_err_deg": best_err,
-        "yaw_best_abs_err_deg": best_abs_err,
-
-        "yaw_flip_gain_deg": flip_gain,
-        "yaw_branch_separation_deg": separation,
-
-        "yaw_edge_flag": edge_flag,
-        "yaw_edge_limit_deg": edge_limit,
-        "yaw_small_truey_flag": small_truey_flag,
-        "yaw_small_truey_limit_deg": YAW_SMALL_TRUEY_DEG,
-
-        "yaw_accepted": accepted,
-        "yaw_decision": decision,
-
-        "yaw_sign_corrected_deg": best_yaw if accepted else None,
-        "yaw_quantized_deg": quantized_yaw,
-        "yaw_quantized_error_deg": quantized_error,
-    }
-
-
-def _mean(values: list[float]) -> Optional[float]:
-    vals = [float(v) for v in values if v is not None]
-    if not vals:
-        return None
-    return sum(vals) / len(vals)
-
-
-def _median(values: list[float]) -> Optional[float]:
-    vals = sorted(float(v) for v in values if v is not None)
-    if not vals:
-        return None
-    n = len(vals)
-    mid = n // 2
-    if n % 2:
-        return vals[mid]
-    return 0.5 * (vals[mid - 1] + vals[mid])
-
-
-def _p90(values: list[float]) -> Optional[float]:
-    vals = sorted(float(v) for v in values if v is not None)
-    if not vals:
-        return None
-    idx = int(math.ceil(0.90 * len(vals))) - 1
-    idx = max(0, min(idx, len(vals) - 1))
-    return vals[idx]
-
-
-def _summarize_yaw_quantization(observations: list[Dict[str, Any]]) -> Dict[str, Any]:
-    qlist = [
-        d.get("yaw_keep_flip_quantization") or {}
-        for d in observations
-        if isinstance(d.get("yaw_keep_flip_quantization"), dict)
-        and bool((d.get("yaw_keep_flip_quantization") or {}).get("yaw_quant_available"))
-    ]
-
-    counts: Dict[str, int] = {}
-    for q in qlist:
-        decision = str(q.get("yaw_decision") or "unknown")
-        counts[decision] = counts.get(decision, 0) + 1
-
-    accepted = [q for q in qlist if bool(q.get("yaw_accepted"))]
-    before_all = [q.get("yaw_abs_err_keep_deg") for q in qlist]
-    best_all = [q.get("yaw_best_abs_err_deg") for q in qlist]
-    before_accepted = [q.get("yaw_abs_err_keep_deg") for q in accepted]
-    best_accepted = [q.get("yaw_best_abs_err_deg") for q in accepted]
-
-    return {
-        "enabled": True,
-        "diagnostic_only": True,
-        "thresholds": {
-            "front_edge_truea_deg": YAW_EDGE_FRONT_TRUEA_DEG,
-            "rear_edge_truea_deg": YAW_EDGE_REAR_TRUEA_DEG,
-            "small_truey_deg": YAW_SMALL_TRUEY_DEG,
-            "accept_best_err_deg": YAW_ACCEPT_BEST_ERR_DEG,
-            "accept_separation_deg": YAW_ACCEPT_SEPARATION_DEG,
-        },
-        "count_total_observations": len(observations),
-        "count_available": len(qlist),
-        "count_accepted": len(accepted),
-        "count_accept_keep": sum(1 for q in accepted if q.get("yaw_best_mode") == "keep"),
-        "count_accept_flip": sum(1 for q in accepted if q.get("yaw_best_mode") == "flip"),
-        "count_by_decision": counts,
-        "all_available_abs_error_deg": {
-            "before_keep_mean": _mean(before_all),
-            "before_keep_median": _median(before_all),
-            "before_keep_p90": _p90(before_all),
-            "after_best_sign_mean": _mean(best_all),
-            "after_best_sign_median": _median(best_all),
-            "after_best_sign_p90": _p90(best_all),
-        },
-        "accepted_only_abs_error_deg": {
-            "before_keep_mean": _mean(before_accepted),
-            "before_keep_median": _median(before_accepted),
-            "before_keep_p90": _p90(before_accepted),
-            "after_best_sign_mean": _mean(best_accepted),
-            "after_best_sign_median": _median(best_accepted),
-            "after_best_sign_p90": _p90(best_accepted),
-            "after_quantized_mean": 0.0 if accepted else None,
-            "after_quantized_median": 0.0 if accepted else None,
-            "after_quantized_p90": 0.0 if accepted else None,
-        },
-    }
-
-
 def _extract_apriltag_observations_from_report(
     report: Dict[str, Any],
     tag_map: Dict[str, Any],
@@ -601,13 +397,6 @@ def _extract_apriltag_observations_from_report(
         tag_world = _lookup_tag_world(tag_map, tag_id)
         truth = _truth_for_observation(tag_world, gt_x_m, gt_y_m, gt_heading_deg, camera_role)
 
-        yaw_quant = _yaw_keep_flip_quantization(
-            meas_yaw_deg=meas_yaw,
-            true_yaw_deg=truth.get("true_yaw_deg"),
-            true_angle_deg=truth.get("true_angle_deg"),
-            camera_role=camera_role,
-        )
-
         item = {
             "tag_id": tag_id,
             "camera_role": camera_role,
@@ -623,7 +412,6 @@ def _extract_apriltag_observations_from_report(
                 "angle_error_deg": _angle_diff(meas_angle, truth.get("true_angle_deg")),
                 "yaw_error_deg": _angle_diff(meas_yaw, truth.get("true_yaw_deg")),
             },
-            "yaw_keep_flip_quantization": yaw_quant,
             "tag_world": {
                 "x_m": tag_world.get("x_m"),
                 "y_m": tag_world.get("y_m"),
@@ -697,44 +485,6 @@ def _print_observation_error_table(observations: list[Dict[str, Any]]) -> None:
     print("=" * 118)
 
 
-def _print_yaw_keep_flip_quantization_table(observations: list[Dict[str, Any]]) -> None:
-    print("")
-    print("Yaw Keep/Flip Quantization Diagnostic")
-    print("=" * 154)
-    print(
-        f"{'Tag':>4} {'Cam':>5} "
-        f"{'TrueA':>7} {'Yaw':>7} {'TrueY':>7} "
-        f"{'KeepE':>7} {'FlipE':>7} {'Best':>5} {'BestE':>7} "
-        f"{'Gain':>7} {'Sep':>7} {'QYaw':>7} {'Decision':>26}"
-    )
-    print("-" * 154)
-
-    if not observations:
-        print("(no valid AprilTag observations in robot report)")
-        print("=" * 154)
-        return
-
-    for d in observations:
-        meas = d.get("measured") or {}
-        truth = d.get("truth") or {}
-        q = d.get("yaw_keep_flip_quantization") or {}
-        print(
-            f"{int(d.get('tag_id')):>4} {str(d.get('camera_role') or '')[:5]:>5} "
-            f"{_fmt_float(truth.get('true_angle_deg'), 1, 7)} "
-            f"{_fmt_float(meas.get('yaw_deg'), 1, 7)} "
-            f"{_fmt_float(truth.get('true_yaw_deg'), 1, 7)} "
-            f"{_fmt_float(q.get('yaw_err_keep_deg'), 1, 7)} "
-            f"{_fmt_float(q.get('yaw_err_flip_deg'), 1, 7)} "
-            f"{str(q.get('yaw_best_mode') or '-')[:5]:>5} "
-            f"{_fmt_float(q.get('yaw_best_err_deg'), 1, 7)} "
-            f"{_fmt_float(q.get('yaw_flip_gain_deg'), 1, 7)} "
-            f"{_fmt_float(q.get('yaw_branch_separation_deg'), 1, 7)} "
-            f"{_fmt_float(q.get('yaw_quantized_deg'), 1, 7)} "
-            f"{str(q.get('yaw_decision') or '')[:26]:>26}"
-        )
-    print("=" * 154)
-
-
 def _write_observation_csv(path: Path, observations: list[Dict[str, Any]]) -> None:
     rows = []
     for d in observations:
@@ -759,26 +509,6 @@ def _write_observation_csv(path: Path, observations: list[Dict[str, Any]]) -> No
             "meas_yaw_deg": meas.get("yaw_deg"),
             "true_yaw_deg": truth.get("true_yaw_deg"),
             "yaw_error_deg": err.get("yaw_error_deg"),
-
-            "yaw_keep_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_keep_deg"),
-            "yaw_flip_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_flip_deg"),
-            "yaw_err_keep_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_err_keep_deg"),
-            "yaw_err_flip_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_err_flip_deg"),
-            "yaw_abs_err_keep_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_abs_err_keep_deg"),
-            "yaw_abs_err_flip_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_abs_err_flip_deg"),
-            "yaw_best_mode": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_best_mode"),
-            "yaw_best_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_best_deg"),
-            "yaw_best_err_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_best_err_deg"),
-            "yaw_best_abs_err_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_best_abs_err_deg"),
-            "yaw_flip_gain_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_flip_gain_deg"),
-            "yaw_branch_separation_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_branch_separation_deg"),
-            "yaw_edge_flag": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_edge_flag"),
-            "yaw_small_truey_flag": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_small_truey_flag"),
-            "yaw_accepted": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_accepted"),
-            "yaw_decision": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_decision"),
-            "yaw_sign_corrected_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_sign_corrected_deg"),
-            "yaw_quantized_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_quantized_deg"),
-            "yaw_quantized_error_deg": (d.get("yaw_keep_flip_quantization") or {}).get("yaw_quantized_error_deg"),
 
             "tag_x_m": tag_world.get("x_m"),
             "tag_y_m": tag_world.get("y_m"),
@@ -858,7 +588,6 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
         gt_heading_deg=gt_heading_deg,
     )
     front_count, rear_count = _count_by_camera(observations)
-    yaw_quant_summary = _summarize_yaw_quantization(observations)
 
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -869,7 +598,7 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
     latest_obs_file = LATEST_OBS_DIR / f"latest_location_observation_{ROBOT_ID}.json"
 
     payload = {
-        "script_version": "t11_observation_only_v2_yaw_keep_flip_quant",
+        "script_version": "t11_observation_only_v1",
         "robot_id": ROBOT_ID,
         "ground_truth": {
             "x_m": gt_x_m,
@@ -884,7 +613,6 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
             "tag_ids": [d.get("tag_id") for d in observations],
             "front_tag_ids": [d.get("tag_id") for d in observations if d.get("camera_role") == "front"],
             "rear_tag_ids": [d.get("tag_id") for d in observations if d.get("camera_role") == "rear"],
-            "yaw_keep_flip_quantization": yaw_quant_summary,
         },
         "observations": observations,
         "assets": assets,
@@ -910,7 +638,7 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
         _write_observation_csv(compact_csv_file, observations)
 
     obs_payload = {
-        "script_version": "t11_observation_only_v2_yaw_keep_flip_quant",
+        "script_version": "t11_observation_only_v1",
         "robot_id": ROBOT_ID,
         "ground_truth": {
             "x_m": gt_x_m,
@@ -944,7 +672,6 @@ def run_once(gt_x_m: float, gt_y_m: float, gt_heading_deg: float) -> Dict[str, A
     print(f"Latest Obs     : {latest_obs_file}")
 
     _print_observation_error_table(observations)
-    _print_yaw_keep_flip_quantization_table(observations)
     print()
 
     return payload
