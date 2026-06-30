@@ -10,60 +10,60 @@
     {
       "tag_id": 41,
       "camera_role": "front",
-      "distance_m": 2.8141,
-      "angle_deg": 42.004,
-      "yaw_deg": -37.4842,
+      "distance_m": 2.8202,
+      "angle_deg": 42.0114,
+      "yaw_deg": -37.7374,
       "source": "t11_observation_only"
     },
     {
       "tag_id": 42,
       "camera_role": "front",
-      "distance_m": 3.0904,
-      "angle_deg": 25.0969,
-      "yaw_deg": 25.3153,
+      "distance_m": 3.0787,
+      "angle_deg": 25.1004,
+      "yaw_deg": 26.0255,
       "source": "t11_observation_only"
     },
     {
       "tag_id": 43,
       "camera_role": "front",
-      "distance_m": 3.6293,
-      "angle_deg": 8.7008,
-      "yaw_deg": -38.3409,
+      "distance_m": 3.6218,
+      "angle_deg": 8.6891,
+      "yaw_deg": -39.3819,
+      "source": "t11_observation_only"
+    },
+    {
+      "tag_id": 44,
+      "camera_role": "front",
+      "distance_m": 4.2873,
+      "angle_deg": -2.6991,
+      "yaw_deg": -47.141,
       "source": "t11_observation_only"
     },
     {
       "tag_id": 45,
       "camera_role": "front",
-      "distance_m": 4.532,
-      "angle_deg": -11.8381,
-      "yaw_deg": 27.4406,
+      "distance_m": 4.5167,
+      "angle_deg": -11.8418,
+      "yaw_deg": 27.1475,
       "source": "t11_observation_only"
     },
     {
       "tag_id": 46,
       "camera_role": "front",
-      "distance_m": 4.0617,
-      "angle_deg": -20.8725,
-      "yaw_deg": 22.777,
-      "source": "t11_observation_only"
-    },
-    {
-      "tag_id": 47,
-      "camera_role": "front",
-      "distance_m": 3.8371,
-      "angle_deg": -28.4941,
-      "yaw_deg": 26.9544,
+      "distance_m": 4.0459,
+      "angle_deg": -20.8765,
+      "yaw_deg": 22.0674,
       "source": "t11_observation_only"
     },
     {
       "tag_id": 36,
       "camera_role": "rear",
-      "distance_m": 0.7069,
-      "angle_deg": -11.2124,
-      "yaw_deg": 27.6958,
+      "distance_m": 0.7075,
+      "angle_deg": -11.1916,
+      "yaw_deg": 27.7296,
       "source": "t11_observation_only"
     }
   ],
-  "source_log_file": "D:\\Data\\_Action\\_RunNMS\\testLocation\\output\\t11_observation_collection\\obscheck_x4.00_y4.00_h230_20260630_144808.json",
-  "report_time": "2026-06-30-14:48:08"
+  "source_log_file": "D:\\Data\\_Action\\_RunNMS\\testLocation\\output\\t11_observation_collection\\obscheck_x4.00_y4.00_h230_20260630_143346.json",
+  "report_time": "2026-06-30-14:33:45"
 }
