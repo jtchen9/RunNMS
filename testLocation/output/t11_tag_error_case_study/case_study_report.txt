@@ -1,0 +1,25 @@
+T11G AprilTag measurement error case study
+========================================================================
+
+Total observations: 37
+Unique tag/camera groups: 27
+
+Most likely tag-map / physical-installation candidates
+------------------------------------------------------------------------
+Tag 48 front: n=2, mean_dist_err=-0.091 m, mean_abs_angle_err=1.2 deg, shift≈(-0.0132, 0.0963) m, fit_rmse=0.0 m
+Tag 34 front: n=2, mean_dist_err=-0.085 m, mean_abs_angle_err=2.2 deg, shift≈(-0.0259, -0.0937) m, fit_rmse=0.0 m
+
+Yaw flip / yaw ambiguity cases
+------------------------------------------------------------------------
+sample=6 point=(8.0,2.0) h=110.0 tag=36 front used=N DErr=-0.106 AErr=7.3 YErr=102.3
+sample=4 point=(5.0,4.0) h=245.0 tag=45 front used=N DErr=-0.021 AErr=1.9 YErr=-82.7
+sample=4 point=(5.0,4.0) h=245.0 tag=46 front used=Y DErr=-0.136 AErr=0.9 YErr=-64.8
+sample=1 point=(5.0,1.0) h=110.0 tag=34 front used=N DErr=-0.097 AErr=1.4 YErr=-60.0
+
+Edge yaw cases
+------------------------------------------------------------------------
+sample=6 point=(8.0,2.0) h=110.0 tag=36 front used=N true_angle=-32.0 YErr=102.3
+sample=1 point=(5.0,1.0) h=110.0 tag=41 front used=N true_angle=-35.0 YErr=-80.5
+sample=1 point=(5.0,1.0) h=110.0 tag=34 front used=N true_angle=39.5 YErr=-60.0
+sample=2 point=(2.0,1.0) h=60.0 tag=39 front used=Y true_angle=-34.9 YErr=30.9
+sample=4 point=(5.0,4.0) h=245.0 tag=49 front used=Y true_angle=-32.0 YErr=28.5

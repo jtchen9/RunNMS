@@ -1,0 +1,36 @@
+T11G AprilTag measurement error case study
+========================================================================
+
+Total observations: 162
+Unique tag/camera groups: 45
+
+Most likely tag-map / physical-installation candidates
+------------------------------------------------------------------------
+Tag 54 front: n=3, mean_dist_err=0.18 m, mean_abs_angle_err=2.47 deg, shift≈(0.2239, 0.1044) m, fit_rmse=0.0126 m
+Tag 58 front: n=2, mean_dist_err=0.161 m, mean_abs_angle_err=2.65 deg, shift≈(0.2609, 0.0231) m, fit_rmse=0.0 m
+Tag 56 front: n=8, mean_dist_err=0.1606 m, mean_abs_angle_err=3.71 deg, shift≈(0.1925, 0.0191) m, fit_rmse=0.0244 m
+Tag 55 front: n=8, mean_dist_err=0.1601 m, mean_abs_angle_err=2.65 deg, shift≈(0.2156, 0.0388) m, fit_rmse=0.031 m
+Tag 57 front: n=5, mean_dist_err=0.1492 m, mean_abs_angle_err=2.86 deg, shift≈(0.2316, -0.0201) m, fit_rmse=0.0303 m
+Tag 40 front: n=3, mean_dist_err=-0.1107 m, mean_abs_angle_err=0.83 deg, shift≈(0.1155, -0.0425) m, fit_rmse=0.013 m
+Tag 41 front: n=4, mean_dist_err=-0.1035 m, mean_abs_angle_err=3.07 deg, shift≈(0.1397, 0.0256) m, fit_rmse=0.0092 m
+Tag 31 front: n=6, mean_dist_err=0.0975 m, mean_abs_angle_err=3.9 deg, shift≈(0.2572, -0.0509) m, fit_rmse=0.0283 m
+Tag 38 front: n=4, mean_dist_err=-0.0865 m, mean_abs_angle_err=2.95 deg, shift≈(0.104, -0.0677) m, fit_rmse=0.0124 m
+
+Yaw flip / yaw ambiguity cases
+------------------------------------------------------------------------
+sample=11 point=(4.0,4.0) h=230.0 tag=44 front used=N DErr=-0.017 AErr=0.7 YErr=93.3
+sample=20 point=(7.0,3.0) h=315.0 tag=53 front used=N DErr=0.048 AErr=-2.6 YErr=79.9
+sample=17 point=(6.0,4.0) h=280.0 tag=47 front used=N DErr=-0.025 AErr=1.0 YErr=-79.4
+sample=11 point=(4.0,4.0) h=230.0 tag=45 front used=N DErr=-0.096 AErr=0.4 YErr=-63.1
+
+Edge yaw cases
+------------------------------------------------------------------------
+sample=17 point=(6.0,4.0) h=280.0 tag=47 front used=N true_angle=42.5 YErr=-79.4
+sample=7 point=(3.0,4.0) h=245.0 tag=47 front used=Y true_angle=-33.6 YErr=36.0
+sample=4 point=(2.0,4.0) h=245.0 tag=46 front used=Y true_angle=-34.5 YErr=33.0
+sample=11 point=(4.0,4.0) h=230.0 tag=47 front used=Y true_angle=-34.0 YErr=-31.9
+sample=9 point=(4.0,2.0) h=135.0 tag=37 front used=Y true_angle=38.3 YErr=-29.9
+sample=5 point=(3.0,2.0) h=130.0 tag=38 front used=Y true_angle=34.0 YErr=29.3
+sample=20 point=(7.0,3.0) h=315.0 tag=56 front used=Y true_angle=-41.1 YErr=28.9
+sample=19 point=(7.0,2.0) h=60.0 tag=34 front used=Y true_angle=-40.4 YErr=-25.8
+sample=15 point=(5.0,4.0) h=150.0 tag=41 front used=Y true_angle=-35.0 YErr=-25.5
