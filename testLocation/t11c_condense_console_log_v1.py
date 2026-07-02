@@ -30,7 +30,7 @@ from typing import Any, Dict, List, Optional
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
-INPUT_TXT = ROOT_DIR / "testLocation" / "output" / "t11_location_collection" / "measure13-0629.txt"
+INPUT_TXT = ROOT_DIR / "testLocation" / "output" / "t11_location_collection" / "measure13-0701.txt"
 
 OUTPUT_DIR = ROOT_DIR / "testLocation" / "output" / "t11_console_condensed"
 
