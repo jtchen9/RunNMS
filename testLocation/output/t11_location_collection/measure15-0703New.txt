@@ -1,0 +1,774 @@
+=======================================================
+x = 2  y = 	1						
+=======================================================  
+========================================================================
+T11: DemoRoom observation-only location data collection
+========================================================================
+ROOT_DIR              = D:\Data\_Action\_RunNMS
+SCANNER_NAME          = twin-scout-charlie
+PREFERRED_HEADING_DIR = D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full
+LOG_DIR               = D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection
+Location Solver       = NOT USED
+
+Input ground-truth x_m: 2
+Input ground-truth y_m: 1
+
+------------------------------------------------------------------------
+Preferred heading at x=2.000, y=1.000: 60.0 deg
+Lookup source: D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full\preferred_heading_lookup.csv
+Nearest lookup point: x=2.000, y=1.000, distance=0.000 m
+------------------------------------------------------------------------
+
+Please rotate twin-scout-charlie to heading 60.0 deg.
+Press Enter to send mobility.report.location...
+Input actual heading_deg, or press Enter to use 60.0:
+
+Collecting one fresh mobility.report.location sample...
+
+Direct command enqueued:
+{
+  "scanner": "twin-scout-charlie",
+  "stream": "nms:cmd:twin-scout-charlie",
+  "stream_id": "1783072851494-0",
+  "fields": {
+    "category": "mobility",
+    "action": "mobility.report.location",
+    "execute_at": "2026-07-03-18:00:51",
+    "created_at": "2026-07-03-18:00:51",
+    "args_json": "{}",
+    "source": "t11_observation_only_direct",
+    "web_cmd_id": "phase2a-be2395fcc93a"
+  }
+}
+
+GT:             (2.000, 1.000, 60.0)
+Location Solver: NOT USED
+
+Tags Observed  : 5
+Front / Rear   : 4 / 1
+Tag IDs        : [34, 37, 38, 39, 45]
+ObsCheck JSON  : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x2.00_y1.00_h60_20260703_180133.json
+ObsCheck CSV   : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x2.00_y1.00_h60_20260703_180133.csv
+Obs JSON       : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obs_x2.00_y1.00_h60_20260703_180133.json
+Latest Obs     : D:\Data\_Action\_RunNMS\testLocation\input\latest_location_observation_twin-scout-charlie.json
+
+Observation-Only Tag Measurement Check
+======================================================================================================================
+ Tag   Cam    Dist   TrueD    DErr     Ang   TrueA    AErr     Yaw   TrueY    YErr
+----------------------------------------------------------------------------------------------------------------------
+  34 front   6.018   6.060  -0.042    16.9    16.9     0.1    42.4    46.9    -4.5
+  37 front   4.401   4.432  -0.031   -10.9    -9.3    -1.7    18.9    20.7    -1.8
+  38 front   4.155   4.189  -0.034   -21.0   -21.7     0.7   -19.8     8.3   -28.2
+  39 front   4.113   4.160  -0.047   -28.7   -34.9     6.3    27.0    -4.9    31.9
+  45  rear   0.841   0.883  -0.041   -12.4   -11.1    -1.3     8.1    18.9   -10.8
+======================================================================================================================
+
+Yaw Keep/Flip Quantization Diagnostic
+==========================================================================================================================================================
+ Tag   Cam   TrueA     Yaw   TrueY   KeepE   FlipE  Best   BestE    Gain     Sep    QYaw                   Decision
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+  34 front    16.9    42.4    46.9    -4.5   -89.2  keep    -4.5   -84.8    84.8    46.9      accept_keep_quantized
+  37 front    -9.3    18.9    20.7    -1.8   -39.6  keep    -1.8   -37.8    37.8    20.7      accept_keep_quantized
+  38 front   -21.7   -19.8     8.3   -28.2    11.5  flip    11.5    16.7    16.7       -       poor_keep_flip_match
+  39 front   -34.9    27.0    -4.9    31.9   -22.0  flip   -22.0     9.8     9.8       -                reject_edge
+  45  rear   -11.1     8.1    18.9   -10.8   -27.0  keep   -10.8   -16.2    16.2       -                reject_edge
+==========================================================================================================================================================
+
+=======================================================
+x = 2  y = 	4						
+=======================================================  
+========================================================================
+T11: DemoRoom observation-only location data collection
+========================================================================
+ROOT_DIR              = D:\Data\_Action\_RunNMS
+SCANNER_NAME          = twin-scout-charlie
+PREFERRED_HEADING_DIR = D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full
+LOG_DIR               = D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection
+Location Solver       = NOT USED
+
+Input ground-truth x_m: 2
+Input ground-truth y_m: 4
+
+------------------------------------------------------------------------
+Preferred heading at x=2.000, y=4.000: 290.0 deg
+Nearest lookup point: x=2.000, y=4.000, distance=0.000 m
+------------------------------------------------------------------------
+
+Please rotate twin-scout-charlie to heading 290.0 deg.
+Press Enter to send mobility.report.location...
+Input actual heading_deg, or press Enter to use 290.0:
+
+Collecting one fresh mobility.report.location sample...
+
+Direct command enqueued:
+{
+  "scanner": "twin-scout-charlie",
+  "stream": "nms:cmd:twin-scout-charlie",
+  "stream_id": "1783073159997-0",
+  "fields": {
+    "category": "mobility",
+    "action": "mobility.report.location",
+    "execute_at": "2026-07-03-18:05:59",
+    "created_at": "2026-07-03-18:05:59",
+    "args_json": "{}",
+    "source": "t11_observation_only_direct",
+    "web_cmd_id": "phase2a-90f03e6759e4"
+  }
+}
+
+GT:             (2.000, 4.000, 290.0)
+Location Solver: NOT USED
+
+Tags Observed  : 5
+Front / Rear   : 4 / 1
+Tag IDs        : [45, 46, 47, 48, 39]
+ObsCheck JSON  : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x2.00_y4.00_h290_20260703_180647.json
+ObsCheck CSV   : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x2.00_y4.00_h290_20260703_180647.csv
+Obs JSON       : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obs_x2.00_y4.00_h290_20260703_180647.json
+Latest Obs     : D:\Data\_Action\_RunNMS\testLocation\input\latest_location_observation_twin-scout-charlie.json
+
+Observation-Only Tag Measurement Check
+======================================================================================================================
+ Tag   Cam    Dist   TrueD    DErr     Ang   TrueA    AErr     Yaw   TrueY    YErr
+----------------------------------------------------------------------------------------------------------------------
+  45 front   3.819   3.864  -0.045    24.9    25.1    -0.2    14.9     5.1     9.8
+  46 front   3.862   3.896  -0.034     9.2    11.0    -1.8     8.9    -9.0    17.8
+  47 front   4.121   4.152  -0.031    -4.8    -2.0    -2.8   -22.4   -22.0    -0.3
+  48 front   4.527   4.590  -0.063   -15.1   -13.0    -2.1   -34.4   -33.0    -1.4
+  39  rear   1.117   1.162  -0.045     3.3     4.9    -1.6   -15.6   -15.1    -0.5
+======================================================================================================================
+
+Yaw Keep/Flip Quantization Diagnostic
+==========================================================================================================================================================
+ Tag   Cam   TrueA     Yaw   TrueY   KeepE   FlipE  Best   BestE    Gain     Sep    QYaw                   Decision
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+  45 front    25.1    14.9     5.1     9.8   -20.0  keep     9.8   -10.2    10.2       -        weak_small_true_yaw
+  46 front    11.0     8.9    -9.0    17.8     0.1  flip     0.1    17.7    17.7    -9.0      accept_flip_quantized
+  47 front    -2.0   -22.4   -22.0    -0.3    44.4  keep    -0.3   -44.1    44.1   -22.0      accept_keep_quantized
+  48 front   -13.0   -34.4   -33.0    -1.4    67.4  keep    -1.4   -66.0    66.0   -33.0      accept_keep_quantized
+  39  rear     4.9   -15.6   -15.1    -0.5    30.7  keep    -0.5   -30.3    30.3   -15.1      accept_keep_quantized
+==========================================================================================================================================================
+
+=======================================================
+x = 4  y = 	3						
+=======================================================  
+========================================================================
+T11: DemoRoom observation-only location data collection
+========================================================================
+ROOT_DIR              = D:\Data\_Action\_RunNMS
+SCANNER_NAME          = twin-scout-charlie
+PREFERRED_HEADING_DIR = D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full
+LOG_DIR               = D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection
+Location Solver       = NOT USED
+
+Input ground-truth x_m: 4
+Input ground-truth y_m: 3
+
+------------------------------------------------------------------------
+Preferred heading at x=4.000, y=3.000: 250.0 deg
+
+Please rotate twin-scout-charlie to heading 250.0 deg.
+Press Enter to send mobility.report.location...
+Input actual heading_deg, or press Enter to use 250.0:
+
+Collecting one fresh mobility.report.location sample...
+
+Direct command enqueued:
+{
+  "scanner": "twin-scout-charlie",
+  "stream": "nms:cmd:twin-scout-charlie",
+  "stream_id": "1783073537948-0",
+  "fields": {
+    "category": "mobility",
+    "action": "mobility.report.location",
+    "execute_at": "2026-07-03-18:12:17",
+    "created_at": "2026-07-03-18:12:17",
+    "args_json": "{}",
+    "source": "t11_observation_only_direct",
+    "web_cmd_id": "phase2a-12e0a411eab4"
+  }
+}
+
+GT:             (4.000, 3.000, 250.0)
+Location Solver: NOT USED
+
+Tags Observed  : 5
+Front / Rear   : 4 / 1
+Tag IDs        : [44, 45, 46, 48, 35]
+ObsCheck JSON  : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x4.00_y3.00_h250_20260703_181313.json
+ObsCheck CSV   : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x4.00_y3.00_h250_20260703_181313.csv
+Obs JSON       : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obs_x4.00_y3.00_h250_20260703_181313.json
+Latest Obs     : D:\Data\_Action\_RunNMS\testLocation\input\latest_location_observation_twin-scout-charlie.json
+
+Observation-Only Tag Measurement Check
+======================================================================================================================
+ Tag   Cam    Dist   TrueD    DErr     Ang   TrueA    AErr     Yaw   TrueY    YErr
+----------------------------------------------------------------------------------------------------------------------
+  44 front   3.496   3.557  -0.061    32.8    31.0     1.8   -46.1   -39.0    -7.1
+  45 front   3.586   3.664  -0.078    20.1    19.0     1.1   -41.3    39.0   -80.3
+  46 front   3.120   3.154  -0.034     4.9     5.4    -0.5    21.5    25.4    -3.9
+  48 front   2.886   2.899  -0.013   -26.3   -30.7     4.4    24.2   -10.7    34.9
+  35  rear   2.649   2.579   0.070    14.8    14.7     0.2   -35.6    34.7   -70.3
+======================================================================================================================
+
+Yaw Keep/Flip Quantization Diagnostic
+==========================================================================================================================================================
+ Tag   Cam   TrueA     Yaw   TrueY   KeepE   FlipE  Best   BestE    Gain     Sep    QYaw                   Decision
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+  44 front    31.0   -46.1   -39.0    -7.1    85.1  keep    -7.1   -78.0    78.0       -                reject_edge
+  45 front    19.0   -41.3    39.0   -80.3     2.4  flip     2.4    78.0    78.0    39.0      accept_flip_quantized
+  46 front     5.4    21.5    25.4    -3.9   -47.0  keep    -3.9   -43.1    43.1    25.4      accept_keep_quantized
+  48 front   -30.7    24.2   -10.7    34.9   -13.4  flip   -13.4    21.4    21.4       -                reject_edge
+  35  rear    14.7   -35.6    34.7   -70.3     1.0  flip     1.0    69.3    69.3       -                reject_edge
+==========================================================================================================================================================
+
+=======================================================
+x = 4  y = 4							
+=======================================================  
+========================================================================
+T11: DemoRoom observation-only location data collection
+========================================================================
+ROOT_DIR              = D:\Data\_Action\_RunNMS
+SCANNER_NAME          = twin-scout-charlie
+PREFERRED_HEADING_DIR = D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full
+LOG_DIR               = D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection
+Location Solver       = NOT USED
+
+Input ground-truth x_m: 4
+Input ground-truth y_m: 4
+
+------------------------------------------------------------------------
+Preferred heading at x=4.000, y=4.000: 220.0 deg
+Lookup source: D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full\preferred_heading_lookup.csv
+Nearest lookup point: x=4.000, y=4.000, distance=0.000 m
+------------------------------------------------------------------------
+
+Press Enter to send mobility.report.location...
+Input actual heading_deg, or press Enter to use 220.0:
+
+Collecting one fresh mobility.report.location sample...
+
+Direct command enqueued:
+{
+  "scanner": "twin-scout-charlie",
+  "stream": "nms:cmd:twin-scout-charlie",
+  "stream_id": "1783073355852-0",
+  "fields": {
+    "category": "mobility",
+    "action": "mobility.report.location",
+    "execute_at": "2026-07-03-18:09:15",
+    "created_at": "2026-07-03-18:09:15",
+    "args_json": "{}",
+    "source": "t11_observation_only_direct",
+    "web_cmd_id": "phase2a-c110c07aa7bc"
+  }
+}
+
+GT:             (4.000, 4.000, 220.0)
+Location Solver: NOT USED
+
+Tags Observed  : 7
+Front / Rear   : 5 / 2
+Tag IDs        : [41, 42, 43, 45, 46, 35, 36]
+ObsCheck JSON  : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x4.00_y4.00_h220_20260703_181007.json
+ObsCheck CSV   : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x4.00_y4.00_h220_20260703_181007.csv
+Obs JSON       : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obs_x4.00_y4.00_h220_20260703_181007.json
+Latest Obs     : D:\Data\_Action\_RunNMS\testLocation\input\latest_location_observation_twin-scout-charlie.json
+
+Observation-Only Tag Measurement Check
+======================================================================================================================
+ Tag   Cam    Dist   TrueD    DErr     Ang   TrueA    AErr     Yaw   TrueY    YErr
+----------------------------------------------------------------------------------------------------------------------
+  41 front   2.722   2.771  -0.049    34.0    34.4    -0.4   -28.3    -5.6   -22.7
+  42 front   3.072   2.998   0.074    14.2    16.1    -1.9   -26.9   -23.9    -3.0
+  43 front   3.537   3.532   0.005    -2.4     0.9    -3.3    34.1   -39.1    73.2
+  45 front   4.470   4.488  -0.018   -20.3   -19.4    -0.9    30.3    30.6    -0.3
+  46 front   4.051   4.087  -0.037   -27.4   -31.0     3.6   -33.2    19.0   -52.2
+  35  rear   1.834   1.835  -0.000    -0.7     1.4    -2.2    51.2    51.4    -0.2
+  36  rear   0.795   0.828  -0.034   -17.0   -14.5    -2.5    26.6    35.5    -8.8
+======================================================================================================================
+
+Yaw Keep/Flip Quantization Diagnostic
+==========================================================================================================================================================
+ Tag   Cam   TrueA     Yaw   TrueY   KeepE   FlipE  Best   BestE    Gain     Sep    QYaw                   Decision
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+  41 front    34.4   -28.3    -5.6   -22.7    33.8  keep   -22.7   -11.2    11.2       -                reject_edge
+  42 front    16.1   -26.9   -23.9    -3.0    50.8  keep    -3.0   -47.8    47.8   -23.9      accept_keep_quantized
+  43 front     0.9    34.1   -39.1    73.2     5.0  flip     5.0    68.2    68.2   -39.1      accept_flip_quantized
+  45 front   -19.4    30.3    30.6    -0.3   -60.8  keep    -0.3   -60.5    60.5    30.6      accept_keep_quantized
+  46 front   -31.0   -33.2    19.0   -52.2    14.2  flip    14.2    38.0    38.0       -                reject_edge
+  35  rear     1.4    51.2    51.4    -0.2  -102.6  keep    -0.2  -102.4   102.4    51.4      accept_keep_quantized
+  36  rear   -14.5    26.6    35.5    -8.8   -62.1  keep    -8.8   -53.2    53.2       -                reject_edge
+==========================================================================================================================================================
+
+=======================================================
+x = 5  y = 	1						
+=======================================================  
+========================================================================
+T11: DemoRoom observation-only location data collection
+========================================================================
+ROOT_DIR              = D:\Data\_Action\_RunNMS
+SCANNER_NAME          = twin-scout-charlie
+PREFERRED_HEADING_DIR = D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full
+LOG_DIR               = D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection
+Location Solver       = NOT USED
+
+Input ground-truth x_m: 5
+Input ground-truth y_m: 1
+
+------------------------------------------------------------------------
+Preferred heading at x=5.000, y=1.000: 115.0 deg
+Lookup source: D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full\preferred_heading_lookup.csv
+Nearest lookup point: x=5.000, y=1.000, distance=0.000 m
+------------------------------------------------------------------------
+
+Please rotate twin-scout-charlie to heading 115.0 deg.
+Press Enter to send mobility.report.location...
+Input actual heading_deg, or press Enter to use 115.0:
+
+Direct command enqueued:
+{
+  "scanner": "twin-scout-charlie",
+  "stream": "nms:cmd:twin-scout-charlie",
+  "stream_id": "1783073858032-0",
+  "fields": {
+    "category": "mobility",
+    "action": "mobility.report.location",
+    "execute_at": "2026-07-03-18:17:38",
+    "created_at": "2026-07-03-18:17:38",
+    "args_json": "{}",
+    "source": "t11_observation_only_direct",
+    "web_cmd_id": "phase2a-6c7ad6b7c40c"
+  }
+}
+
+GT:             (5.000, 1.000, 115.0)
+Location Solver: NOT USED
+
+Tags Observed  : 9
+Front / Rear   : 8 / 1
+Tag IDs        : [35, 36, 37, 38, 39, 40, 41, 42, 49]
+ObsCheck JSON  : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x5.00_y1.00_h115_20260703_181804.json
+ObsCheck CSV   : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x5.00_y1.00_h115_20260703_181804.csv
+Obs JSON       : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obs_x5.00_y1.00_h115_20260703_181804.json
+Latest Obs     : D:\Data\_Action\_RunNMS\testLocation\input\latest_location_observation_twin-scout-charlie.json
+
+Observation-Only Tag Measurement Check
+======================================================================================================================
+ Tag   Cam    Dist   TrueD    DErr     Ang   TrueA    AErr     Yaw   TrueY    YErr
+----------------------------------------------------------------------------------------------------------------------
+  35 front   4.094   4.174  -0.080    34.4    32.1     2.3    23.3     7.1    16.2
+  36 front   3.675   3.699  -0.024    19.8    18.2     1.6    10.2    -6.8    17.0
+  37 front   4.295   4.366  -0.071     6.6     6.6     0.0    14.9   -18.4    33.3
+  38 front   4.708   4.759  -0.051    -5.3    -4.5    -0.9   -27.9   -29.5     1.6
+  39 front   5.167   5.300  -0.132   -13.9   -13.6    -0.3   -40.9   -38.6    -2.4
+  40 front   5.048   5.254  -0.206   -19.8   -21.0     1.2    41.2    44.0    -2.8
+  41 front   4.547   4.611  -0.064   -25.6   -30.0     4.4   -40.9    35.0   -75.9
+  42 front   4.033   4.126  -0.094   -30.8   -40.7     9.8    37.3    24.3    13.0
+  49  rear   0.897   0.936  -0.039    -2.5    -2.2    -0.3   -28.0   -27.2    -0.8
+======================================================================================================================
+
+Yaw Keep/Flip Quantization Diagnostic
+==========================================================================================================================================================
+ Tag   Cam   TrueA     Yaw   TrueY   KeepE   FlipE  Best   BestE    Gain     Sep    QYaw                   Decision
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+  35 front    32.1    23.3     7.1    16.2   -30.4  keep    16.2   -14.2    14.2       -                reject_edge
+  36 front    18.2    10.2    -6.8    17.0    -3.4  flip    -3.4    13.6    13.6       -        weak_small_true_yaw
+  37 front     6.6    14.9   -18.4    33.3     3.5  flip     3.5    29.8    29.8   -18.4      accept_flip_quantized
+  38 front    -4.5   -27.9   -29.5     1.6    57.4  keep     1.6   -55.8    55.8   -29.5      accept_keep_quantized
+  39 front   -13.6   -40.9   -38.6    -2.4    79.5  keep    -2.4   -77.2    77.2   -38.6      accept_keep_quantized
+  40 front   -21.0    41.2    44.0    -2.8   -85.3  keep    -2.8   -82.4    82.4    44.0      accept_keep_quantized
+  41 front   -30.0   -40.9    35.0   -75.9     5.9  flip     5.9    70.0    70.0    35.0      accept_flip_quantized
+  42 front   -40.7    37.3    24.3    13.0   -61.7  keep    13.0   -48.7    48.7       -                reject_edge
+  49  rear    -2.2   -28.0   -27.2    -0.8    55.3  keep    -0.8   -54.5    54.5   -27.2      accept_keep_quantized
+==========================================================================================================================================================
+
+=======================================================
+x = 5  y = 	2						
+=======================================================  
+========================================================================
+T11: DemoRoom observation-only location data collection
+========================================================================
+ROOT_DIR              = D:\Data\_Action\_RunNMS
+SCANNER_NAME          = twin-scout-charlie
+PREFERRED_HEADING_DIR = D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full
+LOG_DIR               = D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection
+Location Solver       = NOT USED
+
+Input ground-truth x_m: 5
+Input ground-truth y_m: 2
+
+------------------------------------------------------------------------
+Preferred heading at x=5.000, y=2.000: 115.0 deg
+Lookup source: D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full\preferred_heading_lookup.csv
+Nearest lookup point: x=5.000, y=2.000, distance=0.000 m
+------------------------------------------------------------------------
+
+Please rotate twin-scout-charlie to heading 115.0 deg.
+Press Enter to send mobility.report.location...
+Input actual heading_deg, or press Enter to use 115.0:
+
+
+Direct command enqueued:
+{
+  "scanner": "twin-scout-charlie",
+  "stream": "nms:cmd:twin-scout-charlie",
+  "stream_id": "1783074023401-0",
+  "fields": {
+    "category": "mobility",
+    "action": "mobility.report.location",
+    "execute_at": "2026-07-03-18:20:23",
+    "created_at": "2026-07-03-18:20:23",
+    "args_json": "{}",
+    "source": "t11_observation_only_direct",
+    "web_cmd_id": "phase2a-71150307374c"
+  }
+}
+
+GT:             (5.000, 2.000, 115.0)
+Location Solver: NOT USED
+
+Tags Observed  : 9
+Front / Rear   : 7 / 2
+Tag IDs        : [35, 36, 37, 38, 39, 40, 41, 49, 50]
+ObsCheck JSON  : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x5.00_y2.00_h115_20260703_182057.json
+ObsCheck CSV   : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x5.00_y2.00_h115_20260703_182057.csv
+Obs JSON       : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obs_x5.00_y2.00_h115_20260703_182057.json
+Latest Obs     : D:\Data\_Action\_RunNMS\testLocation\input\latest_location_observation_twin-scout-charlie.json
+
+Observation-Only Tag Measurement Check
+======================================================================================================================
+ Tag   Cam    Dist   TrueD    DErr     Ang   TrueA    AErr     Yaw   TrueY    YErr
+----------------------------------------------------------------------------------------------------------------------
+  35 front   3.144   3.184  -0.040    36.0    34.3     1.6    26.0     9.3    16.6
+  36 front   2.677   2.709  -0.032    16.3    15.7     0.6    11.7    -9.3    21.0
+  37 front   3.399   3.432  -0.033     0.1     1.3    -1.2   -23.5   -23.7     0.2
+  38 front   3.930   3.919   0.010   -12.8   -11.7    -1.1   -35.4   -36.7     1.4
+  39 front   4.527   4.561  -0.034   -20.5   -21.5     0.9   -46.0   -46.5     0.4
+  40 front   4.465   4.616  -0.150   -25.9   -29.9     4.0   -42.7    35.1   -77.8
+  41 front   4.042   4.120  -0.078   -31.3   -41.5    10.2    38.7    23.5    15.2
+  49  rear   1.911   1.881   0.029    11.6    11.8    -0.2    -7.2   -13.2     6.0
+  50  rear   2.164   2.143   0.020   -17.0   -14.9    -2.1   -38.7   -39.9     1.2
+======================================================================================================================
+
+Yaw Keep/Flip Quantization Diagnostic
+==========================================================================================================================================================
+ Tag   Cam   TrueA     Yaw   TrueY   KeepE   FlipE  Best   BestE    Gain     Sep    QYaw                   Decision
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+  35 front    34.3    26.0     9.3    16.6   -35.3  keep    16.6   -18.6    18.6       -                reject_edge
+  36 front    15.7    11.7    -9.3    21.0    -2.3  flip    -2.3    18.6    18.6    -9.3      accept_flip_quantized
+  37 front     1.3   -23.5   -23.7     0.2    47.2  keep     0.2   -47.1    47.1   -23.7      accept_keep_quantized
+  38 front   -11.7   -35.4   -36.7     1.4    72.1  keep     1.4   -70.7    70.7   -36.7      accept_keep_quantized
+  39 front   -21.5   -46.0   -46.5     0.4    92.5  keep     0.4   -92.0    92.0   -46.5      accept_keep_quantized
+  40 front   -29.9   -42.7    35.1   -77.8     7.6  flip     7.6    70.2    70.2    35.1      accept_flip_quantized
+  41 front   -41.5    38.7    23.5    15.2   -62.3  keep    15.2   -47.1    47.1       -                reject_edge
+  49  rear    11.8    -7.2   -13.2     6.0    20.3  keep     6.0   -14.3    14.3       -                reject_edge
+  50  rear   -14.9   -38.7   -39.9     1.2    78.6  keep     1.2   -77.5    77.5       -                reject_edge
+==========================================================================================================================================================
+
+=======================================================
+x = 6  y = 	2						
+=======================================================  
+========================================================================
+T11: DemoRoom observation-only location data collection
+========================================================================
+ROOT_DIR              = D:\Data\_Action\_RunNMS
+SCANNER_NAME          = twin-scout-charlie
+PREFERRED_HEADING_DIR = D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full
+LOG_DIR               = D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection
+Location Solver       = NOT USED
+
+Input ground-truth x_m: 6
+Input ground-truth y_m: 2
+
+------------------------------------------------------------------------
+Preferred heading at x=6.000, y=2.000: 65.0 deg
+Lookup source: D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full\preferred_heading_lookup.csv
+Nearest lookup point: x=6.000, y=2.000, distance=0.000 m
+
+Please rotate twin-scout-charlie to heading 65.0 deg.
+Press Enter to send mobility.report.location...
+Input actual heading_deg, or press Enter to use 65.0:
+
+Collecting one fresh mobility.report.location sample...
+
+Direct command enqueued:
+{
+  "scanner": "twin-scout-charlie",
+  "stream": "nms:cmd:twin-scout-charlie",
+  "stream_id": "1783074231034-0",
+  "fields": {
+    "category": "mobility",
+    "action": "mobility.report.location",
+    "execute_at": "2026-07-03-18:23:51",
+    "created_at": "2026-07-03-18:23:51",
+    "args_json": "{}",
+    "source": "t11_observation_only_direct",
+    "web_cmd_id": "phase2a-b973b988ff7a"
+  }
+}
+
+GT:             (6.000, 2.000, 65.0)
+Location Solver: NOT USED
+
+Tags Observed  : 6
+Front / Rear   : 6 / 0
+Tag IDs        : [32, 33, 34, 35, 57, 58]
+ObsCheck JSON  : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x6.00_y2.00_h65_20260703_182439.json
+ObsCheck CSV   : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x6.00_y2.00_h65_20260703_182439.csv
+Obs JSON       : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obs_x6.00_y2.00_h65_20260703_182439.json
+Latest Obs     : D:\Data\_Action\_RunNMS\testLocation\input\latest_location_observation_twin-scout-charlie.json
+
+Observation-Only Tag Measurement Check
+======================================================================================================================
+ Tag   Cam    Dist   TrueD    DErr     Ang   TrueA    AErr     Yaw   TrueY    YErr
+----------------------------------------------------------------------------------------------------------------------
+  32 front   3.860   3.922  -0.062    10.2    11.8    -1.5    34.5    36.8    -2.3
+  33 front   3.471   3.436   0.035    -3.9    -1.1    -2.7    19.8    23.9    -4.0
+  34 front   3.166   3.171  -0.005   -18.4   -17.3    -1.1    11.8     7.7     4.0
+  35 front   3.134   3.187  -0.053   -28.9   -34.6     5.7   -32.3    -9.6   -22.7
+  57 front   4.514   4.627  -0.113    42.4    43.2    -0.8    38.2   -21.8    60.0
+  58 front   4.375   4.392  -0.017    28.3    28.0     0.2   -39.2   -37.0    -2.3
+======================================================================================================================
+
+Yaw Keep/Flip Quantization Diagnostic
+==========================================================================================================================================================
+ Tag   Cam   TrueA     Yaw   TrueY   KeepE   FlipE  Best   BestE    Gain     Sep    QYaw                   Decision
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+  32 front    11.8    34.5    36.8    -2.3   -71.2  keep    -2.3   -68.9    68.9    36.8      accept_keep_quantized
+  33 front    -1.1    19.8    23.9    -4.0   -43.7  keep    -4.0   -39.7    39.7    23.9      accept_keep_quantized
+  34 front   -17.3    11.8     7.7     4.0   -19.5  keep     4.0   -15.4    15.4       -        weak_small_true_yaw
+  35 front   -34.6   -32.3    -9.6   -22.7    41.9  keep   -22.7   -19.2    19.2       -                reject_edge
+  57 front    43.2    38.2   -21.8    60.0   -16.4  flip   -16.4    43.5    43.5       -                reject_edge
+  58 front    28.0   -39.2   -37.0    -2.3    76.2  keep    -2.3   -73.9    73.9   -37.0      accept_keep_quantized
+==========================================================================================================================================================
+
+=======================================================
+x = 6  y = 	4						
+=======================================================  
+========================================================================
+T11: DemoRoom observation-only location data collection
+========================================================================
+ROOT_DIR              = D:\Data\_Action\_RunNMS
+SCANNER_NAME          = twin-scout-charlie
+PREFERRED_HEADING_DIR = D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full
+LOG_DIR               = D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection
+Location Solver       = NOT USED
+
+Input ground-truth x_m: 6
+Input ground-truth y_m: 4
+
+------------------------------------------------------------------------
+Preferred heading at x=6.000, y=4.000: 260.0 deg
+Lookup source: D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full\preferred_heading_lookup.csv
+Nearest lookup point: x=6.000, y=4.000, distance=0.000 m
+------------------------------------------------------------------------
+
+Input actual heading_deg, or press Enter to use 260.0:
+
+Collecting one fresh mobility.report.location sample...
+
+Direct command enqueued:
+{
+  "scanner": "twin-scout-charlie",
+  "stream": "nms:cmd:twin-scout-charlie",
+  "stream_id": "1783074616106-0",
+  "fields": {
+    "category": "mobility",
+    "action": "mobility.report.location",
+    "execute_at": "2026-07-03-18:30:16",
+    "created_at": "2026-07-03-18:30:16",
+    "args_json": "{}",
+    "source": "t11_observation_only_direct",
+    "web_cmd_id": "phase2a-e11cc43c0ea5"
+  }
+}
+
+GT:             (6.000, 4.000, 260.0)
+Location Solver: NOT USED
+
+Tags Observed  : 7
+Front / Rear   : 6 / 1
+Tag IDs        : [46, 47, 48, 49, 50, 51, 34]
+ObsCheck JSON  : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x6.00_y4.00_h260_20260703_183043.json
+ObsCheck CSV   : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x6.00_y4.00_h260_20260703_183043.csv
+Obs JSON       : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obs_x6.00_y4.00_h260_20260703_183043.json
+Latest Obs     : D:\Data\_Action\_RunNMS\testLocation\input\latest_location_observation_twin-scout-charlie.json
+
+Observation-Only Tag Measurement Check
+======================================================================================================================
+ Tag   Cam    Dist   TrueD    DErr     Ang   TrueA    AErr     Yaw   TrueY    YErr
+----------------------------------------------------------------------------------------------------------------------
+  46 front   4.956   5.109  -0.153    33.1    31.2     1.9   -47.6    41.2   -88.7
+  47 front   4.516   4.540  -0.024    23.8    22.1     1.6    29.6    32.1    -2.5
+  48 front   4.098   4.117  -0.020    11.1    10.9     0.1    17.8    20.9    -3.1
+  49 front   3.871   3.882  -0.012    -3.2    -2.1    -1.1    -6.8     7.9   -14.7
+  50 front   3.667   3.681  -0.014   -16.6   -16.5    -0.1     7.3    -6.5    13.8
+  51 front   3.766   3.824  -0.059   -27.5   -33.2     5.7    33.4   -23.2    56.6
+  34  rear   1.172   1.200  -0.028    11.4    11.3     0.1    18.1    21.3    -3.2
+======================================================================================================================
+
+Yaw Keep/Flip Quantization Diagnostic
+==========================================================================================================================================================
+ Tag   Cam   TrueA     Yaw   TrueY   KeepE   FlipE  Best   BestE    Gain     Sep    QYaw                   Decision
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+  46 front    31.2   -47.6    41.2   -88.7     6.4  flip     6.4    82.3    82.3       -                reject_edge
+  47 front    22.1    29.6    32.1    -2.5   -61.7  keep    -2.5   -59.2    59.2    32.1      accept_keep_quantized
+  48 front    10.9    17.8    20.9    -3.1   -38.7  keep    -3.1   -35.6    35.6    20.9      accept_keep_quantized
+  49 front    -2.1    -6.8     7.9   -14.7    -1.0  flip    -1.0    13.7    13.7       -        weak_small_true_yaw
+  50 front   -16.5     7.3    -6.5    13.8    -0.8  flip    -0.8    13.0    13.0       -        weak_small_true_yaw
+  51 front   -33.2    33.4   -23.2    56.6   -10.1  flip   -10.1    46.4    46.4       -                reject_edge
+  34  rear    11.3    18.1    21.3    -3.2   -39.4  keep    -3.2   -36.1    36.1       -                reject_edge
+==========================================================================================================================================================
+
+=======================================================
+x = 7  y = 	1						
+=======================================================  
+========================================================================
+T11: DemoRoom observation-only location data collection
+========================================================================
+ROOT_DIR              = D:\Data\_Action\_RunNMS
+SCANNER_NAME          = twin-scout-charlie
+PREFERRED_HEADING_DIR = D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full
+LOG_DIR               = D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection
+Location Solver       = NOT USED
+
+Input ground-truth x_m: 7
+Input ground-truth y_m: 1
+
+------------------------------------------------------------------------
+Preferred heading at x=7.000, y=1.000: 25.0 deg
+Nearest lookup point: x=7.000, y=1.000, distance=0.000 m
+------------------------------------------------------------------------
+
+Please rotate twin-scout-charlie to heading 25.0 deg.
+Press Enter to send mobility.report.location...
+Input actual heading_deg, or press Enter to use 25.0:
+
+Collecting one fresh mobility.report.location sample...
+
+Direct command enqueued:
+{
+  "scanner": "twin-scout-charlie",
+  "stream": "nms:cmd:twin-scout-charlie",
+  "stream_id": "1783074368612-0",
+  "fields": {
+    "category": "mobility",
+    "action": "mobility.report.location",
+    "execute_at": "2026-07-03-18:26:08",
+    "created_at": "2026-07-03-18:26:08",
+    "args_json": "{}",
+    "source": "t11_observation_only_direct",
+    "web_cmd_id": "phase2a-3f4d836b70a9"
+  }
+}
+
+GT:             (7.000, 1.000, 25.0)
+Location Solver: NOT USED
+
+Tags Observed  : 5
+Front / Rear   : 5 / 0
+Tag IDs        : [31, 54, 55, 56, 57]
+ObsCheck JSON  : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x7.00_y1.00_h25_20260703_182647.json
+ObsCheck CSV   : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x7.00_y1.00_h25_20260703_182647.csv
+Obs JSON       : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obs_x7.00_y1.00_h25_20260703_182647.json
+Latest Obs     : D:\Data\_Action\_RunNMS\testLocation\input\latest_location_observation_twin-scout-charlie.json
+
+Observation-Only Tag Measurement Check
+======================================================================================================================
+ Tag   Cam    Dist   TrueD    DErr     Ang   TrueA    AErr     Yaw   TrueY    YErr
+----------------------------------------------------------------------------------------------------------------------
+  31 front   4.159   4.176  -0.018   -19.9   -20.5     0.6    41.6    44.5    -2.9
+  54 front   3.314   3.350  -0.036    32.0    30.5     1.5   -27.2     5.5   -32.7
+  55 front   3.320   3.347  -0.027    12.9    12.7     0.1   -15.1   -12.3    -2.9
+  56 front   3.646   3.699  -0.053    -4.2    -2.8    -1.4    23.2   -27.8    51.0
+  57 front   4.216   4.268  -0.052   -15.6   -15.0    -0.6   -42.7   -40.0    -2.7
+======================================================================================================================
+
+Yaw Keep/Flip Quantization Diagnostic
+==========================================================================================================================================================
+ Tag   Cam   TrueA     Yaw   TrueY   KeepE   FlipE  Best   BestE    Gain     Sep    QYaw                   Decision
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+  31 front   -20.5    41.6    44.5    -2.9   -86.1  keep    -2.9   -83.2    83.2    44.5      accept_keep_quantized
+  54 front    30.5   -27.2     5.5   -32.7    21.8  flip    21.8    10.9    10.9       -                reject_edge
+  55 front    12.7   -15.1   -12.3    -2.9    27.4  keep    -2.9   -24.5    24.5   -12.3      accept_keep_quantized
+  56 front    -2.8    23.2   -27.8    51.0     4.7  flip     4.7    46.3    46.3   -27.8      accept_flip_quantized
+  57 front   -15.0   -42.7   -40.0    -2.7    82.7  keep    -2.7   -80.0    80.0   -40.0      accept_keep_quantized
+==========================================================================================================================================================
+
+=======================================================
+x = 9  y = 	4						
+=======================================================  
+========================================================================
+T11: DemoRoom observation-only location data collection
+========================================================================
+ROOT_DIR              = D:\Data\_Action\_RunNMS
+SCANNER_NAME          = twin-scout-charlie
+PREFERRED_HEADING_DIR = D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full
+LOG_DIR               = D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection
+Location Solver       = NOT USED
+
+Input ground-truth x_m: 9
+Input ground-truth y_m: 4
+
+------------------------------------------------------------------------
+Preferred heading at x=9.000, y=4.000: 245.0 deg
+Lookup source: D:\Data\_Action\_RunNMS\testLocation\output\preferred_heading_full\preferred_heading_lookup.csv
+Nearest lookup point: x=9.000, y=4.000, distance=0.000 m
+Please rotate twin-scout-charlie to heading 245.0 deg.
+Press Enter to send mobility.report.location...
+Input actual heading_deg, or press Enter to use 245.0:
+
+Collecting one fresh mobility.report.location sample...
+
+Direct command enqueued:
+{
+  "scanner": "twin-scout-charlie",
+  "stream": "nms:cmd:twin-scout-charlie",
+  "stream_id": "1783074769402-0",
+  "fields": {
+    "category": "mobility",
+    "action": "mobility.report.location",
+    "execute_at": "2026-07-03-18:32:49",
+    "created_at": "2026-07-03-18:32:49",
+    "args_json": "{}",
+    "source": "t11_observation_only_direct",
+    "web_cmd_id": "phase2a-602a19f0c84d"
+  }
+}
+
+GT:             (9.000, 4.000, 245.0)
+Location Solver: NOT USED
+
+Tags Observed  : 6
+Front / Rear   : 5 / 1
+Tag IDs        : [48, 50, 51, 52, 53, 58]
+ObsCheck JSON  : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x9.00_y4.00_h245_20260703_183330.json
+ObsCheck CSV   : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obscheck_x9.00_y4.00_h245_20260703_183330.csv
+Obs JSON       : D:\Data\_Action\_RunNMS\testLocation\output\t11_observation_collection\obs_x9.00_y4.00_h245_20260703_183330.json
+Latest Obs     : D:\Data\_Action\_RunNMS\testLocation\input\latest_location_observation_twin-scout-charlie.json
+
+Observation-Only Tag Measurement Check
+======================================================================================================================
+ Tag   Cam    Dist   TrueD    DErr     Ang   TrueA    AErr     Yaw   TrueY    YErr
+----------------------------------------------------------------------------------------------------------------------
+  48 front   5.871   5.890  -0.018    24.6    24.2     0.4    47.2    49.2    -1.9
+  50 front   4.424   4.474  -0.050     8.9    10.1    -1.1   -34.7    35.1   -69.8
+  51 front   3.803   3.817  -0.015    -4.2    -2.2    -2.0    16.0    22.8    -6.8
+  52 front   3.646   3.690  -0.044   -19.0   -18.4    -0.6    11.7     6.6     5.1
+  53 front   3.872   3.909  -0.037   -28.9   -34.9     6.0    27.5    -9.9    37.4
+  58  rear   0.739   0.799  -0.059    10.8    13.9    -3.1   -56.7   -51.1    -5.6
+======================================================================================================================
+
+Yaw Keep/Flip Quantization Diagnostic
+==========================================================================================================================================================
+ Tag   Cam   TrueA     Yaw   TrueY   KeepE   FlipE  Best   BestE    Gain     Sep    QYaw                   Decision
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+  48 front    24.2    47.2    49.2    -1.9   -96.4  keep    -1.9   -94.5    94.5    49.2      accept_keep_quantized
+  50 front    10.1   -34.7    35.1   -69.8    -0.3  flip    -0.3    69.5    69.5    35.1      accept_flip_quantized
+  51 front    -2.2    16.0    22.8    -6.8   -38.8  keep    -6.8   -32.0    32.0    22.8      accept_keep_quantized
+  52 front   -18.4    11.7     6.6     5.1   -18.3  keep     5.1   -13.2    13.2       -        weak_small_true_yaw
+  53 front   -34.9    27.5    -9.9    37.4   -17.6  flip   -17.6    19.9    19.9       -                reject_edge
+  58  rear    13.9   -56.7   -51.1    -5.6   107.9  keep    -5.6  -102.3   102.3       -                reject_edge
+==========================================================================================================================================================
+
