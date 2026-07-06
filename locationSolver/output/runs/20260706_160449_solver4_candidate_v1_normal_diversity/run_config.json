@@ -1,0 +1,41 @@
+{
+  "candidate_name": "solver4_candidate_v1",
+  "prepared_subdir": "normal_diversity",
+  "prepared_json": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\data\\prepared\\normal_diversity\\samples.json",
+  "tag_map_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\tag_location.txt",
+  "tag_yaw_map_path": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\config\\datasets\\demoroom_tag_yaw_v1.json",
+  "base_solver_config": {
+    "x_min_m": 0.0,
+    "x_max_m": 11.4,
+    "y_min_m": 0.0,
+    "y_max_m": 11.4,
+    "min_observations": 2,
+    "distance_sigma_m": 0.05,
+    "angle_sigma_deg": 2.5,
+    "yaw_sigma_deg": 3.0,
+    "distance_global_weight": 1.0,
+    "angle_global_weight": 1.0,
+    "yaw_global_weight": 0.75,
+    "heading_starts_deg": [
+      0.0,
+      45.0,
+      90.0,
+      135.0,
+      180.0,
+      225.0,
+      270.0,
+      315.0
+    ],
+    "max_nfev": 500,
+    "ftol": 1e-10,
+    "xtol": 1e-10,
+    "gtol": 1e-10
+  },
+  "robust_config": {
+    "rejection_score_threshold": 0.8,
+    "max_rejections": 1,
+    "min_observations_after_rejection": 3,
+    "min_score_gap": 0.5
+  },
+  "important_note": "Yaw acceptance/sign still depends on current offline diagnostic labels. This is not yet production-safe. Robust rejection itself uses pass-1 residuals, not GT."
+}

@@ -1,0 +1,30 @@
+{
+  "solver_name": "solver5_gtfree_yaw_twopass",
+  "prepared_subdir": "normal_diversity",
+  "prepared_json": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\data\\prepared\\normal_diversity\\samples.json",
+  "tag_map_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\tag_location.txt",
+  "tag_yaw_map_path": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\config\\datasets\\demoroom_tag_yaw_v1.json",
+  "stage5_config": {
+    "distance_sigma_m": 0.05,
+    "angle_sigma_deg": 2.5,
+    "yaw_sigma_deg": 3.0,
+    "distance_global_weight": 1.0,
+    "angle_global_weight": 1.0,
+    "yaw_global_weight": 0.75,
+    "rejection_score_threshold": 0.8,
+    "min_score_gap": 0.5,
+    "max_rejections": 1,
+    "min_observations_after_rejection": 3,
+    "min_abs_predicted_yaw_deg": 8.0,
+    "yaw_accept_best_error_deg": 10.0,
+    "yaw_accept_separation_deg": 15.0
+  },
+  "gt_audit": {
+    "pass1_uses_gt": false,
+    "da_outlier_rejection_uses_gt": false,
+    "yaw_sign_resolution_uses_gt": false,
+    "pass2_uses_gt": false,
+    "evaluator_uses_gt_after_estimation": true
+  },
+  "important_note": "Stage 5 reads raw measured yaw_deg only. It intentionally ignores yaw_use_offline_label and yaw_sign_corrected_deg."
+}

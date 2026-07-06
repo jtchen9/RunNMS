@@ -1,0 +1,27 @@
+{
+  "candidate_name": "solver4_candidate_v1",
+  "status": "frozen_for_validation",
+  "measurement_scales": {
+    "distance_sigma_m": 0.05,
+    "angle_sigma_deg": 2.5,
+    "yaw_sigma_deg": 3.0
+  },
+  "relative_weights": {
+    "distance_global_weight": 1.0,
+    "angle_global_weight": 1.0,
+    "yaw_global_weight": 0.75
+  },
+  "robust_rejection": {
+    "rejection_score_threshold": 0.8,
+    "min_score_gap": 0.5,
+    "max_rejections": 1,
+    "min_observations_after_rejection": 3
+  },
+  "selection_rationale": [
+    "Chosen from a broad high-performing region rather than numerical rank 1.",
+    "Moderate rejection count preserves diversity and averaging.",
+    "Simple relative weights: distance 1.0, angle 1.0, yaw 0.75.",
+    "Stop tuning before independent validation to reduce overfitting risk."
+  ],
+  "production_blocker": "Current yaw acceptance/sign uses offline diagnostic labels and is not yet production-safe."
+}

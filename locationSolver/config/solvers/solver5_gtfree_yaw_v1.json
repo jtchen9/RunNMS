@@ -1,0 +1,39 @@
+{
+  "solver_name": "solver5_gtfree_yaw_twopass",
+  "status": "development_candidate",
+  "principle": "Pass 1 uses distance+angle only. Pass-1 predicted geometry resolves raw yaw keep/flip. Pass 2 uses cleaned D/A plus qualified GT-free yaw.",
+  "measurement_scales": {
+    "distance_sigma_m": 0.05,
+    "angle_sigma_deg": 2.5,
+    "yaw_sigma_deg": 3.0
+  },
+  "relative_weights": {
+    "distance_global_weight": 1.0,
+    "angle_global_weight": 1.0,
+    "yaw_global_weight": 0.75
+  },
+  "da_outlier_rule": {
+    "rejection_score_threshold": 0.8,
+    "min_score_gap": 0.5,
+    "max_rejections": 1,
+    "min_observations_after_rejection": 3
+  },
+  "gtfree_yaw_rule": {
+    "min_abs_predicted_yaw_deg": 8.0,
+    "yaw_accept_best_error_deg": 10.0,
+    "yaw_accept_separation_deg": 15.0
+  },
+  "gt_audit": {
+    "pass1": "no GT",
+    "da_outlier_rejection": "no GT",
+    "yaw_sign_resolution": "no GT",
+    "pass2": "no GT",
+    "evaluation_metrics": "GT only after estimation"
+  },
+  "ignored_truth_assisted_fields": [
+    "yaw_use_offline_label",
+    "yaw_sign_corrected_deg",
+    "evaluation.true_yaw_deg",
+    "evaluation.yaw_error_deg"
+  ]
+}
