@@ -1,0 +1,23 @@
+{
+  "solver_name": "solver1_distance",
+  "dataset_name": "clean_core",
+  "prepared_json": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\data\\prepared\\clean_core\\samples.json",
+  "tag_map_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\tag_location.txt",
+  "solver_config": {
+    "x_min_m": 0.0,
+    "x_max_m": 11.4,
+    "y_min_m": 0.0,
+    "y_max_m": 11.4,
+    "min_observations": 3,
+    "heading_starts_deg": [
+      0.0,
+      90.0,
+      180.0,
+      270.0
+    ],
+    "max_nfev": 500,
+    "ftol": 1e-10,
+    "xtol": 1e-10,
+    "gtol": 1e-10
+  }
+}

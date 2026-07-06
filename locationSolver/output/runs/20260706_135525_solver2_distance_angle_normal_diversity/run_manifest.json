@@ -1,0 +1,10 @@
+{
+  "run_id": "20260706_135525_solver2_distance_angle_normal_diversity",
+  "solver_name": "solver2_distance_angle",
+  "dataset_name": "normal_diversity",
+  "prepared_json": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\data\\prepared\\normal_diversity\\samples.json",
+  "tag_map_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\tag_location.txt",
+  "output_dir": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\output\\runs\\20260706_135525_solver2_distance_angle_normal_diversity",
+  "sample_count": 39,
+  "result_count": 39
+}

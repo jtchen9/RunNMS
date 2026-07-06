@@ -1,0 +1,18 @@
+{
+  "solver_name": "solver1_distance",
+  "x_min_m": 0.0,
+  "x_max_m": 11.4,
+  "y_min_m": 0.0,
+  "y_max_m": 11.4,
+  "min_observations": 3,
+  "heading_starts_deg": [
+    0.0,
+    90.0,
+    180.0,
+    270.0
+  ],
+  "max_nfev": 500,
+  "loss": "linear",
+  "outlier_rejection": false,
+  "uses_ground_truth": false
+}

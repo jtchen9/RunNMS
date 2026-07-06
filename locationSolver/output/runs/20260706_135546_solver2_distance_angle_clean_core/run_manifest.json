@@ -1,0 +1,10 @@
+{
+  "run_id": "20260706_135546_solver2_distance_angle_clean_core",
+  "solver_name": "solver2_distance_angle",
+  "dataset_name": "clean_core",
+  "prepared_json": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\data\\prepared\\clean_core\\samples.json",
+  "tag_map_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\tag_location.txt",
+  "output_dir": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\output\\runs\\20260706_135546_solver2_distance_angle_clean_core",
+  "sample_count": 39,
+  "result_count": 39
+}
