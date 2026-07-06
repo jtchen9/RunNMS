@@ -1,0 +1,10 @@
+{
+  "dataset_name": "normal_diversity_v1",
+  "input_csv": "data/input/normal_diversity_v1.csv",
+  "sample_id_field": "sample_uid",
+  "ground_truth_fields": {
+    "x_m": "gt_x_m",
+    "y_m": "gt_y_m",
+    "heading_deg": "gt_heading_deg"
+  }
+}
