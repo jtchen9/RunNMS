@@ -1,0 +1,49 @@
+{
+  "prepared_subdir": "normal_diversity",
+  "base_solver_config": {
+    "x_min_m": 0.0,
+    "x_max_m": 11.4,
+    "y_min_m": 0.0,
+    "y_max_m": 11.4,
+    "min_observations": 2,
+    "distance_sigma_m": 0.05,
+    "angle_sigma_deg": 3.0,
+    "yaw_sigma_deg": 3.0,
+    "distance_global_weight": 1.0,
+    "angle_global_weight": 1.0,
+    "yaw_global_weight": 1.0,
+    "heading_starts_deg": [
+      0.0,
+      45.0,
+      90.0,
+      135.0,
+      180.0,
+      225.0,
+      270.0,
+      315.0
+    ],
+    "max_nfev": 500,
+    "ftol": 1e-10,
+    "xtol": 1e-10,
+    "gtol": 1e-10
+  },
+  "best_component_aware_parameters": {
+    "core_reject_threshold": 0.8,
+    "core_support_threshold": 0.4,
+    "yaw_support_threshold": 1.5,
+    "yaw_bonus_weight": 0.25,
+    "min_decision_score_gap": 0.5,
+    "max_rejections": 1
+  },
+  "best_metrics": {
+    "joint_within_10cm_10deg_rate": 1.0,
+    "position_mean_error_m": 0.0409360046984587,
+    "position_median_error_m": 0.039000801549351816,
+    "position_p90_error_m": 0.06974217011889072,
+    "position_p95_error_m": 0.07200329330718738,
+    "position_max_error_m": 0.07407551106525607,
+    "heading_p90_abs_error_deg": 2.514922164745826,
+    "samples_with_rejection": 18,
+    "total_rejected_tags": 18
+  }
+}

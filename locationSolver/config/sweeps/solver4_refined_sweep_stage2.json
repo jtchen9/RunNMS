@@ -1,0 +1,25 @@
+{
+  "sweep_name": "solver4_refined_robust_sweep",
+  "frozen_base_solver": "solver3_distance_angle_yaw_baseline",
+  "rejection_score_threshold_values": [
+    0.8,
+    1.0,
+    1.2,
+    1.4,
+    1.6,
+    1.8
+  ],
+  "min_score_gap_values": [
+    0.05,
+    0.1,
+    0.2,
+    0.3,
+    0.5
+  ],
+  "max_rejections_values": [
+    0,
+    1
+  ],
+  "combination_count": 60,
+  "note": "Threshold range chosen to overlap the observed standalone score range."
+}

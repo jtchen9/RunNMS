@@ -1,0 +1,35 @@
+{
+  "sweep_name": "solver4_component_aware_sweep_stage1",
+  "frozen_base_solver": "solver3_distance_angle_yaw_baseline",
+  "component_aware_logic": {
+    "core_score": "RMS(normalized distance, normalized angle)",
+    "yaw_role": "supporting evidence only",
+    "eligibility": [
+      "core_score >= core_reject_threshold",
+      "OR core_score >= core_support_threshold AND abs(normalized_yaw_residual) >= yaw_support_threshold"
+    ],
+    "decision_score": "core_score + 0.25 * max(0, abs(normalized_yaw_residual) - yaw_support_threshold)"
+  },
+  "core_reject_threshold_values": [
+    0.8,
+    1.0,
+    1.2,
+    1.4
+  ],
+  "core_support_threshold_values": [
+    0.4,
+    0.6,
+    0.8
+  ],
+  "yaw_support_threshold_values": [
+    1.5,
+    2.0,
+    2.5
+  ],
+  "min_decision_score_gap_values": [
+    0.3,
+    0.5
+  ],
+  "max_rejections": 1,
+  "combination_count": 72
+}

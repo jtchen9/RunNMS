@@ -1,0 +1,10 @@
+{
+  "solver_name": "solver4_robust_twopass",
+  "base_solver": "solver3_distance_angle_yaw",
+  "rejection_score_threshold": 3.0,
+  "max_rejections": 1,
+  "min_observations_after_rejection": 3,
+  "min_score_gap": 0.75,
+  "robust_rejection_uses_ground_truth": false,
+  "yaw_gate_note": "Current yaw acceptance/sign still uses offline diagnostic labels."
+}

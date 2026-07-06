@@ -1,0 +1,37 @@
+{
+  "run_id": "20260706_155444_solver3_relative_weight_sweep_fixed_scales_normal_diversity",
+  "sweep_name": "solver3_relative_weight_sweep_fixed_scales",
+  "prepared_subdir": "normal_diversity",
+  "prepared_json": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\data\\prepared\\normal_diversity\\samples.json",
+  "combination_count": 48,
+  "distance_weight_values": [
+    0.75,
+    1.0,
+    1.25
+  ],
+  "angle_weight_values": [
+    0.75,
+    1.0,
+    1.25,
+    1.5
+  ],
+  "yaw_weight_values": [
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "fixed_measurement_scales": {
+    "distance_sigma_m": 0.05,
+    "angle_sigma_deg": 2.5,
+    "yaw_sigma_deg": 3.0
+  },
+  "fixed_robust_rule": {
+    "rejection_score_threshold": 0.8,
+    "max_rejections": 1,
+    "min_observations_after_rejection": 3,
+    "min_score_gap": 0.5
+  },
+  "total_runtime_s": 22.383463300000585,
+  "output_dir": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\output\\sweeps\\20260706_155444_solver3_relative_weight_sweep_fixed_scales_normal_diversity"
+}

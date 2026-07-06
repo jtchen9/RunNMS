@@ -1,0 +1,33 @@
+{
+  "sweep_name": "solver3_relative_weight_sweep_stage12b",
+  "purpose": "Final targeted local sweep before wrap-up. Avoid broad further tuning to reduce overfitting risk.",
+  "fixed_measurement_scales": {
+    "distance_sigma_m": 0.05,
+    "angle_sigma_deg": 2.5,
+    "yaw_sigma_deg": 3.0
+  },
+  "fixed_robust_rule": {
+    "rejection_score_threshold": 0.8,
+    "min_score_gap": 0.5,
+    "max_rejections": 1
+  },
+  "distance_weight_values": [
+    0.75,
+    1.0,
+    1.25
+  ],
+  "angle_weight_values": [
+    0.75,
+    1.0,
+    1.25,
+    1.5
+  ],
+  "yaw_weight_values": [
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "combination_count": 48,
+  "wrap_up_note": "Prefer a broad, natural plateau and moderate rejection count over a razor-thin numerical optimum."
+}

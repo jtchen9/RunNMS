@@ -1,0 +1,36 @@
+{
+  "sweep_name": "solver3_measurement_scale_sweep_stage12a",
+  "purpose": "Tune normalization scales first with global weights fixed. Relative-weight sweep comes next to avoid redundant simultaneous sigma/weight search.",
+  "fixed_robust_rule": {
+    "rejection_score_threshold": 0.8,
+    "min_score_gap": 0.5,
+    "max_rejections": 1
+  },
+  "fixed_global_weights": {
+    "distance": 1.0,
+    "angle": 1.0,
+    "yaw": 1.0
+  },
+  "distance_sigma_values_m": [
+    0.03,
+    0.04,
+    0.05,
+    0.06,
+    0.08
+  ],
+  "angle_sigma_values_deg": [
+    2.0,
+    2.5,
+    3.0,
+    4.0,
+    5.0
+  ],
+  "yaw_sigma_values_deg": [
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0
+  ],
+  "combination_count": 125
+}

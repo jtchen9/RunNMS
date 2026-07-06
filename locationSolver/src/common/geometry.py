@@ -77,14 +77,6 @@ def predicted_tag_angle_deg(
     tag_x_m: float,
     tag_y_m: float,
 ) -> float:
-    """
-    Match the established project convention:
-
-        bearing_world = atan2(tag_y - cam_y, tag_x - cam_x)
-        pred_angle = wrap(camera_heading - bearing_world)
-
-    Therefore positive/negative angle follows the current T11 convention.
-    """
     cam_x, cam_y = camera_xy_from_robot_pose(
         robot_x_m,
         robot_y_m,
@@ -105,3 +97,42 @@ def predicted_tag_angle_deg(
     )
 
     return wrap_angle_deg(cam_heading - bearing_world_deg)
+
+
+def predicted_tag_yaw_deg(
+    robot_x_m: float,
+    robot_y_m: float,
+    robot_heading_deg: float,
+    camera_role: str,
+    tag_x_m: float,
+    tag_y_m: float,
+    tag_yaw_deg: float,
+) -> float:
+    """
+    Established project convention:
+
+        pred_yaw =
+            wrap(tag_yaw + 180
+                 - camera_heading
+                 + pred_angle)
+    """
+    pred_angle = predicted_tag_angle_deg(
+        robot_x_m,
+        robot_y_m,
+        robot_heading_deg,
+        camera_role,
+        tag_x_m,
+        tag_y_m,
+    )
+
+    cam_heading = camera_heading_deg(
+        robot_heading_deg,
+        camera_role,
+    )
+
+    return wrap_angle_deg(
+        float(tag_yaw_deg)
+        + 180.0
+        - cam_heading
+        + pred_angle
+    )

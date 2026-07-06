@@ -1,0 +1,31 @@
+{
+  "sweep_name": "solver4_robust_parameter_sweep_stage1",
+  "frozen_base_solver": "solver3_distance_angle_yaw_baseline",
+  "rejection_score_threshold_values": [
+    2.0,
+    2.5,
+    3.0,
+    3.5,
+    4.0
+  ],
+  "min_score_gap_values": [
+    0.25,
+    0.5,
+    0.75,
+    1.0,
+    1.5
+  ],
+  "max_rejections_values": [
+    0,
+    1
+  ],
+  "combination_count": 50,
+  "ranking_rule": [
+    "maximize joint_within_10cm_10deg_rate",
+    "maximize solver_success_rate",
+    "minimize position_p90_error_m",
+    "minimize position_max_error_m",
+    "minimize heading_p90_abs_error_deg",
+    "minimize total_rejected_tags"
+  ]
+}

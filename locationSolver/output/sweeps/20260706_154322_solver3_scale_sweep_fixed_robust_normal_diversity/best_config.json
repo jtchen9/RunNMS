@@ -1,0 +1,42 @@
+{
+  "prepared_subdir": "normal_diversity",
+  "best_measurement_scales": {
+    "distance_sigma_m": 0.05,
+    "angle_sigma_deg": 2.0,
+    "yaw_sigma_deg": 5.0
+  },
+  "fixed_global_weights": {
+    "distance_global_weight": 1.0,
+    "angle_global_weight": 1.0,
+    "yaw_global_weight": 1.0
+  },
+  "fixed_robust_rule": {
+    "rejection_score_threshold": 0.8,
+    "max_rejections": 1,
+    "min_observations_after_rejection": 3,
+    "min_score_gap": 0.5
+  },
+  "best_metrics": {
+    "joint_within_10cm_10deg_rate": 1.0,
+    "solver_success_rate": 1.0,
+    "position_mean_error_m": 0.0388574836512503,
+    "position_median_error_m": 0.037413546087538385,
+    "position_p90_error_m": 0.0629615288849841,
+    "position_p95_error_m": 0.07638798089719843,
+    "position_max_error_m": 0.09064218436977507,
+    "heading_mean_abs_error_deg": 1.0959158901014627,
+    "heading_p90_abs_error_deg": 2.3268699418286474,
+    "heading_p95_abs_error_deg": 3.4761359287850837,
+    "heading_max_abs_error_deg": 4.742955868403044,
+    "samples_with_rejection": 12,
+    "total_rejected_tags": 12
+  },
+  "ranking_rule": [
+    "maximize joint_within_10cm_10deg_rate",
+    "maximize solver_success_rate",
+    "minimize position_p90_error_m",
+    "minimize position_max_error_m",
+    "minimize heading_p90_abs_error_deg",
+    "minimize total_rejected_tags"
+  ]
+}

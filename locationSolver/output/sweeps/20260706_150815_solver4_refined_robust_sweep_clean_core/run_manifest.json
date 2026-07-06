@@ -1,0 +1,38 @@
+{
+  "run_id": "20260706_150815_solver4_refined_robust_sweep_clean_core",
+  "sweep_name": "solver4_refined_robust_sweep",
+  "prepared_subdir": "clean_core",
+  "prepared_json": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\data\\prepared\\clean_core\\samples.json",
+  "tag_map_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\tag_location.txt",
+  "tag_yaw_map_path": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\config\\datasets\\demoroom_tag_yaw_v1.json",
+  "combination_count": 60,
+  "rejection_score_threshold_values": [
+    0.8,
+    1.0,
+    1.2,
+    1.4,
+    1.6,
+    1.8
+  ],
+  "min_score_gap_values": [
+    0.05,
+    0.1,
+    0.2,
+    0.3,
+    0.5
+  ],
+  "max_rejections_values": [
+    0,
+    1
+  ],
+  "total_runtime_s": 23.57310779999898,
+  "output_dir": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\output\\sweeps\\20260706_150815_solver4_refined_robust_sweep_clean_core",
+  "ranking_rule": [
+    "maximize joint_within_10cm_10deg_rate",
+    "maximize solver_success_rate",
+    "minimize position_p90_error_m",
+    "minimize position_max_error_m",
+    "minimize heading_p90_abs_error_deg",
+    "minimize total_rejected_tags"
+  ]
+}

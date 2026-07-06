@@ -1,0 +1,12 @@
+{
+  "run_id": "20260706_142902_solver4_robust_twopass_clean_core",
+  "solver_name": "solver4_robust_twopass",
+  "dataset_name": "clean_core",
+  "prepared_json": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\data\\prepared\\clean_core\\samples.json",
+  "output_dir": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\output\\runs\\20260706_142902_solver4_robust_twopass_clean_core",
+  "sample_count": 39,
+  "result_count": 39,
+  "observation_residual_count": 183,
+  "samples_with_rejection": 0,
+  "total_rejected_tags": 0
+}

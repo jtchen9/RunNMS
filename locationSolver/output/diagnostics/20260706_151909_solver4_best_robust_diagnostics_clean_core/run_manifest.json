@@ -1,0 +1,10 @@
+{
+  "run_id": "20260706_151909_solver4_best_robust_diagnostics_clean_core",
+  "prepared_subdir": "clean_core",
+  "output_dir": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\output\\diagnostics\\20260706_151909_solver4_best_robust_diagnostics_clean_core",
+  "sample_count": 39,
+  "pass1_result_count": 39,
+  "final_result_count": 39,
+  "rejected_sample_count": 2,
+  "total_rejected_observations": 2
+}

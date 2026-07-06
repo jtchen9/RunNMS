@@ -1,0 +1,20 @@
+{
+  "diagnostic_name": "solver4_best_robust_before_after",
+  "base_solver": "solver3_distance_angle_yaw_baseline",
+  "robust_parameters": {
+    "rejection_score_threshold": 0.8,
+    "min_score_gap": 0.5,
+    "max_rejections": 1
+  },
+  "outputs": [
+    "summary_before_after.json",
+    "sample_before_after.csv",
+    "rejected_observations.csv",
+    "observation_residuals_pass1.csv",
+    "observation_residuals_final.csv",
+    "sample_results_pass1.csv",
+    "sample_results_final.csv",
+    "run_config.json",
+    "run_manifest.json"
+  ]
+}
