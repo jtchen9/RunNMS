@@ -26,6 +26,11 @@ class FirstScreenConfig:
 class M2DistanceScreenConfig:
     abs_m2_threshold: float = 0.95
 
+    # Safety floor added after validation Sample 10:
+    # M2 may reject only the worst candidates until this many
+    # distance components remain active.
+    min_active_distances_after_m2: int = 3
+
 
 @dataclass(frozen=True)
 class YawAdmissionConfig:
@@ -234,24 +239,89 @@ def decide_distance_use_from_m2(
     config: M2DistanceScreenConfig,
 ) -> Dict[str, Dict[str, Any]]:
     """
-    Direct M2 distance rejection. No middle holdout solver.
+    Direct M2 distance rejection with one narrow safety floor.
+
+    Rule:
+      1. Candidate if |M2| >= threshold.
+      2. Rank candidates by descending |M2|.
+      3. Reject only the worst candidates until
+         min_active_distances_after_m2 would be reached.
+
+    No middle holdout solver.
+    No change to M2 itself.
+
+    Motivation:
+      Validation Sample 10 exposed a pathological case where a split
+      residual population caused every surviving distance component to
+      exceed the M2 threshold.  Pass-1 was already useful, but removing
+      all range information allowed the final D/A/Y solve to drift.
+
+    This safeguard prevents that one failure mode while preserving the
+    original direct-M2 behavior whenever the minimum active-distance
+    floor is not binding.
     """
     out: Dict[str, Dict[str, Any]] = {}
+
+    n_total = len(component_rows)
+    min_active = max(
+        0,
+        int(config.min_active_distances_after_m2),
+    )
+
+    # Never request more retained distances than actually exist.
+    min_active = min(min_active, n_total)
+
+    max_rejections = max(0, n_total - min_active)
+
+    candidates: List[Dict[str, Any]] = []
+    for row in component_rows:
+        m2 = float(row["distance_m2_signed"])
+        if abs(m2) >= config.abs_m2_threshold:
+            candidates.append(row)
+
+    # Deterministic order:
+    #   worst |M2| first, then observation_uid for tie stability.
+    candidates.sort(
+        key=lambda row: (
+            -abs(float(row["distance_m2_signed"])),
+            str(row["observation_uid"]),
+        )
+    )
+
+    rejected_uids = {
+        str(row["observation_uid"])
+        for row in candidates[:max_rejections]
+    }
+
+    candidate_uids = {
+        str(row["observation_uid"])
+        for row in candidates
+    }
 
     for row in component_rows:
         uid = str(row["observation_uid"])
         m2 = float(row["distance_m2_signed"])
-        reject = abs(m2) >= config.abs_m2_threshold
+        m2_abs = abs(m2)
+
+        if uid in rejected_uids:
+            distance_use = False
+            reason = "rejected_m2_ranked_above_threshold"
+        elif uid in candidate_uids:
+            distance_use = True
+            reason = "kept_m2_min_active_distance_floor"
+        else:
+            distance_use = True
+            reason = "kept_m2_abs_below_threshold"
 
         out[uid] = {
-            "distance_use": not reject,
-            "distance_use_reason": (
-                "rejected_m2_abs_ge_0p95"
-                if reject
-                else "kept_m2_abs_lt_0p95"
-            ),
+            "distance_use": distance_use,
+            "distance_use_reason": reason,
             "distance_m2_signed": m2,
-            "distance_m2_abs": abs(m2),
+            "distance_m2_abs": m2_abs,
+            "m2_candidate": uid in candidate_uids,
+            "m2_ranked_rejected": uid in rejected_uids,
+            "m2_min_active_distances_after": min_active,
+            "m2_max_rejections_allowed": max_rejections,
         }
 
     return out
