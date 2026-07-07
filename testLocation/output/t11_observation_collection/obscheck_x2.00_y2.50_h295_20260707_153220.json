@@ -1,0 +1,611 @@
+{
+  "script_version": "t11_observation_only_v2_yaw_keep_flip_quant",
+  "robot_id": "twin-scout-charlie",
+  "ground_truth": {
+    "x_m": 2.0,
+    "y_m": 2.5,
+    "heading_deg": 295.0
+  },
+  "summary": {
+    "solver_used": false,
+    "tag_count": 7,
+    "front_count": 5,
+    "rear_count": 2,
+    "tag_ids": [
+      45,
+      46,
+      47,
+      48,
+      49,
+      39,
+      41
+    ],
+    "front_tag_ids": [
+      45,
+      46,
+      47,
+      48,
+      49
+    ],
+    "rear_tag_ids": [
+      39,
+      41
+    ],
+    "yaw_keep_flip_quantization": {
+      "enabled": true,
+      "diagnostic_only": true,
+      "thresholds": {
+        "front_edge_truea_deg": 30.0,
+        "rear_edge_truea_deg": 10.0,
+        "small_truey_deg": 8.0,
+        "accept_best_err_deg": 10.0,
+        "accept_separation_deg": 15.0
+      },
+      "count_total_observations": 7,
+      "count_available": 7,
+      "count_accepted": 4,
+      "count_accept_keep": 4,
+      "count_accept_flip": 0,
+      "count_by_decision": {
+        "reject_edge": 3,
+        "accept_keep_quantized": 4
+      },
+      "all_available_abs_error_deg": {
+        "before_keep_mean": 4.0330681713975025,
+        "before_keep_median": 2.4102208960431426,
+        "before_keep_p90": 16.49334249003917,
+        "after_best_sign_mean": 4.0330681713975025,
+        "after_best_sign_median": 2.4102208960431426,
+        "after_best_sign_p90": 16.49334249003917
+      },
+      "accepted_only_abs_error_deg": {
+        "before_keep_mean": 1.6204518037008029,
+        "before_keep_median": 1.4500230102152898,
+        "before_keep_p90": 3.22054108994152,
+        "after_best_sign_mean": 1.6204518037008029,
+        "after_best_sign_median": 1.4500230102152898,
+        "after_best_sign_p90": 3.22054108994152,
+        "after_quantized_mean": 0.0,
+        "after_quantized_median": 0.0,
+        "after_quantized_p90": 0.0
+      }
+    }
+  },
+  "observations": [
+    {
+      "tag_id": 45,
+      "camera_role": "front",
+      "measured": {
+        "distance_m": 2.3463,
+        "angle_deg": 34.7838,
+        "yaw_deg": 24.8982
+      },
+      "truth": {
+        "true_distance_m": 2.3756678764235466,
+        "true_angle_deg": 33.404857509960834,
+        "true_yaw_deg": 8.404857509960834,
+        "camera_x_m": 2.0232440043957385,
+        "camera_y_m": 2.4501530717129842,
+        "camera_heading_deg": 295.0,
+        "camera_forward_offset_m": 0.055,
+        "world_bearing_deg": 261.59514249003917
+      },
+      "errors": {
+        "distance_error_m": -0.029367876423546768,
+        "angle_error_deg": 1.378942490039151,
+        "yaw_error_deg": 16.49334249003917
+      },
+      "yaw_keep_flip_quantization": {
+        "yaw_quant_available": true,
+        "yaw_keep_deg": 24.898200000000003,
+        "yaw_flip_deg": -24.898200000000003,
+        "yaw_err_keep_deg": 16.49334249003917,
+        "yaw_err_flip_deg": -33.30305750996084,
+        "yaw_abs_err_keep_deg": 16.49334249003917,
+        "yaw_abs_err_flip_deg": 33.30305750996084,
+        "yaw_best_mode": "keep",
+        "yaw_best_deg": 24.898200000000003,
+        "yaw_best_err_deg": 16.49334249003917,
+        "yaw_best_abs_err_deg": 16.49334249003917,
+        "yaw_flip_gain_deg": -16.80971501992167,
+        "yaw_branch_separation_deg": 16.80971501992167,
+        "yaw_edge_flag": true,
+        "yaw_edge_limit_deg": 30.0,
+        "yaw_small_truey_flag": false,
+        "yaw_small_truey_limit_deg": 8.0,
+        "yaw_accepted": false,
+        "yaw_decision": "reject_edge",
+        "yaw_sign_corrected_deg": null,
+        "yaw_quantized_deg": null,
+        "yaw_quantized_error_deg": null
+      },
+      "tag_world": {
+        "x_m": 1.676,
+        "y_m": 0.1,
+        "yaw_deg": 90.0,
+        "facing": "up"
+      },
+      "raw_vs_calibrated": {
+        "raw_distance_m": 2.6697,
+        "cal_distance_m": 2.3463,
+        "raw_angle_deg": 29.7363,
+        "cal_angle_deg": 34.7838,
+        "raw_yaw_deg": 29.4982,
+        "cal_yaw_deg": 24.8982
+      },
+      "image_geometry": {
+        "center_x": null,
+        "center_y": null,
+        "avg_width_px": null,
+        "avg_height_px": null,
+        "width_height_ratio": null,
+        "perspective_skew_lr": null,
+        "perspective_skew_tb": null
+      },
+      "snapshot_path": "/tmp/location_front_1783409501073.jpg",
+      "source": "robot_report_apriltag_tags"
+    },
+    {
+      "tag_id": 46,
+      "camera_role": "front",
+      "measured": {
+        "distance_m": 2.4182,
+        "angle_deg": 10.2012,
+        "yaw_deg": -17.6283
+      },
+      "truth": {
+        "true_distance_m": 2.4264667240063416,
+        "true_angle_deg": 10.592241089941524,
+        "true_yaw_deg": -14.407758910058476,
+        "camera_x_m": 2.0232440043957385,
+        "camera_y_m": 2.4501530717129842,
+        "camera_heading_deg": 295.0,
+        "camera_forward_offset_m": 0.055,
+        "world_bearing_deg": 284.4077589100585
+      },
+      "errors": {
+        "distance_error_m": -0.00826672400634143,
+        "angle_error_deg": -0.391041089941524,
+        "yaw_error_deg": -3.22054108994152
+      },
+      "yaw_keep_flip_quantization": {
+        "yaw_quant_available": true,
+        "yaw_keep_deg": -17.628299999999996,
+        "yaw_flip_deg": 17.628299999999996,
+        "yaw_err_keep_deg": -3.22054108994152,
+        "yaw_err_flip_deg": 32.03605891005847,
+        "yaw_abs_err_keep_deg": 3.22054108994152,
+        "yaw_abs_err_flip_deg": 32.03605891005847,
+        "yaw_best_mode": "keep",
+        "yaw_best_deg": -17.628299999999996,
+        "yaw_best_err_deg": -3.22054108994152,
+        "yaw_best_abs_err_deg": 3.22054108994152,
+        "yaw_flip_gain_deg": -28.815517820116952,
+        "yaw_branch_separation_deg": 28.815517820116952,
+        "yaw_edge_flag": false,
+        "yaw_edge_limit_deg": 30.0,
+        "yaw_small_truey_flag": false,
+        "yaw_small_truey_limit_deg": 8.0,
+        "yaw_accepted": true,
+        "yaw_decision": "accept_keep_quantized",
+        "yaw_sign_corrected_deg": -17.628299999999996,
+        "yaw_quantized_deg": -14.407758910058476,
+        "yaw_quantized_error_deg": 0.0
+      },
+      "tag_world": {
+        "x_m": 2.627,
+        "y_m": 0.1,
+        "yaw_deg": 90.0,
+        "facing": "up"
+      },
+      "raw_vs_calibrated": {
+        "raw_distance_m": 2.491,
+        "cal_distance_m": 2.4182,
+        "raw_angle_deg": 10.2387,
+        "cal_angle_deg": 10.2012,
+        "raw_yaw_deg": -16.3987,
+        "cal_yaw_deg": -17.6283
+      },
+      "image_geometry": {
+        "center_x": null,
+        "center_y": null,
+        "avg_width_px": null,
+        "avg_height_px": null,
+        "width_height_ratio": null,
+        "perspective_skew_lr": null,
+        "perspective_skew_tb": null
+      },
+      "snapshot_path": "/tmp/location_front_1783409501073.jpg",
+      "source": "robot_report_apriltag_tags"
+    },
+    {
+      "tag_id": 47,
+      "camera_role": "front",
+      "measured": {
+        "distance_m": 2.8338,
+        "angle_deg": -9.715,
+        "yaw_deg": -33.9597
+      },
+      "truth": {
+        "true_distance_m": 2.8173351157358195,
+        "true_angle_deg": -8.469874875612561,
+        "true_yaw_deg": -33.46987487561256,
+        "camera_x_m": 2.0232440043957385,
+        "camera_y_m": 2.4501530717129842,
+        "camera_heading_deg": 295.0,
+        "camera_forward_offset_m": 0.055,
+        "world_bearing_deg": 303.46987487561256
+      },
+      "errors": {
+        "distance_error_m": 0.01646488426418058,
+        "angle_error_deg": -1.2451251243874424,
+        "yaw_error_deg": -0.48982512438743697
+      },
+      "yaw_keep_flip_quantization": {
+        "yaw_quant_available": true,
+        "yaw_keep_deg": -33.9597,
+        "yaw_flip_deg": 33.9597,
+        "yaw_err_keep_deg": -0.48982512438743697,
+        "yaw_err_flip_deg": 67.42957487561256,
+        "yaw_abs_err_keep_deg": 0.48982512438743697,
+        "yaw_abs_err_flip_deg": 67.42957487561256,
+        "yaw_best_mode": "keep",
+        "yaw_best_deg": -33.9597,
+        "yaw_best_err_deg": -0.48982512438743697,
+        "yaw_best_abs_err_deg": 0.48982512438743697,
+        "yaw_flip_gain_deg": -66.93974975122512,
+        "yaw_branch_separation_deg": 66.93974975122512,
+        "yaw_edge_flag": false,
+        "yaw_edge_limit_deg": 30.0,
+        "yaw_small_truey_flag": false,
+        "yaw_small_truey_limit_deg": 8.0,
+        "yaw_accepted": true,
+        "yaw_decision": "accept_keep_quantized",
+        "yaw_sign_corrected_deg": -33.9597,
+        "yaw_quantized_deg": -33.46987487561256,
+        "yaw_quantized_error_deg": 0.0
+      },
+      "tag_world": {
+        "x_m": 3.577,
+        "y_m": 0.1,
+        "yaw_deg": 90.0,
+        "facing": "up"
+      },
+      "raw_vs_calibrated": {
+        "raw_distance_m": 2.9226,
+        "cal_distance_m": 2.8338,
+        "raw_angle_deg": -8.6023,
+        "cal_angle_deg": -9.715,
+        "raw_yaw_deg": -34.1927,
+        "cal_yaw_deg": -33.9597
+      },
+      "image_geometry": {
+        "center_x": null,
+        "center_y": null,
+        "avg_width_px": null,
+        "avg_height_px": null,
+        "width_height_ratio": null,
+        "perspective_skew_lr": null,
+        "perspective_skew_tb": null
+      },
+      "snapshot_path": "/tmp/location_front_1783409501073.jpg",
+      "source": "robot_report_apriltag_tags"
+    },
+    {
+      "tag_id": 48,
+      "camera_role": "front",
+      "measured": {
+        "distance_m": 3.4045,
+        "angle_deg": -20.6612,
+        "yaw_deg": -49.1427
+      },
+      "truth": {
+        "true_distance_m": 3.428849655798253,
+        "true_angle_deg": -21.732479103956848,
+        "true_yaw_deg": -46.73247910395685,
+        "camera_x_m": 2.0232440043957385,
+        "camera_y_m": 2.4501530717129842,
+        "camera_heading_deg": 295.0,
+        "camera_forward_offset_m": 0.055,
+        "world_bearing_deg": 316.73247910395685
+      },
+      "errors": {
+        "distance_error_m": -0.02434965579825299,
+        "angle_error_deg": 1.0712791039568401,
+        "yaw_error_deg": -2.4102208960431426
+      },
+      "yaw_keep_flip_quantization": {
+        "yaw_quant_available": true,
+        "yaw_keep_deg": -49.14269999999999,
+        "yaw_flip_deg": 49.14269999999999,
+        "yaw_err_keep_deg": -2.4102208960431426,
+        "yaw_err_flip_deg": 95.87517910395684,
+        "yaw_abs_err_keep_deg": 2.4102208960431426,
+        "yaw_abs_err_flip_deg": 95.87517910395684,
+        "yaw_best_mode": "keep",
+        "yaw_best_deg": -49.14269999999999,
+        "yaw_best_err_deg": -2.4102208960431426,
+        "yaw_best_abs_err_deg": 2.4102208960431426,
+        "yaw_flip_gain_deg": -93.4649582079137,
+        "yaw_branch_separation_deg": 93.4649582079137,
+        "yaw_edge_flag": false,
+        "yaw_edge_limit_deg": 30.0,
+        "yaw_small_truey_flag": false,
+        "yaw_small_truey_limit_deg": 8.0,
+        "yaw_accepted": true,
+        "yaw_decision": "accept_keep_quantized",
+        "yaw_sign_corrected_deg": -49.14269999999999,
+        "yaw_quantized_deg": -46.73247910395685,
+        "yaw_quantized_error_deg": 0.0
+      },
+      "tag_world": {
+        "x_m": 4.52,
+        "y_m": 0.1,
+        "yaw_deg": 90.0,
+        "facing": "up"
+      },
+      "raw_vs_calibrated": {
+        "raw_distance_m": 3.6924,
+        "cal_distance_m": 3.4045,
+        "raw_angle_deg": -20.8778,
+        "cal_angle_deg": -20.6612,
+        "raw_yaw_deg": -50.6578,
+        "cal_yaw_deg": -49.1427
+      },
+      "image_geometry": {
+        "center_x": null,
+        "center_y": null,
+        "avg_width_px": null,
+        "avg_height_px": null,
+        "width_height_ratio": null,
+        "perspective_skew_lr": null,
+        "perspective_skew_tb": null
+      },
+      "snapshot_path": "/tmp/location_front_1783409501073.jpg",
+      "source": "robot_report_apriltag_tags"
+    },
+    {
+      "tag_id": 49,
+      "camera_role": "front",
+      "measured": {
+        "distance_m": 4.2257,
+        "angle_deg": -26.1469,
+        "yaw_deg": -54.5004
+      },
+      "truth": {
+        "true_distance_m": 4.163473457799847,
+        "true_angle_deg": -30.634551274859632,
+        "true_yaw_deg": -55.63455127485963,
+        "camera_x_m": 2.0232440043957385,
+        "camera_y_m": 2.4501530717129842,
+        "camera_heading_deg": 295.0,
+        "camera_forward_offset_m": 0.055,
+        "world_bearing_deg": 325.63455127485963
+      },
+      "errors": {
+        "distance_error_m": 0.06222654220015311,
+        "angle_error_deg": 4.487651274859644,
+        "yaw_error_deg": 1.1341512748596188
+      },
+      "yaw_keep_flip_quantization": {
+        "yaw_quant_available": true,
+        "yaw_keep_deg": -54.5004,
+        "yaw_flip_deg": 54.50040000000001,
+        "yaw_err_keep_deg": 1.1341512748596188,
+        "yaw_err_flip_deg": 110.13495127485965,
+        "yaw_abs_err_keep_deg": 1.1341512748596188,
+        "yaw_abs_err_flip_deg": 110.13495127485965,
+        "yaw_best_mode": "keep",
+        "yaw_best_deg": -54.5004,
+        "yaw_best_err_deg": 1.1341512748596188,
+        "yaw_best_abs_err_deg": 1.1341512748596188,
+        "yaw_flip_gain_deg": -109.00080000000003,
+        "yaw_branch_separation_deg": 109.00080000000003,
+        "yaw_edge_flag": true,
+        "yaw_edge_limit_deg": 30.0,
+        "yaw_small_truey_flag": false,
+        "yaw_small_truey_limit_deg": 8.0,
+        "yaw_accepted": false,
+        "yaw_decision": "reject_edge",
+        "yaw_sign_corrected_deg": null,
+        "yaw_quantized_deg": null,
+        "yaw_quantized_error_deg": null
+      },
+      "tag_world": {
+        "x_m": 5.46,
+        "y_m": 0.1,
+        "yaw_deg": 90.0,
+        "facing": "up"
+      },
+      "raw_vs_calibrated": {
+        "raw_distance_m": 4.8127,
+        "cal_distance_m": 4.2257,
+        "raw_angle_deg": -27.8256,
+        "cal_angle_deg": -26.1469,
+        "raw_yaw_deg": -56.5066,
+        "cal_yaw_deg": -54.5004
+      },
+      "image_geometry": {
+        "center_x": null,
+        "center_y": null,
+        "avg_width_px": null,
+        "avg_height_px": null,
+        "width_height_ratio": null,
+        "perspective_skew_lr": null,
+        "perspective_skew_tb": null
+      },
+      "snapshot_path": "/tmp/location_front_1783409501073.jpg",
+      "source": "robot_report_apriltag_tags"
+    },
+    {
+      "tag_id": 39,
+      "camera_role": "rear",
+      "measured": {
+        "distance_m": 2.7188,
+        "angle_deg": 21.2606,
+        "yaw_deg": -2.3419
+      },
+      "truth": {
+        "true_distance_m": 2.640815537741646,
+        "true_angle_deg": 18.53592377991947,
+        "true_yaw_deg": -6.464076220080528,
+        "camera_x_m": 1.9683036303694474,
+        "camera_y_m": 2.5679730840277486,
+        "camera_heading_deg": 115.0,
+        "camera_forward_offset_m": -0.075,
+        "world_bearing_deg": 96.46407622008054
+      },
+      "errors": {
+        "distance_error_m": 0.07798446225835409,
+        "angle_error_deg": 2.7246762200805392,
+        "yaw_error_deg": 4.122176220080519
+      },
+      "yaw_keep_flip_quantization": {
+        "yaw_quant_available": true,
+        "yaw_keep_deg": -2.3419000000000096,
+        "yaw_flip_deg": 2.3419000000000096,
+        "yaw_err_keep_deg": 4.122176220080519,
+        "yaw_err_flip_deg": 8.805976220080538,
+        "yaw_abs_err_keep_deg": 4.122176220080519,
+        "yaw_abs_err_flip_deg": 8.805976220080538,
+        "yaw_best_mode": "keep",
+        "yaw_best_deg": -2.3419000000000096,
+        "yaw_best_err_deg": 4.122176220080519,
+        "yaw_best_abs_err_deg": 4.122176220080519,
+        "yaw_flip_gain_deg": -4.683800000000019,
+        "yaw_branch_separation_deg": 4.683800000000019,
+        "yaw_edge_flag": true,
+        "yaw_edge_limit_deg": 10.0,
+        "yaw_small_truey_flag": true,
+        "yaw_small_truey_limit_deg": 8.0,
+        "yaw_accepted": false,
+        "yaw_decision": "reject_edge",
+        "yaw_sign_corrected_deg": null,
+        "yaw_quantized_deg": null,
+        "yaw_quantized_error_deg": null
+      },
+      "tag_world": {
+        "x_m": 1.671,
+        "y_m": 5.192,
+        "yaw_deg": 270.0,
+        "facing": "down"
+      },
+      "raw_vs_calibrated": {
+        "raw_distance_m": 2.2458,
+        "cal_distance_m": 2.7188,
+        "raw_angle_deg": 24.5946,
+        "cal_angle_deg": 21.2606,
+        "raw_yaw_deg": -0.0,
+        "cal_yaw_deg": -2.3419
+      },
+      "image_geometry": {
+        "center_x": null,
+        "center_y": null,
+        "avg_width_px": null,
+        "avg_height_px": null,
+        "width_height_ratio": null,
+        "perspective_skew_lr": null,
+        "perspective_skew_tb": null
+      },
+      "snapshot_path": "/tmp/location_rear_1783409506519.jpg",
+      "source": "robot_report_apriltag_tags"
+    },
+    {
+      "tag_id": 41,
+      "camera_role": "rear",
+      "measured": {
+        "distance_m": 1.3149,
+        "angle_deg": -6.5187,
+        "yaw_deg": 55.3562
+      },
+      "truth": {
+        "true_distance_m": 1.363994185385259,
+        "true_angle_deg": -9.282579895568887,
+        "true_yaw_deg": 55.71742010443111,
+        "camera_x_m": 1.9683036303694474,
+        "camera_y_m": 2.5679730840277486,
+        "camera_heading_deg": 115.0,
+        "camera_forward_offset_m": -0.075,
+        "world_bearing_deg": 124.28257989556889
+      },
+      "errors": {
+        "distance_error_m": -0.049094185385259115,
+        "angle_error_deg": 2.7638798955688912,
+        "yaw_error_deg": -0.3612201044311121
+      },
+      "yaw_keep_flip_quantization": {
+        "yaw_quant_available": true,
+        "yaw_keep_deg": 55.3562,
+        "yaw_flip_deg": -55.3562,
+        "yaw_err_keep_deg": -0.3612201044311121,
+        "yaw_err_flip_deg": -111.07362010443111,
+        "yaw_abs_err_keep_deg": 0.3612201044311121,
+        "yaw_abs_err_flip_deg": 111.07362010443111,
+        "yaw_best_mode": "keep",
+        "yaw_best_deg": 55.3562,
+        "yaw_best_err_deg": -0.3612201044311121,
+        "yaw_best_abs_err_deg": 0.3612201044311121,
+        "yaw_flip_gain_deg": -110.7124,
+        "yaw_branch_separation_deg": 110.7124,
+        "yaw_edge_flag": false,
+        "yaw_edge_limit_deg": 10.0,
+        "yaw_small_truey_flag": false,
+        "yaw_small_truey_limit_deg": 8.0,
+        "yaw_accepted": true,
+        "yaw_decision": "accept_keep_quantized",
+        "yaw_sign_corrected_deg": 55.3562,
+        "yaw_quantized_deg": 55.71742010443111,
+        "yaw_quantized_error_deg": 0.0
+      },
+      "tag_world": {
+        "x_m": 1.2,
+        "y_m": 3.695,
+        "yaw_deg": 0.0,
+        "facing": "right"
+      },
+      "raw_vs_calibrated": {
+        "raw_distance_m": 1.1063,
+        "cal_distance_m": 1.3149,
+        "raw_angle_deg": -9.4159,
+        "cal_angle_deg": -6.5187,
+        "raw_yaw_deg": 56.0911,
+        "cal_yaw_deg": 55.3562
+      },
+      "image_geometry": {
+        "center_x": null,
+        "center_y": null,
+        "avg_width_px": null,
+        "avg_height_px": null,
+        "width_height_ratio": null,
+        "perspective_skew_lr": null,
+        "perspective_skew_tb": null
+      },
+      "snapshot_path": "/tmp/location_rear_1783409506519.jpg",
+      "source": "robot_report_apriltag_tags"
+    }
+  ],
+  "assets": {
+    "status": "ok",
+    "detail": "mobility assets ready",
+    "site_name": "DemoRoom",
+    "site_dir": "sitemap\\DemoRoom",
+    "site_json_path": "sitemap\\DemoRoom\\site.json",
+    "static_map_path": "sitemap\\DemoRoom\\restriction_map.npy",
+    "tag_location_path": "sitemap\\DemoRoom\\tag_location.txt",
+    "static_map_shape": [
+      114,
+      114
+    ],
+    "world_width_m": 11.4,
+    "world_height_m": 11.4,
+    "grid_resolution_m": 0.1,
+    "tag_count": 58,
+    "tag_map_key": "nms:mobility:tag_map_json"
+  },
+  "metadata": {
+    "report_time": "2026-07-07-15:32:19",
+    "direct_command_stream_id": "1783409496385-0",
+    "trial": "T11-OBS-001",
+    "notes": "observation-only; no solver"
+  }
+}

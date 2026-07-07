@@ -1,0 +1,77 @@
+{
+  "script_version": "t11_observation_only_v2_yaw_keep_flip_quant",
+  "robot_id": "twin-scout-charlie",
+  "ground_truth": {
+    "x_m": 6.0,
+    "y_m": 1.5,
+    "heading_deg": 55.0
+  },
+  "observations": [
+    {
+      "tag_id": 32,
+      "camera_role": "front",
+      "distance_m": 4.2832,
+      "angle_deg": -7.3574,
+      "yaw_deg": 28.8138,
+      "source": "t11_observation_only"
+    },
+    {
+      "tag_id": 33,
+      "camera_role": "front",
+      "distance_m": 3.8447,
+      "angle_deg": -17.8538,
+      "yaw_deg": 22.2677,
+      "source": "t11_observation_only"
+    },
+    {
+      "tag_id": 34,
+      "camera_role": "front",
+      "distance_m": 3.6408,
+      "angle_deg": -27.0427,
+      "yaw_deg": 23.5449,
+      "source": "t11_observation_only"
+    },
+    {
+      "tag_id": 56,
+      "camera_role": "front",
+      "distance_m": 4.3493,
+      "angle_deg": 37.014,
+      "yaw_deg": -33.6471,
+      "source": "t11_observation_only"
+    },
+    {
+      "tag_id": 57,
+      "camera_role": "front",
+      "distance_m": 4.7312,
+      "angle_deg": 25.2988,
+      "yaw_deg": 30.3452,
+      "source": "t11_observation_only"
+    },
+    {
+      "tag_id": 58,
+      "camera_role": "front",
+      "distance_m": 4.7157,
+      "angle_deg": 9.1391,
+      "yaw_deg": -39.6153,
+      "source": "t11_observation_only"
+    },
+    {
+      "tag_id": 48,
+      "camera_role": "rear",
+      "distance_m": 1.9554,
+      "angle_deg": 10.0561,
+      "yaw_deg": 45.025,
+      "source": "t11_observation_only"
+    },
+    {
+      "tag_id": 49,
+      "camera_role": "rear",
+      "distance_m": 1.4239,
+      "angle_deg": -18.4648,
+      "yaw_deg": -2.3419,
+      "source": "t11_observation_only"
+    }
+  ],
+  "source_log_file": "D:\\Data\\_Action\\_RunNMS\\testLocation\\output\\t11_observation_collection\\obscheck_x6.00_y1.50_h55_20260707_160209.json",
+  "report_time": "2026-07-07-16:02:08"
+}

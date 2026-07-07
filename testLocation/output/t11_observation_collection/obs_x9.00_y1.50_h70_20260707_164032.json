@@ -10,44 +10,44 @@
     {
       "tag_id": 31,
       "camera_role": "front",
-      "distance_m": 2.6189,
-      "angle_deg": -1.1834,
-      "yaw_deg": 18.274,
+      "distance_m": 2.6282,
+      "angle_deg": -5.1499,
+      "yaw_deg": 17.6404,
       "source": "t11_observation_only"
     },
     {
       "tag_id": 32,
       "camera_role": "front",
-      "distance_m": 3.6511,
-      "angle_deg": -26.3751,
-      "yaw_deg": 24.7864,
+      "distance_m": 3.6124,
+      "angle_deg": -28.4849,
+      "yaw_deg": -32.6631,
       "source": "t11_observation_only"
     },
     {
       "tag_id": 56,
       "camera_role": "front",
-      "distance_m": 1.7634,
-      "angle_deg": 27.4199,
-      "yaw_deg": -45.9225,
+      "distance_m": 1.7637,
+      "angle_deg": 23.6892,
+      "yaw_deg": -44.0355,
       "source": "t11_observation_only"
     },
     {
       "tag_id": 57,
       "camera_role": "front",
-      "distance_m": 2.5545,
-      "angle_deg": 8.8,
-      "yaw_deg": -58.2653,
+      "distance_m": 2.5456,
+      "angle_deg": 4.5884,
+      "yaw_deg": -58.2721,
       "source": "t11_observation_only"
     },
     {
       "tag_id": 52,
       "camera_role": "rear",
-      "distance_m": 1.147,
-      "angle_deg": 1.6594,
-      "yaw_deg": 18.4581,
+      "distance_m": 1.1655,
+      "angle_deg": -4.5118,
+      "yaw_deg": 15.7543,
       "source": "t11_observation_only"
     }
   ],
-  "source_log_file": "D:\\Data\\_Action\\_RunNMS\\testLocation\\output\\t11_observation_collection\\obscheck_x9.00_y1.50_h70_20260707_165932.json",
-  "report_time": "2026-07-07-16:59:32"
+  "source_log_file": "D:\\Data\\_Action\\_RunNMS\\testLocation\\output\\t11_observation_collection\\obscheck_x9.00_y1.50_h70_20260707_164032.json",
+  "report_time": "2026-07-07-16:40:31"
 }

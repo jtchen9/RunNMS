@@ -1,0 +1,53 @@
+{
+  "script_version": "t11_observation_only_v2_yaw_keep_flip_quant",
+  "robot_id": "twin-scout-charlie",
+  "ground_truth": {
+    "x_m": 7.0,
+    "y_m": 3.5,
+    "heading_deg": 245.0
+  },
+  "observations": [
+    {
+      "tag_id": 48,
+      "camera_role": "front",
+      "distance_m": 4.1295,
+      "angle_deg": 9.1219,
+      "yaw_deg": 30.0854,
+      "source": "t11_observation_only"
+    },
+    {
+      "tag_id": 49,
+      "camera_role": "front",
+      "distance_m": 3.709,
+      "angle_deg": -3.8769,
+      "yaw_deg": 20.5853,
+      "source": "t11_observation_only"
+    },
+    {
+      "tag_id": 50,
+      "camera_role": "front",
+      "distance_m": 3.1866,
+      "angle_deg": -16.9441,
+      "yaw_deg": -13.3044,
+      "source": "t11_observation_only"
+    },
+    {
+      "tag_id": 32,
+      "camera_role": "rear",
+      "distance_m": 2.1559,
+      "angle_deg": 15.4782,
+      "yaw_deg": 36.9298,
+      "source": "t11_observation_only"
+    },
+    {
+      "tag_id": 33,
+      "camera_role": "rear",
+      "distance_m": 1.6673,
+      "angle_deg": -11.5525,
+      "yaw_deg": -2.3419,
+      "source": "t11_observation_only"
+    }
+  ],
+  "source_log_file": "D:\\Data\\_Action\\_RunNMS\\testLocation\\output\\t11_observation_collection\\obscheck_x7.00_y3.50_h245_20260707_161010.json",
+  "report_time": "2026-07-07-16:10:10"
+}
