@@ -1,0 +1,47 @@
+{
+  "raw_csv_path": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\data\\input\\all_observations_long.csv",
+  "tag_map_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\tag_location.txt",
+  "first_screen": {
+    "whole_tag_rejection": true,
+    "rules": [
+      "front AND abs(meas_angle_deg) > 30",
+      "front AND meas_distance_m > 5.5"
+    ],
+    "rear_distance_rule": null
+  },
+  "pass1_solver": {
+    "name": "solver_2_distance_angle",
+    "implementation_modified": false,
+    "config": {
+      "x_min_m": 0.0,
+      "x_max_m": 11.4,
+      "y_min_m": 0.0,
+      "y_max_m": 11.4,
+      "min_observations": 2,
+      "distance_sigma_m": 0.05,
+      "angle_sigma_deg": 3.0,
+      "distance_global_weight": 1.0,
+      "angle_global_weight": 1.0,
+      "heading_starts_deg": [
+        0.0,
+        45.0,
+        90.0,
+        135.0,
+        180.0,
+        225.0,
+        270.0,
+        315.0
+      ],
+      "max_nfev": 500,
+      "ftol": 1e-10,
+      "xtol": 1e-10,
+      "gtol": 1e-10
+    }
+  },
+  "gt_audit": {
+    "first_screen_uses_gt": false,
+    "pass1_solver_uses_gt": false,
+    "residual_calculation_uses_gt": false,
+    "gt_errors_attached_posthoc_for_forensics": true
+  }
+}

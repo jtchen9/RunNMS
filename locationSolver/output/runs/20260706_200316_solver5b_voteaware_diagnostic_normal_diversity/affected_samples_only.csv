@@ -1,0 +1,3 @@
+﻿sample_uid,observation_count,stage5_rejected_tags,stage5b_rejected_tags,stage5_position_error_m,stage5b_position_error_m,position_error_change_m,stage5_heading_abs_error_deg,stage5b_heading_abs_error_deg,stage5_yaw_accepted_count,stage5b_yaw_accepted_count
+main29_s004,6,,"47,48",0.0473744556679774,0.04138957265486146,-0.005984883013115935,,,5,3
+repeat10_s005,7,,"40,49",0.0726332751019018,0.11253315725955271,0.039899882157650904,,,6,4

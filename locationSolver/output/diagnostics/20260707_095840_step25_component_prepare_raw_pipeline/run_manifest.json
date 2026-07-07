@@ -1,0 +1,12 @@
+{
+  "run_id": "20260707_095840_step25_component_prepare_raw_pipeline",
+  "raw_observation_count": 242,
+  "first_screen_survivor_count": 206,
+  "prepared_sample_count": 39,
+  "pass1_success_count": 39,
+  "final_prepared_sample_count": 39,
+  "distance_rejected_count": 35,
+  "angle_rejected_count": 0,
+  "yaw_admitted_count": 151,
+  "output_dir": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\output\\diagnostics\\20260707_095840_step25_component_prepare_raw_pipeline"
+}

@@ -1,0 +1,126 @@
+{
+  "heldout_H_score": {
+    "metric": "heldout_H_score",
+    "valid_row_count": 195,
+    "villain_count": 12,
+    "top_fraction_coverage": {
+      "top_5pct": {
+        "top_k": 10,
+        "villains_covered": 5,
+        "villain_total": 12,
+        "coverage_rate": 0.4166666666666667
+      },
+      "top_10pct": {
+        "top_k": 20,
+        "villains_covered": 7,
+        "villain_total": 12,
+        "coverage_rate": 0.5833333333333334
+      },
+      "top_20pct": {
+        "top_k": 39,
+        "villains_covered": 8,
+        "villain_total": 12,
+        "coverage_rate": 0.6666666666666666
+      },
+      "top_30pct": {
+        "top_k": 59,
+        "villains_covered": 8,
+        "villain_total": 12,
+        "coverage_rate": 0.6666666666666666
+      }
+    }
+  },
+  "H_over_C": {
+    "metric": "H_over_C",
+    "valid_row_count": 195,
+    "villain_count": 12,
+    "top_fraction_coverage": {
+      "top_5pct": {
+        "top_k": 10,
+        "villains_covered": 1,
+        "villain_total": 12,
+        "coverage_rate": 0.08333333333333333
+      },
+      "top_10pct": {
+        "top_k": 20,
+        "villains_covered": 3,
+        "villain_total": 12,
+        "coverage_rate": 0.25
+      },
+      "top_20pct": {
+        "top_k": 39,
+        "villains_covered": 6,
+        "villain_total": 12,
+        "coverage_rate": 0.5
+      },
+      "top_30pct": {
+        "top_k": 59,
+        "villains_covered": 8,
+        "villain_total": 12,
+        "coverage_rate": 0.6666666666666666
+      }
+    }
+  },
+  "H_minus_C": {
+    "metric": "H_minus_C",
+    "valid_row_count": 195,
+    "villain_count": 12,
+    "top_fraction_coverage": {
+      "top_5pct": {
+        "top_k": 10,
+        "villains_covered": 3,
+        "villain_total": 12,
+        "coverage_rate": 0.25
+      },
+      "top_10pct": {
+        "top_k": 20,
+        "villains_covered": 6,
+        "villain_total": 12,
+        "coverage_rate": 0.5
+      },
+      "top_20pct": {
+        "top_k": 39,
+        "villains_covered": 7,
+        "villain_total": 12,
+        "coverage_rate": 0.5833333333333334
+      },
+      "top_30pct": {
+        "top_k": 59,
+        "villains_covered": 8,
+        "villain_total": 12,
+        "coverage_rate": 0.6666666666666666
+      }
+    }
+  },
+  "H_over_1plus_C": {
+    "metric": "H_over_1plus_C",
+    "valid_row_count": 195,
+    "villain_count": 12,
+    "top_fraction_coverage": {
+      "top_5pct": {
+        "top_k": 10,
+        "villains_covered": 3,
+        "villain_total": 12,
+        "coverage_rate": 0.25
+      },
+      "top_10pct": {
+        "top_k": 20,
+        "villains_covered": 6,
+        "villain_total": 12,
+        "coverage_rate": 0.5
+      },
+      "top_20pct": {
+        "top_k": 39,
+        "villains_covered": 7,
+        "villain_total": 12,
+        "coverage_rate": 0.5833333333333334
+      },
+      "top_30pct": {
+        "top_k": 59,
+        "villains_covered": 8,
+        "villain_total": 12,
+        "coverage_rate": 0.6666666666666666
+      }
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "prepared_subdir": "normal_diversity",
+  "prepared_path": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\data\\prepared\\normal_diversity\\samples.json",
+  "source_csv_path": "D:\\Data\\_Action\\_RunNMS\\locationSolver\\data\\input\\normal_diversity_v1.csv",
+  "tag_map_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\tag_location.txt",
+  "da_config": {
+    "x_min_m": 0.0,
+    "x_max_m": 11.4,
+    "y_min_m": 0.0,
+    "y_max_m": 11.4,
+    "min_observations": 2,
+    "distance_sigma_m": 0.05,
+    "angle_sigma_deg": 2.5,
+    "distance_global_weight": 1.0,
+    "angle_global_weight": 1.0,
+    "heading_starts_deg": [
+      0.0,
+      45.0,
+      90.0,
+      135.0,
+      180.0,
+      225.0,
+      270.0,
+      315.0
+    ],
+    "max_nfev": 500,
+    "ftol": 1e-10,
+    "xtol": 1e-10,
+    "gtol": 1e-10
+  },
+  "frozen_stage5_config": {
+    "distance_sigma_m": 0.05,
+    "angle_sigma_deg": 2.5,
+    "yaw_sigma_deg": 3.0,
+    "distance_global_weight": 1.0,
+    "angle_global_weight": 1.0,
+    "yaw_global_weight": 0.75,
+    "rejection_score_threshold": 0.8,
+    "min_score_gap": 0.5,
+    "max_rejections": 1,
+    "min_observations_after_rejection": 3,
+    "min_abs_predicted_yaw_deg": 8.0,
+    "yaw_accept_best_error_deg": 10.0,
+    "yaw_accept_separation_deg": 15.0
+  },
+  "phase1_observable_gates": {
+    "front_max_distance_m": 5.5,
+    "rear_max_distance_m": 3.0,
+    "front_max_abs_angle_deg": 30.0,
+    "rear_max_abs_angle_deg": 15.0
+  },
+  "definitions": {
+    "H_j": "Held-out candidate normalized D/A RMS score against pose fitted without candidate j.",
+    "C_j": "RMS of retained observations' normalized D/A scores around the same pose fitted without candidate j.",
+    "H_over_C": "H_j / C_j",
+    "H_minus_C": "H_j - C_j",
+    "H_over_1plus_C": "H_j / (1 + C_j)"
+  },
+  "gt_audit": {
+    "candidate_exclusion_solves_use_gt": false,
+    "H_j_uses_gt": false,
+    "C_j_uses_gt": false,
+    "GT_columns_attached_after_scoring": true
+  },
+  "villain_definition_for_forensic_audit_only": "|distance_error| > 0.08 m OR |angle_error| > 8 deg"
+}
