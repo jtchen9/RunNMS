@@ -1,7 +1,0 @@
-x_m,y_m,room,best_heading_deg,backup_heading_deg,best_status,backup_status,best_score,backup_score,best_front_good_count,best_rear_good_count,best_good_total_count,best_effective_good_count,best_front_weighted_count,best_rear_weighted_count,best_geometry_span_deg,best_front_good_tag_ids,best_rear_good_tag_ids,best_all_good_tag_ids,backup_front_good_tag_ids,backup_rear_good_tag_ids,backup_all_good_tag_ids
-2.0,2.0,inner,70.0,105.0,GOOD,GOOD,84.704712,56.805098,6,2,8,6.3,5.1,1.2,217.047,34 35 36 37 38 39,44 45,34 35 36 37 38 39 44 45,38 39 42,46,38 39 42 46
-2.0,4.0,inner,290.0,245.0,GOOD,GOOD,68.021283,54.426469,6,1,7,4.8,4.2,0.6,200.213,45 46 47 48 49 50,39,45 46 47 48 49 50 39,42 45 46,38,42 45 46 38
-6.0,2.0,inner,65.0,110.0,GOOD,GOOD,80.475529,77.117052,5,2,7,5.9,4.7,1.2,214.755,32 33 34 35 58,48 49,32 33 34 35 58 48 49,34 35 36 37 38 39,50,34 35 36 37 38 39 50
-6.0,4.0,inner,280.0,245.0,GOOD,GOOD,74.056183,72.670972,6,1,7,5.4,4.8,0.6,200.562,48 49 50 51 52 53,35,48 49 50 51 52 53 35,44 45 46 47 48 49 50,34,44 45 46 47 48 49 50 34
-8.0,2.0,inner,110.0,70.0,GOOD,GOOD,74.503049,66.855035,6,1,7,5.4,4.8,0.6,205.03,32 33 34 35 36 37,52,32 33 34 35 36 37 52,31 32 33 57,51,31 32 33 57 51
-8.0,4.0,inner,295.0,260.0,GOOD,GOOD,84.305547,74.468819,6,1,7,6.3,5.7,0.6,213.055,51 52 53 54 55 56,33,51 52 53 54 55 56 33,48 49 50 51 52 53,32,48 49 50 51 52 53 32
