@@ -4,30 +4,41 @@ from __future__ import annotations
 rerun_validation_log_with_current_solver.py
 
 Rerun all validation samples referenced by the long T11 text log through
-the CURRENT final solver pipeline.
+the CURRENT final solver pipeline, using the original saved Obs JSON files.
 
-IMPORTANT:
-- This does NOT reconstruct observations from printed tables.
-- It loads each original saved "Obs JSON" file referenced in the log.
-- Therefore the replay uses the actual collected observation payload,
-  including the original per-observation fields and weights.
-- It imports the same current validation companion and calls its existing
-  pipeline function, avoiding a second implementation of the solver path.
+This Step-30b version fixes the replay-schema mismatch found in Step 30.
 
-Expected project layout:
-    D:\Data\_Action\_RunNMS\
-        t11_collect_validation_final_componentwise.py
-        locationSolver\
-        measure16-0707.txt
-        testLocation\output\t11_observation_collection\obs_....json
+Actual saved Obs JSON observation shape:
+    {
+        "tag_id": 46,
+        "camera_role": "front",
+        "distance_m": 3.9903,
+        "angle_deg": 22.4755,
+        "yaw_deg": 32.9578,
+        "source": "t11_observation_only"
+    }
 
-Before running:
-1. Install the Step-29 patched:
-       locationSolver\src\common\component_preparation.py
-2. Place this script under:
-       D:\Data\_Action\_RunNMS\
-   or edit ROOT_DIR below.
-3. Open in VS Code and press Run.
+Live current-pipeline shape expected by:
+    t11_collect_validation_final_componentwise.py
+
+    {
+        "tag_id": 46,
+        "camera_role": "front",
+        "measured": {
+            "distance_m": ...,
+            "angle_deg": ...,
+            "yaw_deg": ...
+        },
+        "weights": {...},
+        "flags": {...}
+    }
+
+This script adapts only that schema.
+The solver pipeline itself is reused unchanged.
+
+Prerequisite:
+    Install Step-29 patched:
+        locationSolver/src/common/component_preparation.py
 """
 
 import csv
@@ -40,11 +51,11 @@ from typing import Any, Dict, List, Optional
 
 
 # ---------------------------------------------------------------------------
-# Paths
+# Project paths
 # ---------------------------------------------------------------------------
 
 THIS_DIR = Path(__file__).resolve().parent
-ROOT_DIR = THIS_DIR
+ROOT_DIR = Path(r"D:\Data\_Action\_RunNMS")
 LOCATION_SOLVER_DIR = ROOT_DIR / "locationSolver"
 
 for p in (ROOT_DIR, LOCATION_SOLVER_DIR):
@@ -53,11 +64,31 @@ for p in (ROOT_DIR, LOCATION_SOLVER_DIR):
 
 
 # ---------------------------------------------------------------------------
-# Reuse the exact current interactive pipeline implementation.
-# This script does not duplicate solver logic.
+# Reuse exact current validation pipeline
 # ---------------------------------------------------------------------------
 
 import t11_collect_validation_final_componentwise as current_validation
+
+# ---------------------------------------------------------------------------
+# Force the real project paths for replay.
+# The imported interactive companion may derive ROOT_DIR from its own
+# file location, which is not reliable when reused as a module here.
+# ---------------------------------------------------------------------------
+
+current_validation.TAG_MAP_PATH = (
+    ROOT_DIR
+    / "sitemap"
+    / "DemoRoom"
+    / "tag_location.txt"
+)
+
+current_validation.TAG_YAW_MAP_PATH = (
+    ROOT_DIR
+    / "locationSolver"
+    / "config"
+    / "datasets"
+    / "demoroom_tag_yaw_v1.json"
+)
 
 
 FLOAT = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
@@ -95,37 +126,86 @@ def _safe_float(v: Any) -> Optional[float]:
         return None
 
 
-def _load_observations_from_obs_json(path: Path) -> List[Dict[str, Any]]:
+def _normalize_saved_observation(
+    obs: Dict[str, Any],
+    index: int,
+) -> Dict[str, Any]:
     """
-    Accept a few likely collector JSON shapes without modifying data.
+    Convert actual saved flat Obs JSON row to live in-memory format.
+
+    Weights are intentionally left absent/empty.
+    The current pipeline's existing repair logic handles missing or
+    non-positive D/A weights for Layer-1 survivors.
     """
+    tag_id = obs.get("tag_id")
+    role = str(obs.get("camera_role") or "").strip().lower()
+
+    distance_m = _safe_float(obs.get("distance_m"))
+    angle_deg = _safe_float(obs.get("angle_deg"))
+    yaw_deg = _safe_float(obs.get("yaw_deg"))
+
+    if tag_id is None:
+        raise ValueError(f"Observation {index}: missing tag_id")
+    if role not in {"front", "rear"}:
+        raise ValueError(
+            f"Observation {index}: invalid camera_role={role!r}"
+        )
+    if distance_m is None:
+        raise ValueError(f"Observation {index}: missing distance_m")
+    if angle_deg is None:
+        raise ValueError(f"Observation {index}: missing angle_deg")
+
+    return {
+        "observation_uid": str(
+            obs.get("observation_uid")
+            or f"replay_obs_{index:03d}"
+        ),
+        "tag_id": int(tag_id),
+        "camera_role": role,
+        "measured": {
+            "distance_m": distance_m,
+            "angle_deg": angle_deg,
+            "yaw_deg": yaw_deg,
+            "yaw_sign_corrected_deg": None,
+        },
+        "weights": {},
+        "flags": {
+            "yaw_use_offline_label": False,
+        },
+        "source": obs.get("source"),
+    }
+
+
+def _load_observations_from_obs_json(
+    path: Path,
+) -> List[Dict[str, Any]]:
     with path.open("r", encoding="utf-8-sig") as f:
         payload = json.load(f)
 
-    if isinstance(payload, dict):
-        observations = payload.get("observations")
-        if isinstance(observations, list):
-            return observations
+    if not isinstance(payload, dict):
+        raise ValueError(f"Top-level JSON is not an object: {path}")
 
-        # Conservative fallbacks for a wrapped payload.
-        for key in ("payload", "report", "data"):
-            inner = payload.get(key)
-            if isinstance(inner, dict):
-                observations = inner.get("observations")
-                if isinstance(observations, list):
-                    return observations
+    observations = payload.get("observations")
+    if not isinstance(observations, list):
+        raise ValueError(
+            f"Missing top-level observations list: {path}"
+        )
 
-    raise ValueError(
-        f"Cannot find observation list in JSON: {path}"
-    )
+    normalized = [
+        _normalize_saved_observation(obs, index)
+        for index, obs in enumerate(observations, start=1)
+        if isinstance(obs, dict)
+    ]
+
+    if not normalized:
+        raise ValueError(f"No observations after normalization: {path}")
+
+    return normalized
 
 
-def parse_validation_log(log_path: Path) -> List[Dict[str, Any]]:
-    """
-    Parse sample GT + original Obs JSON path + old printed final result.
-
-    Sample boundary is anchored by GT lines.
-    """
+def parse_validation_log(
+    log_path: Path,
+) -> List[Dict[str, Any]]:
     text = log_path.read_text(
         encoding="utf-8",
         errors="replace",
@@ -204,6 +284,13 @@ def rerun_one(sample_meta: Dict[str, Any]) -> Dict[str, Any]:
         observations
     )
 
+    usable_count = len(run["sample"].get("observations") or [])
+    if observations and usable_count == 0:
+        raise RuntimeError(
+            "All observations disappeared at Layer-1 after schema "
+            "normalization. Aborting replay."
+        )
+
     pass1 = run["pass1"]
     final_result = run["final_result"]
     final_audit = run["final_audit"]
@@ -214,7 +301,7 @@ def rerun_one(sample_meta: Dict[str, Any]) -> Dict[str, Any]:
         if not bool(row.get("distance_use"))
     ]
 
-    distance_floor_kept_tags = [
+    floor_kept_tags = [
         int(row["tag_id"])
         for row in final_audit
         if str(row.get("distance_use_reason") or "")
@@ -233,9 +320,7 @@ def rerun_one(sample_meta: Dict[str, Any]) -> Dict[str, Any]:
         "rerun_failure_reason": "",
 
         "observed_count": len(observations),
-        "layer1_usable_count": len(
-            run["sample"].get("observations") or []
-        ),
+        "layer1_usable_count": usable_count,
 
         "new_pass1_x_m": None,
         "new_pass1_y_m": None,
@@ -253,11 +338,9 @@ def rerun_one(sample_meta: Dict[str, Any]) -> Dict[str, Any]:
             str(x) for x in distance_cut_tags
         ),
 
-        "distance_floor_activated": bool(
-            distance_floor_kept_tags
-        ),
+        "distance_floor_activated": bool(floor_kept_tags),
         "distance_floor_kept_tags": "|".join(
-            str(x) for x in distance_floor_kept_tags
+            str(x) for x in floor_kept_tags
         ),
 
         "new_yaw_admitted_count": len(yaw_admitted_tags),
@@ -293,7 +376,6 @@ def rerun_one(sample_meta: Dict[str, Any]) -> Dict[str, Any]:
         est_x - gt_x,
         est_y - gt_y,
     )
-
     heading_err = abs(
         _wrap_angle_deg(est_h - gt_h)
     )
@@ -362,7 +444,10 @@ CSV_FIELDS = [
 ]
 
 
-def write_csv(rows: List[Dict[str, Any]], path: Path) -> None:
+def write_csv(
+    rows: List[Dict[str, Any]],
+    path: Path,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
     with path.open(
@@ -388,7 +473,7 @@ def print_summary(rows: List[Dict[str, Any]]) -> None:
 
     print("")
     print("=" * 88)
-    print("25-SAMPLE VALIDATION RERUN — CURRENT SOLVER WITH STEP-29 M2 FLOOR")
+    print("25-SAMPLE VALIDATION RERUN — STEP-29 M2 FLOOR")
     print("=" * 88)
     print(f"Samples total        : {len(rows)}")
     print(f"Successful reruns    : {len(ok)}")
@@ -426,6 +511,7 @@ def print_summary(rows: List[Dict[str, Any]]) -> None:
         r for r in rows
         if r.get("distance_floor_activated")
     ]
+
     if not floor_rows:
         print("  none")
     else:
@@ -433,7 +519,7 @@ def print_summary(rows: List[Dict[str, Any]]) -> None:
             print(
                 f"  sample {int(r['sample_index']):02d}: "
                 f"old={r.get('old_position_error_cm')} cm, "
-                f"new={r.get('new_position_error_cm'):.2f} cm, "
+                f"new={float(r['new_position_error_cm']):.2f} cm, "
                 f"kept-by-floor=[{r.get('distance_floor_kept_tags','')}]"
             )
 
@@ -450,7 +536,7 @@ def main(
     print(f"Parsed samples: {len(samples)}")
     if len(samples) != 25:
         print(
-            "WARNING: expected 25 samples from this validation log; "
+            "WARNING: expected 25 samples; "
             f"found {len(samples)}"
         )
 
@@ -486,10 +572,6 @@ def main(
 
 
 if __name__ == "__main__":
-    # ------------------------------------------------------------------
-    # VS Code direct-run parameters
-    # ------------------------------------------------------------------
-
     VALIDATION_LOG_PATH = (
         ROOT_DIR / "measure16-0707.txt"
     )

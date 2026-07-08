@@ -11,8 +11,6 @@ from typing import Dict, Any, Optional
 import math
 import threading
 import uuid
-import re
-from pathlib import Path
 import config
 import utility
 
@@ -1019,112 +1017,10 @@ def _latest_report_location_result_ok(scanner: str) -> bool:
     return isinstance(loc, dict) and bool(loc.get("ok"))
 
 
-
-# ---------------------------------------------------------------------------
-# Passive S3 robot-location helper I/O dump
-#
-# Purpose:
-#   Capture the exact boundary around the part of S3 that will later be
-#   replaced by the new robot-location helper.
-#
-# Chosen boundary:
-#   S3 keeps report loading + AprilTag extraction.
-#   New helper will receive normalized visible-tag observations,
-#   load the tag map internally, and solve the robot pose.
-#
-# Safety:
-#   Dump failures are swallowed deliberately.  Debug I/O must never alter
-#   state-machine behavior or state transitions.
-# ---------------------------------------------------------------------------
-
-_S3_LOCATION_HELPER_DUMP_DIR = (
-    Path(__file__).resolve().parent
-    / "testLocation"
-    / "output"
-    / "s3_location_helper_dump"
-)
-
-
-def _s3_dump_location_helper_data(
-    scanner: str,
-    kind: str,
-    payload: Any,
-) -> None:
-    """
-    Passive JSON dump for interface capture.
-
-    kind:
-      - "input"  : exact visible-tag observation list handed to solver stage
-      - "output" : exact location dictionary returned to s3solving_true_location
-
-    Writes both:
-      - timestamped history file
-      - latest_<kind>_<scanner>.json
-
-    Never raises.
-    """
-    try:
-        _S3_LOCATION_HELPER_DUMP_DIR.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-        ts = str(utility.local_ts() or "")
-        safe_ts = re.sub(r"[^0-9A-Za-z_.-]+", "_", ts)
-        safe_scanner = re.sub(
-            r"[^0-9A-Za-z_.-]+",
-            "_",
-            str(scanner or "unknown"),
-        )
-        safe_kind = re.sub(
-            r"[^0-9A-Za-z_.-]+",
-            "_",
-            str(kind or "data"),
-        )
-
-        record = {
-            "dump_kind": safe_kind,
-            "scanner": str(scanner or ""),
-            "dumped_at": ts,
-            "payload": payload,
-        }
-
-        history_path = (
-            _S3_LOCATION_HELPER_DUMP_DIR
-            / f"{safe_ts}_{safe_scanner}_{safe_kind}.json"
-        )
-        latest_path = (
-            _S3_LOCATION_HELPER_DUMP_DIR
-            / f"latest_{safe_kind}_{safe_scanner}.json"
-        )
-
-        encoded = json.dumps(
-            record,
-            ensure_ascii=False,
-            indent=2,
-            default=str,
-        )
-
-        history_path.write_text(encoded, encoding="utf-8")
-        latest_path.write_text(encoded, encoding="utf-8")
-
-    except Exception:
-        # Passive diagnostics must never interfere with live mobility.
-        pass
-
-
 # ===== s3solving_true_location =====
 
 def s3solving_true_location(scanner: str) -> Dict[str, Any]:
     loc = _s3_solve_true_location(scanner)
-
-    # Passive boundary capture: exact output returned by the current
-    # location solver into the existing S3 orchestration.
-    _s3_dump_location_helper_data(
-        scanner,
-        "output",
-        loc,
-    )
 
     # ---------------------------------------------------------
     # Case A: AprilTag solve succeeds -> update true and continue to S5
@@ -1272,16 +1168,6 @@ def _s3_solve_true_location(scanner: str) -> Dict[str, Any]:
         }
 
     visible = _s3_extract_visible_tags(scanner)
-
-    # Passive boundary capture: this is the proposed future helper input.
-    # S3 still owns report loading/extraction; helper will own tag-map load
-    # and robot-pose solve.
-    _s3_dump_location_helper_data(
-        scanner,
-        "input",
-        visible,
-    )
-
     if not visible:
         return {
             "location_ok": False,
