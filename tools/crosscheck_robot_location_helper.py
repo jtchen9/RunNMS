@@ -49,7 +49,7 @@ from robot_location_helper import (
     solve_robot_location,
 )
 
-import locationSolver.output.t11_collect_validation_final_componentwise as current_validation
+import t11_collect_validation_final_componentwise as current_validation
 
 
 def wrap_angle_deg(a: float) -> float:

@@ -174,25 +174,23 @@ def rare_case_reasons_from_decision(
 ) -> list[str]:
     """
     Sparse-log triggers produced by the correction policy.
+
+    A large planned-vs-estimated position discrepancy by itself is NOT rare:
+    ordinary movement error can create it while localization is excellent.
+
+    The unusual combination worth preserving is:
+        large discrepancy + LOW location confidence
+    because S5 deliberately blocks an aggressive correction in that case.
     """
     code = str(
         decision.get("reason_code") or ""
     )
 
-    out = []
-
     if code == (
         "LARGE_ERROR_BUT_LOW_LOCATION_CONFIDENCE"
     ):
-        out.append(
+        return [
             "S5_LARGE_DISCREPANCY_BLOCKED_LOW_CONFIDENCE"
-        )
+        ]
 
-    elif code == (
-        "POSITION_ERROR_GT_8CM_AND_CONFIDENCE_SUFFICIENT"
-    ):
-        out.append(
-            "S5_POSITION_DISCREPANCY_GT_8CM"
-        )
-
-    return out
+    return []

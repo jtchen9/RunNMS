@@ -446,7 +446,15 @@ def rare_case_reasons_from_confidence(
     """
     Convert confidence evidence into sparse-log triggers.
 
-    HIGH ordinary cases produce no trigger unless a specific warning exists.
+    Important operational policy:
+      - planned-vs-estimated position discrepancy is NOT a generic
+        localization rare-case trigger, because ordinary movement error can
+        legitimately create a large discrepancy with an excellent location
+        estimate.
+      - final_normalized_rms > 1.0 IS a rare-case trigger because it reflects
+        internal D/A/Y consistency after screening and final solving.
+      - the >1.0 trigger is for logging only; it does not by itself change the
+        HIGH/MEDIUM/LOW confidence level or block S5 correction.
     """
     out: List[str] = []
 
@@ -457,6 +465,23 @@ def rare_case_reasons_from_confidence(
     if level == "LOW":
         out.append(
             "LOW_LOCATION_CONFIDENCE"
+        )
+
+    metrics = confidence.get("metrics") or {}
+
+    try:
+        final_normalized_rms = float(
+            metrics.get("final_normalized_rms")
+        )
+    except Exception:
+        final_normalized_rms = None
+
+    if (
+        final_normalized_rms is not None
+        and final_normalized_rms > 1.0
+    ):
+        out.append(
+            "ELEVATED_FINAL_NORMALIZED_RMS"
         )
 
     for code in list(
