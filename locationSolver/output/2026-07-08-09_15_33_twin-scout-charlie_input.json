@@ -1,0 +1,62 @@
+{
+  "dump_kind": "input",
+  "scanner": "twin-scout-charlie",
+  "dumped_at": "2026-07-08-09:15:33",
+  "payload": [
+    {
+      "id": 31,
+      "camera_role": "front",
+      "camera_offset_deg": 0.0,
+      "camera_forward_offset_m": 0.055,
+      "distance_m": 2.6387,
+      "angle_deg_cw": -12.9471,
+      "yaw_deg": 18.4852,
+      "bearing_robot_deg_ccw": 12.947100000000006,
+      "snapshot_path": "/tmp/location_front_1783473296257.jpg"
+    },
+    {
+      "id": 32,
+      "camera_role": "front",
+      "camera_offset_deg": 0.0,
+      "camera_forward_offset_m": 0.055,
+      "distance_m": 3.6852,
+      "angle_deg_cw": -31.7829,
+      "yaw_deg": -38.0265,
+      "bearing_robot_deg_ccw": 31.782900000000012,
+      "snapshot_path": "/tmp/location_front_1783473296257.jpg"
+    },
+    {
+      "id": 56,
+      "camera_role": "front",
+      "camera_offset_deg": 0.0,
+      "camera_forward_offset_m": 0.055,
+      "distance_m": 1.7793,
+      "angle_deg_cw": 14.0492,
+      "yaw_deg": -43.0671,
+      "bearing_robot_deg_ccw": -14.049200000000013,
+      "snapshot_path": "/tmp/location_front_1783473296257.jpg"
+    },
+    {
+      "id": 57,
+      "camera_role": "front",
+      "camera_offset_deg": 0.0,
+      "camera_forward_offset_m": 0.055,
+      "distance_m": 2.5728,
+      "angle_deg_cw": -4.296,
+      "yaw_deg": -58.8586,
+      "bearing_robot_deg_ccw": 4.295999999999992,
+      "snapshot_path": "/tmp/location_front_1783473296257.jpg"
+    },
+    {
+      "id": 52,
+      "camera_role": "rear",
+      "camera_offset_deg": 180.0,
+      "camera_forward_offset_m": -0.075,
+      "distance_m": 1.1545,
+      "angle_deg_cw": -12.9977,
+      "yaw_deg": 6.5419,
+      "bearing_robot_deg_ccw": -167.0023,
+      "snapshot_path": "/tmp/location_rear_1783473301633.jpg"
+    }
+  ]
+}

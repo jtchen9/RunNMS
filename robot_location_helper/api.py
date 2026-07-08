@@ -36,12 +36,18 @@ from .config import (
 from .final_solver import (
     solve_componentwise_distance_angle_yaw,
 )
+from .confidence import (
+    assess_location_confidence,
+    compute_final_residual_metrics,
+    rare_case_reasons_from_confidence,
+)
 from .observation import build_solver_sample
 from .pass1_solver import solve_distance_angle
 from .tag_map import (
     build_tag_xy_map,
     load_tag_pose_map,
 )
+from .geometry import wrap_angle_deg
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -324,6 +330,94 @@ def solve_robot_location(
         ) ** 0.5
     )
 
+
+    distance_candidate_count = sum(
+        1
+        for d in distance_decisions.values()
+        if bool(d.get("m2_candidate"))
+    )
+
+    distance_rejected_fraction = (
+        len(distance_rejected_tags)
+        / max(1, len(final_audit))
+    )
+
+    pass1_heading_shift_deg = abs(
+        wrap_angle_deg(
+            float(final_result.estimated_heading_deg)
+            - float(pass1.estimated_heading_deg)
+        )
+    )
+
+    residual_metrics = (
+        compute_final_residual_metrics(
+            final_sample=final_sample,
+            tag_pose_map=tag_pose_map,
+            x_m=float(final_result.estimated_x_m),
+            y_m=float(final_result.estimated_y_m),
+            heading_deg=float(
+                final_result.estimated_heading_deg
+            ),
+            solver_config=FINAL_CONFIG,
+        )
+    )
+
+    confidence_metrics = {
+        "tags_observed_count":
+            len(tags_observed),
+
+        "tags_layer1_usable_count":
+            len(tags_layer1_usable),
+
+        "active_distance_count":
+            active_distance,
+
+        "active_angle_count":
+            active_angle,
+
+        "active_yaw_count":
+            active_yaw,
+
+        "distance_m2_candidate_count":
+            distance_candidate_count,
+
+        "distance_rejected_count":
+            len(distance_rejected_tags),
+
+        "distance_rejected_fraction":
+            distance_rejected_fraction,
+
+        "distance_floor_activated":
+            bool(floor_rows),
+
+        "distance_kept_by_floor_count":
+            len(floor_rows),
+
+        "yaw_admitted_count":
+            active_yaw,
+
+        "yaw_rejected_count":
+            len(yaw_rejected_tags),
+
+        "pass1_to_final_shift_m":
+            pass1_to_final_shift_m,
+
+        "pass1_to_final_heading_shift_deg":
+            pass1_heading_shift_deg,
+
+        **residual_metrics,
+    }
+
+    confidence = assess_location_confidence(
+        metrics=confidence_metrics,
+    )
+
+    rare_case_reasons = (
+        rare_case_reasons_from_confidence(
+            confidence
+        )
+    )
+
     return {
         # Existing S3 compatibility fields.
         "location_ok": True,
@@ -398,6 +492,9 @@ def solve_robot_location(
             "pass1_to_final_shift_m":
                 pass1_to_final_shift_m,
 
+            "pass1_to_final_heading_shift_deg":
+                pass1_heading_shift_deg,
+
             "final_objective_value":
                 final_result.objective_value,
 
@@ -407,7 +504,14 @@ def solve_robot_location(
             "min_active_distances_after_m2":
                 M2_CONFIG
                 .min_active_distances_after_m2,
+
+            **residual_metrics,
         },
+
+        "confidence": confidence,
+
+        "rare_case_reasons":
+            rare_case_reasons,
 
         # Replay/debug material. S3 may ignore these.
         "component_audit": final_audit,
