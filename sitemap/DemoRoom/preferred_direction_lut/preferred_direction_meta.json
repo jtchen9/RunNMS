@@ -1,0 +1,48 @@
+{
+  "table_version": "preferred_direction_v1",
+  "rule_history": "former_rule_C",
+  "tag_map_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\tag_location.txt",
+  "tag_map_sha256": "2e75424fff2b8bd882122acf539fd6fc3b50298dbb48329d21e4a0c50cf19b28",
+  "grid_step_m": 0.1,
+  "heading_step_deg": 5.0,
+  "x_min_m": 0.0,
+  "x_max_m": 11.4,
+  "y_min_m": 0.0,
+  "y_max_m": 11.4,
+  "grid_shape_yx": [
+    115,
+    115
+  ],
+  "heading_convention": "0=+x,90=+y,deg_norm_360",
+  "status_code": {
+    "0": "BLOCKED",
+    "1": "BAD",
+    "2": "MARGINAL",
+    "3": "GOOD"
+  },
+  "rule": {
+    "front_forward_offset_m": 0.055,
+    "rear_forward_offset_m": -0.075,
+    "front_half_fov_deg": 35.0,
+    "rear_half_fov_deg": 15.0,
+    "tag_incidence_limit_deg": 60.0,
+    "front_distance_full_m": 4.0,
+    "front_distance_soft1_m": 5.0,
+    "front_distance_max_m": 6.0,
+    "front_distance_soft1_weight": 0.7,
+    "front_distance_soft2_weight": 0.4,
+    "rear_distance_full_m": 2.5,
+    "rear_distance_soft_m": 3.0,
+    "rear_distance_max_m": 3.0,
+    "rear_distance_soft_weight": 0.5,
+    "front_confidence": 1.0,
+    "rear_confidence": 0.6,
+    "min_good_effective": 3.0,
+    "min_marginal_effective": 2.0,
+    "min_good_geometry_span_deg": 45.0,
+    "score_geometry_bonus_per_deg": 0.1,
+    "inner_y_max_m": 5.2,
+    "outer_y_min_m": 5.4
+  },
+  "generated_unix_time": 1783487247.6489718
+}
