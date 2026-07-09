@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 import config
 import utility
+import m8mobility
 
 from m8mobility_state_store import (
     key_report, key_time, key_state,
@@ -492,6 +493,11 @@ def register(req: RegisterReq) -> Dict[str, Any]:
     }
 
     if not is_ap:
+        # Fresh robot registration is a scanner-level mobility reset boundary.
+        # Reuse the existing single-scanner reset path so stale timers, queues,
+        # and pre-boot pose cannot survive into the new robot session.
+        m8mobility.manual_resume(scanner)
+
         mobility_result = _process_registration_mobility(
             scanner=scanner,
             wmeta=wmeta,

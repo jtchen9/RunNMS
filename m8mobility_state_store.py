@@ -71,6 +71,23 @@ def _save_planned(scanner: str, loc: Dict[str, Any]) -> None:
         },
     )
 
+def _clear_pose(scanner: str) -> None:
+    """Invalidate both true and planned mobility pose for one scanner."""
+    utility._hset_many(
+        key_pose(scanner),
+        {
+            "true_location_json": "",
+            "planned_location_json": "",
+        },
+    )
+    utility._hset_many(
+        key_time(scanner),
+        {
+            "true_location_updated_at": "",
+            "planned_location_updated_at": "",
+        },
+    )
+
 # ===== state / stop helpers =====
 
 def _set_state(scanner: str, state: str, detail: str = "") -> None:

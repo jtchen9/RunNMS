@@ -62,16 +62,9 @@ def admin_reset(req: ResetReq) -> Dict[str, Any]:
 @router.post("/admin/_reset_mobility", tags=["9 Admin"])
 def admin_reset_mobility() -> Dict[str, Any]:
     """
-    Admin-only: reset the whole mobility subsystem without deleting command queues.
+    Admin-facing whole-lab mobility reset.
 
-    Additional admin-level cleanup is owned by m8mobility:
-    - cancel active mobility timers
-    - clear the global mobility stop latch
-    - reuse mobility_init() for the existing per-scanner reset to S0_IDLE
-
-    Does NOT delete:
-    - nms:mobility:cmd
-    - nms:cmd:<scanner>
+    Reuses the canonical mobility_init() reset implementation.
     """
-    return m8mobility.mobility_admin_reset()
+    return m8mobility.mobility_init()
 

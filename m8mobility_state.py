@@ -940,6 +940,12 @@ def _cancel_busy_retry_timer(scanner: str) -> None:
         },
     )
 
+def _cancel_runtime_timers(scanner: str) -> None:
+    """Cancel all active in-process mobility timers for one scanner."""
+    _cancel_s1_timer(scanner)
+    _cancel_busy_retry_timer(scanner)
+
+
 def _busy_retry_timeout_callback(scanner: str, token: str) -> None:
     """
     Busy-retry timer callback.

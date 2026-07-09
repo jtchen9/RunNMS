@@ -20,16 +20,69 @@ import config
 import utility
 
 from m8mobility_state_store import (
-    _clear_outgoing_command_preview, _clear_pending_sequence, _load_stop, _save_stop,
+    _clear_outgoing_command_preview, _clear_pending_sequence,  _clear_pose, _load_stop, _save_stop,
     _reset_correction_counter, _set_state, key_state, key_time, key_report, key_pose
 )
 from m8mobility_state import (
-    S0_IDLE, enter_s0idle_on_command, process_s1_event, _get_state,
-    _cancel_s1_timer, _cancel_busy_retry_timer,
+    S0_IDLE, enter_s0idle_on_command, process_s1_event, _get_state, _cancel_runtime_timers,
 )
 from m8mobility_map import _ensure_mobility_assets_ready
 
 router = APIRouter()
+
+
+def _delete_stream_rows_for_scanner(stream_key: str, scanner: str) -> int:
+    """Delete only rows owned by one scanner from a shared Redis stream."""
+    delete_ids = []
+    try:
+        rows = config.r.xrange(stream_key, min="-", max="+")
+    except Exception:
+        return 0
+
+    for xid, fields in rows:
+        if str((fields or {}).get("scanner") or "").strip() == scanner:
+            delete_ids.append(xid)
+
+    if not delete_ids:
+        return 0
+
+    try:
+        return int(config.r.xdel(stream_key, *delete_ids))
+    except Exception:
+        return 0
+
+
+def _clear_command_queues_for_scanner(scanner: str) -> Dict[str, Any]:
+    """Clear one scanner's robot queue and rows in shared mobility/traffic queues."""
+    robot_key = config.key_cmd_stream(scanner)
+    deleted_robot_queue = int(config.r.delete(robot_key))
+    deleted_mobility_rows = _delete_stream_rows_for_scanner(
+        config.KEY_MOBILITY_CMD_STREAM, scanner
+    )
+    deleted_traffic_rows = _delete_stream_rows_for_scanner(
+        config.KEY_TRAFFIC_CMD_STREAM, scanner
+    )
+
+    return {
+        "scanner": scanner,
+        "deleted_robot_queue_keys": deleted_robot_queue,
+        "deleted_mobility_rows": deleted_mobility_rows,
+        "deleted_traffic_rows": deleted_traffic_rows,
+    }
+
+
+def _clear_all_command_queues() -> Dict[str, Any]:
+    """Clear all current robot command queues plus shared mobility/traffic queues."""
+    robot_keys = list(config.r.scan_iter(match=f"{config.KEY_PREFIX}cmd:*"))
+    deleted_robot_queue_keys = int(config.r.delete(*robot_keys)) if robot_keys else 0
+    deleted_mobility_queue_keys = int(config.r.delete(config.KEY_MOBILITY_CMD_STREAM))
+    deleted_traffic_queue_keys = int(config.r.delete(config.KEY_TRAFFIC_CMD_STREAM))
+
+    return {
+        "deleted_robot_queue_keys": deleted_robot_queue_keys,
+        "deleted_mobility_queue_keys": deleted_mobility_queue_keys,
+        "deleted_traffic_queue_keys": deleted_traffic_queue_keys,
+    }
 
 # ===== B1) initialization block =====
 
@@ -55,6 +108,17 @@ def mobility_init() -> Dict[str, Any]:
     initialized = []
     skipped_not_whitelisted = []
 
+    # Whole-lab reset semantics:
+    # - cancel in-process mobility timers
+    # - clear global stop latch
+    # - clear pending command queues
+    # - invalidate old pose before returning scanners to S0_IDLE
+    for scanner in scanners:
+        _cancel_runtime_timers(scanner)
+ 
+    _save_stop(False, "")
+    queue_cleanup = _clear_all_command_queues()
+
     for scanner in scanners:
         if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
             skipped_not_whitelisted.append(scanner)
@@ -62,6 +126,7 @@ def mobility_init() -> Dict[str, Any]:
 
         _clear_pending_sequence(scanner)
         _clear_outgoing_command_preview(scanner)
+        _clear_pose(scanner)
         _reset_correction_counter(scanner)
         _set_state(scanner, S0_IDLE, "mobility_init")
 
@@ -114,57 +179,32 @@ def mobility_init() -> Dict[str, Any]:
         "initialized_count": len(initialized),
         "initialized_scanners": initialized,
         "skipped_not_whitelisted": skipped_not_whitelisted,
-    }
-
-def mobility_admin_reset() -> Dict[str, Any]:
-    """
-    Admin-level reset of the whole mobility subsystem.
-
-    Additional cleanup not covered by mobility_init():
-    - cancel active in-process S1 timers
-    - cancel active in-process busy-retry timers
-    - clear the global mobility stop latch
-
-    Then reuse mobility_init() for the existing tested per-scanner reset.
-
-    Does NOT:
-    - delete nms:mobility:cmd
-    - delete nms:cmd:<scanner>
-    - clear pose
-    - restart an experiment
-    """
-    scanners = sorted(list(config.r.smembers(config.KEY_REGISTRY)))
-
-    for scanner in scanners:
-        _cancel_s1_timer(scanner)
-        _cancel_busy_retry_timer(scanner)
-
-    _save_stop(False, "")
-
-    result = mobility_init()
-    return {
-        **result,
-        "detail": "admin mobility reset complete",
-        "cancelled_timer_scanners": scanners,
+        "queue_cleanup": queue_cleanup,
         "global_stop_cleared": True,
     }
 
-
 def manual_resume(scanner: str) -> Dict[str, Any]:
     """
-    Manual recovery from S7.
+    Manual reset/recovery for one scanner.
 
     Responsibilities:
-    - clear stop-related state for this scanner
-    - clear timers and retry markers
+    - cancel active mobility timers for this scanner
+    - clear this scanner's pending command queues
+    - invalidate old true/planned pose
+    - clear stop-related state and retry markers
     - return scanner to S0_IDLE
 
     Note:
     - does not reconstruct pose
     - does not restart experiment
+    - mobility.report.location is required before normal state-machine movement
     """
+    _cancel_runtime_timers(scanner)
+    queue_cleanup = _clear_command_queues_for_scanner(scanner)
+
     _clear_pending_sequence(scanner)
     _clear_outgoing_command_preview(scanner)
+    _clear_pose(scanner)
     _reset_correction_counter(scanner)
 
     utility._hset_many(
@@ -202,6 +242,9 @@ def manual_resume(scanner: str) -> Dict[str, Any]:
         "scanner": scanner,
         "state": S0_IDLE,
         "detail": "manual resume complete",
+        "queue_cleanup": queue_cleanup,
+        "pose_cleared": True,
+        "timers_cancelled": True,
     }
 
 

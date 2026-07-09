@@ -493,6 +493,37 @@ def _nms_lab_id() -> str:
     return str(getattr(config, "NMS_NAME", "DemoRoom") or "DemoRoom")
 
 
+def _require_empty_experiment_registry() -> Dict[str, Any]:
+    """
+    Enforce the Auto-Lab rule that at most one experiment may be registered.
+
+    A completed experiment remains in the registry until an operator explicitly
+    deletes it. Therefore any existing registry row blocks new registration.
+    """
+    try:
+        count = int(config.r.xlen(config.KEY_EXPERIMENT_REGISTRY))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unable to inspect experiment registry: {type(e).__name__}: {e}",
+        )
+
+    if count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "An experiment is already registered. "
+                "Delete the existing experiment before registering a new one."
+            ),
+        )
+
+    return {
+        "status": "ok",
+        "registered_experiment_count": 0,
+        "detail": "experiment registry empty; registration allowed",
+    }
+
+
 def _session_id_to_redis(session_id: Optional[str]) -> str:
     """Redis stream fields are strings; absent session_id is stored as empty string."""
     return (session_id or "").strip()
@@ -1591,6 +1622,49 @@ def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
 #     )
 
 
+@router.post("/cmd/_delete_experiment", tags=["4 Commands (Polling)"])
+def cmd_delete_experiment() -> Dict[str, Any]:
+    """
+    Delete the currently registered experiment and clear all pending command queues.
+
+    One-experiment lifecycle rule:
+    - at most one experiment may be registered
+    - completed experiment remains registered until explicitly deleted
+    - deletion clears pending robot/mobility/traffic commands
+    - collected results/history, scanner registry, whitelist, AP metadata,
+      robot pose, and mobility runtime state are preserved
+    """
+    try:
+        registered_count = int(config.r.xlen(config.KEY_EXPERIMENT_REGISTRY))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unable to inspect experiment registry: {type(e).__name__}: {e}",
+        )
+
+    try:
+        deleted_registry_keys = int(config.r.delete(config.KEY_EXPERIMENT_REGISTRY))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unable to delete experiment registry: {type(e).__name__}: {e}",
+        )
+
+    queue_cleanup = m8mobility._clear_all_command_queues()
+
+    return {
+        "status": "ok",
+        "detail": "registered experiment deleted and pending command queues cleared",
+        "registered_experiment_count_before": registered_count,
+        "deleted_registry_keys": deleted_registry_keys,
+        "queue_cleanup": queue_cleanup,
+        "results_history_preserved": True,
+        "pose_preserved": True,
+        "mobility_state_preserved": True,
+        "time": utility.local_ts(),
+    }
+
+
 @router.post("/cmd/_load_csv_file", tags=["4 Commands (Polling)"])
 async def cmd_load_csv_file(
     t0: str = Form(..., description=f"Absolute local time, format: {config.TIME_FMT}"),
@@ -1746,40 +1820,12 @@ async def cmd_load_csv_file(
     last_execute_at = analysis["last_execute_at"]
     accepted_items = analysis["accepted_items"]
 
-    conflict_check = _check_experiment_time_conflict_or_raise(
-        lab_id=_nms_lab_id(),
-        start_at_dt=t0_dt,
-        end_at_dt=last_execute_at,
-        guard_sec=3600,
-    )
+    single_experiment_gate = _require_empty_experiment_registry()
 
-    replacement = _replace_existing_experiment_if_requested(
-        replace_existing=replace_existing,
-        lab_id=_nms_lab_id(),
-        experiment_id=experiment_id,
-        scanners=analysis["scanners"],
-        mobility_scanners=analysis["mobility_scanners"],
-    )
-
-    mobility_start = {
-        "status": "skipped",
-        "mobility_scanners": [],
-        "resumed_scanners": [],
-        "detail": "no mobility rows",
-    }
-
-    if analysis["mobility_scanners"]:
-        resumed = []
-        for scanner in sorted(set(analysis["mobility_scanners"])):
-            m8mobility.manual_resume(scanner)
-            resumed.append(scanner)
-
-        mobility_start = {
-            "status": "ok",
-            "mobility_scanners": sorted(set(analysis["mobility_scanners"])),
-            "resumed_scanners": resumed,
-            "detail": "reused m8mobility.manual_resume before enqueueing mobility CSV rows",
-        }
+    # Registration occurs immediately before experiment execution.
+    # Reset the whole lab once, after all CSV validation/gating succeeds and
+    # before any accepted experiment command is enqueued.
+    mobility_reset = m8mobility.mobility_init()
 
     for item in accepted_items:
         _enqueue_script_or_csv_item(
@@ -1804,9 +1850,8 @@ async def cmd_load_csv_file(
 
     preflight = {
         **analysis["preflight"],
-        "conflict_check": conflict_check,
-        "replacement": replacement,
-        "mobility_start": mobility_start,
+        "single_experiment_gate": single_experiment_gate,
+        "mobility_reset": mobility_reset,
     }
 
     return {
