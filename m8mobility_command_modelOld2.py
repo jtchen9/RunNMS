@@ -3,7 +3,6 @@ Mobility subsystem command model helpers.
 
 Division rule:
 - Mobility command normalization, command derivation, and propagation-by-last-command live here.
-- Planned pose remains script intent; command derivation may use a separate temporary motion target.
 - No state transitions here.
 """
 from typing import Dict, Any
@@ -101,36 +100,14 @@ def _build_turn_move_turn_forward_command(true_loc: Dict[str, Any], planned_loc:
         "post_angle": post_angle,
     }
 
-def _build_command_from_true_to_target(
-    scanner: str,
-    target_loc: Dict[str, Any],
-) -> tuple[str, Dict[str, Any], Dict[str, Any]]:
-    """
-    Build the next physical command from current true pose to a temporary
-    motion target.
-
-    Important:
-    - target_loc is NOT persisted here.
-    - planned_location_json remains script intent and is updated only in S0.
-    - target_loc may use planned x/y with a preferred heading from the LUT.
-
-    New orientation policy:
-    - pure-turn commands are not generated.
-    - if positional movement is negligible, return no command.
-    """
+def _build_command_from_true_to_planned(scanner: str) -> tuple[str, Dict[str, Any], Dict[str, Any]]:
     true_loc = _load_true(scanner)
     planned = _load_planned(scanner)
 
-    debug: Dict[str, Any] = {}
-
-    if not _is_loc_ok(target_loc):
-        raise ValueError("target location invalid")
+    debug = {}
 
     if not _is_loc_ok(true_loc):
-        # Preserve historical fallback only when true pose does not exist.
-        # The fallback start remains the stored planned pose.
-        if not _is_loc_ok(planned):
-            raise ValueError("missing true and planned start pose")
+        # fallback: use planned as start (ONLY if true does not exist at all)
         start = planned
         debug["start_source"] = "planned"
     else:
@@ -141,66 +118,43 @@ def _build_command_from_true_to_target(
     ty = float(start["y_m"])
     th = float(start["heading_deg"])
 
-    px = float(target_loc["x_m"])
-    py = float(target_loc["y_m"])
-    ph = float(target_loc["heading_deg"])
+    px = float(planned["x_m"])
+    py = float(planned["y_m"])
+    ph = float(planned["heading_deg"])
 
     dx = px - tx
     dy = py - ty
+
     distance = math.hypot(dx, dy)
 
+    travel_heading = utility._deg_norm_360(math.degrees(math.atan2(dy, dx)))
+    pre_angle = utility._wrap_angle_deg(travel_heading - th)
+    post_angle = utility._wrap_angle_deg(ph - travel_heading)
+
     debug.update({
-        "target_x_m": px,
-        "target_y_m": py,
-        "target_heading_deg": ph,
         "distance": distance,
-    })
-
-    # No pure-turn command under the preferred-orientation policy.
-    DIST_EPS = 0.05
-    if distance < DIST_EPS:
-        debug["reason"] = "negligible positional movement; pure turn suppressed"
-        return "", {}, debug
-
-    travel_heading = utility._deg_norm_360(
-        math.degrees(math.atan2(dy, dx))
-    )
-    pre_angle = utility._wrap_angle_deg(
-        travel_heading - th
-    )
-    post_angle = utility._wrap_angle_deg(
-        ph - travel_heading
-    )
-
-    debug.update({
-        "travel_heading_deg": travel_heading,
         "pre_angle": pre_angle,
         "post_angle": post_angle,
     })
 
+    # thresholds
+    DIST_EPS = 0.05
+    ANG_EPS = 1.0
+
+    # Case 1: pure turn
+    if distance < DIST_EPS:
+        if abs(post_angle) < ANG_EPS:
+            # dummy command
+            return "mobility.turn", {"angle_deg": 0.0}, debug
+
+        return "mobility.turn", {"angle_deg": float(utility._wrap_angle_deg(ph - th))}, debug
+
+    # Case 2: normal motion
     return "mobility.turn_move_turn.forward", {
         "pre_angle": float(pre_angle),
         "distance_m": float(distance),
         "post_angle": float(post_angle),
     }, debug
-
-
-def _build_command_from_true_to_planned(
-    scanner: str,
-) -> tuple[str, Dict[str, Any], Dict[str, Any]]:
-    """
-    Backward-compatible wrapper.
-
-    New state-machine code should normally use
-    _build_command_from_true_to_target() with planned x/y plus preferred
-    heading.  This wrapper preserves older callers without changing
-    planned-location semantics.
-    """
-    planned = _load_planned(scanner)
-    return _build_command_from_true_to_target(
-        scanner,
-        planned,
-    )
 
 
 # ===== motion-path validation helper =====

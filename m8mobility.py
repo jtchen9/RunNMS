@@ -20,10 +20,13 @@ import config
 import utility
 
 from m8mobility_state_store import (
-    _clear_outgoing_command_preview, _clear_pending_sequence, _load_stop, 
+    _clear_outgoing_command_preview, _clear_pending_sequence, _load_stop, _save_stop,
     _reset_correction_counter, _set_state, key_state, key_time, key_report, key_pose
 )
-from m8mobility_state import S0_IDLE, enter_s0idle_on_command, process_s1_event, _get_state
+from m8mobility_state import (
+    S0_IDLE, enter_s0idle_on_command, process_s1_event, _get_state,
+    _cancel_s1_timer, _cancel_busy_retry_timer,
+)
 from m8mobility_map import _ensure_mobility_assets_ready
 
 router = APIRouter()
@@ -112,6 +115,40 @@ def mobility_init() -> Dict[str, Any]:
         "initialized_scanners": initialized,
         "skipped_not_whitelisted": skipped_not_whitelisted,
     }
+
+def mobility_admin_reset() -> Dict[str, Any]:
+    """
+    Admin-level reset of the whole mobility subsystem.
+
+    Additional cleanup not covered by mobility_init():
+    - cancel active in-process S1 timers
+    - cancel active in-process busy-retry timers
+    - clear the global mobility stop latch
+
+    Then reuse mobility_init() for the existing tested per-scanner reset.
+
+    Does NOT:
+    - delete nms:mobility:cmd
+    - delete nms:cmd:<scanner>
+    - clear pose
+    - restart an experiment
+    """
+    scanners = sorted(list(config.r.smembers(config.KEY_REGISTRY)))
+
+    for scanner in scanners:
+        _cancel_s1_timer(scanner)
+        _cancel_busy_retry_timer(scanner)
+
+    _save_stop(False, "")
+
+    result = mobility_init()
+    return {
+        **result,
+        "detail": "admin mobility reset complete",
+        "cancelled_timer_scanners": scanners,
+        "global_stop_cleared": True,
+    }
+
 
 def manual_resume(scanner: str) -> Dict[str, Any]:
     """

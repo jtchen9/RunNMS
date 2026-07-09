@@ -16,17 +16,7 @@ from pathlib import Path
 import config
 import utility
 
-from preferred_direction_helper import (
-    lookup_preferred_direction,
-)
-from robot_location_helper import (
-    RareCaseLogger,
-    collect_rare_case_reasons,
-    decide_followup_correction,
-    solve_robot_location,
-)
-
-from m8mobility_command_model import _angle_diff_deg, _build_command_from_true_to_target, _circular_mean_deg
+from m8mobility_command_model import _angle_diff_deg, _build_command_from_true_to_planned, _circular_mean_deg
 from m8mobility_state_store import ( 
     _reset_correction_counter, key_state, key_time, key_pose, _set_state, _load_stop, _save_stop, _is_anchor_fresh, 
     _load_report_json, _save_policy_time, _save_pending_sequence, _clear_pending_sequence, 
@@ -37,7 +27,7 @@ from m8mobility_state_store import (
 from m8mobility_pose import ( 
     _apply_mobility_command_to_pose, _pose_error 
 ) 
-from m8mobility_map import _is_path_clear, _is_path_clear_debug 
+from m8mobility_map import _is_path_clear, _is_path_clear_debug, _load_tag_map 
 from m8mobility_command_model import ( 
     _normalize_mobility_command, 
     _build_turn_only_command, _build_turn_move_turn_forward_command, 
@@ -102,50 +92,12 @@ _S1_TIMERS: Dict[str, threading.Timer] = {}
 MOBILITY_BUSY_RETRY_WAIT_SEC = 5
 _BUSY_RETRY_TIMERS: Dict[str, threading.Timer] = {}
 
-_RARE_LOCATION_LOGGER = RareCaseLogger(
-    Path(__file__).resolve().parent
-    / "locationSolver"
-    / "output"
-    / "rare_location_cases.jsonl"
-)
-
 
 # ===== helper =====
 
 def _get_state(scanner: str) -> str:
     s = utility._hget(key_state(scanner), "state", S0_IDLE)
     return s if s in VALID_STATES else S0_IDLE
-
-
-def _log_location_rare_case_noexcept(
-    scanner: str,
-    *,
-    reasons: list[str],
-    location_result: Dict[str, Any],
-    correction_decision: Optional[Dict[str, Any]] = None,
-    context: Optional[Dict[str, Any]] = None,
-) -> None:
-    """
-    Explicit sparse logging only.
-
-    Logging failure must never change mobility behavior.
-    """
-    if not reasons:
-        return
-
-    try:
-        visible = _s3_extract_visible_tags(scanner)
-
-        _RARE_LOCATION_LOGGER.log_if_rare(
-            reasons=reasons,
-            scanner=scanner,
-            visible_tags=visible,
-            location_result=location_result,
-            correction_decision=correction_decision,
-            context=context or {},
-        )
-    except Exception:
-        pass
 
 
 # ===== s0idle =====
@@ -1306,41 +1258,63 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
     return run_state_machine(scanner)
 
 def _s3_solve_true_location(scanner: str) -> Dict[str, Any]:
-    """
-    S3 keeps report loading and normalized AprilTag extraction.
-    robot_location_helper owns tag-map loading and pose solving.
-    """
+    tag_map = _load_tag_map()
+    tags_map = tag_map.get("tags") or {}
+    if not isinstance(tags_map, dict):
+        return {
+            "location_ok": False,
+            "detail": "invalid tag_map_json",
+            "tags_used": [],
+            "tag_count": 0,
+            "solver_stage": "single_tag",
+            "source": "apriltag",
+            "updated_at": utility.local_ts(),
+        }
+
     visible = _s3_extract_visible_tags(scanner)
 
-    # Keep passive boundary capture for early live verification.
+    # Passive boundary capture: this is the proposed future helper input.
+    # S3 still owns report loading/extraction; helper will own tag-map load
+    # and robot-pose solve.
     _s3_dump_location_helper_data(
         scanner,
         "input",
         visible,
     )
 
-    loc = solve_robot_location(
-        visible_tags=visible,
-        sample_uid=f"s3_{scanner}_{utility.local_ts()}",
-    )
+    if not visible:
+        return {
+            "location_ok": False,
+            "detail": "no usable apriltag observation in latest report",
+            "tags_used": [],
+            "tag_count": 0,
+            "solver_stage": "single_tag",
+            "source": "apriltag",
+            "updated_at": utility.local_ts(),
+        }
 
-    # Sparse localization rare-case logging is explicit and side-effect isolated.
-    rare_reasons = list(
-        loc.get("rare_case_reasons")
-        or []
-    )
+    cands = []
+    for obs in visible:
+        tag_world = tags_map.get(str(obs["id"]))
+        if not isinstance(tag_world, dict):
+            continue
+        try:
+            cands.append(_s3_solve_single_tag(obs, tag_world))
+        except Exception:
+            continue
 
-    _log_location_rare_case_noexcept(
-        scanner,
-        reasons=rare_reasons,
-        location_result=loc,
-        context={
-            "state": S3_SOLVING_TRUE_LOCATION,
-            "phase": "after_location_solve",
-        },
-    )
+    if not cands:
+        return {
+            "location_ok": False,
+            "detail": "visible tags not found in tag_map_json",
+            "tags_used": [],
+            "tag_count": 0,
+            "solver_stage": "single_tag",
+            "source": "apriltag",
+            "updated_at": utility.local_ts(),
+        }
 
-    return loc
+    return _s3_fuse_candidates(cands)
 
 def _s3_extract_visible_tags(scanner: str) -> list[Dict[str, Any]]:
     """
@@ -1968,243 +1942,86 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
 
     err = _pose_error(true_loc, planned_loc)
     dpos = float(err["dpos_m"])
-
-    correction_count = _get_correction_counter(scanner)
-    initial_script_execution = (
-        correction_count < 0
-    )
+    dhead = abs(float(err["dhead_deg"]))
 
     # ---------------------------------------------------------
-    # Entry mode A: initial S5 from S0 after a new script command.
-    #
-    # The script has already updated planned_location_json once in S0.
-    # Confidence must NOT block the initial requested movement.
-    #
-    # Pure turns are obsolete under the preferred-orientation policy.
-    # Therefore only positional movement matters here.
+    # If already close enough, no command is needed.
     # ---------------------------------------------------------
-    if initial_script_execution:
-        if dpos <= config.MOBILITY_POS_IGNORE_THRESH_M:
-            _clear_pending_sequence(scanner)
-            _clear_outgoing_command_preview(scanner)
-
-            return {
-                "status": "ok",
-                "transition_to": S0_IDLE,
-                "detail": (
-                    "initial script command has negligible positional movement; "
-                    "pure turn suppressed"
-                ),
-                "error": err,
-                "pending_sequence": [],
-            }
+    if dpos <= config.MOBILITY_POS_IGNORE_THRESH_M and dhead <= config.MOBILITY_ANGLE_IGNORE_THRESH_DEG:
+        _clear_pending_sequence(scanner)
+        _clear_outgoing_command_preview(scanner)
+        return {
+            "status": "ok",
+            "transition_to": S0_IDLE,
+            "detail": "already close enough to planned location",
+            "error": err,
+            "pending_sequence": [],
+        }
 
     # ---------------------------------------------------------
-    # Entry mode B: S5 after S3 following an executed mobility command.
-    #
-    # Here the operational GO/NO_GO helper owns the correction decision.
-    # Heading difference is intentionally ignored by that helper.
-    # ---------------------------------------------------------
-    else:
-        decision = decide_followup_correction(
-            location_result=true_loc,
-            planned_location=planned_loc,
-        )
-
-        combined_reasons = collect_rare_case_reasons(
-            location_result=true_loc,
-            correction_decision=decision,
-        )
-
-        # S3 already logged localization-origin rare reasons.
-        # Log here only when the S5 decision contributes a new reason,
-        # currently the unusual:
-        #   large discrepancy + LOW confidence -> correction blocked
-        location_reasons = set(
-            true_loc.get("rare_case_reasons")
-            or []
-        )
-        decision_only_reasons = [
-            r
-            for r in combined_reasons
-            if r not in location_reasons
-        ]
-
-        _log_location_rare_case_noexcept(
-            scanner,
-            reasons=decision_only_reasons,
-            location_result=true_loc,
-            correction_decision=decision,
-            context={
-                "state": S5_COMPUTING_CORRECTION,
-                "phase": "followup_decision",
-                "correction_attempt_count":
-                    correction_count,
-            },
-        )
-
-        if not bool(decision.get("go")):
-            _clear_pending_sequence(scanner)
-            _clear_outgoing_command_preview(scanner)
-
-            return {
-                "status": "ok",
-                "transition_to": S0_IDLE,
-                "detail": (
-                    "follow-up correction NO_GO: "
-                    f"{decision.get('reason_code', '')}"
-                ),
-                "error": err,
-                "pending_sequence": [],
-                "correction_detail": {
-                    "followup_decision": decision,
-                },
-            }
-
-    # ---------------------------------------------------------
-    # Correction / command issue limit.
-    #
+    # Correction / command issue limit
     # Counter semantics:
     #   -1 : no command issued yet
     #    0 : initial modified command already issued
     #   >=1: true correction attempts
     # ---------------------------------------------------------
-    if correction_count >= CORRECTION_ATTEMPT_LIMIT:
+    if _get_correction_counter(scanner) >= CORRECTION_ATTEMPT_LIMIT:
         _clear_pending_sequence(scanner)
         _clear_outgoing_command_preview(scanner)
-
         return {
             "status": "ok",
             "transition_to": S0_IDLE,
-            "detail": (
-                f"correction limit reached "
-                f"({CORRECTION_ATTEMPT_LIMIT})"
-            ),
+            "detail": f"correction limit reached ({CORRECTION_ATTEMPT_LIMIT})",
             "error": err,
             "pending_sequence": [],
         }
 
     # ---------------------------------------------------------
-    # Build a temporary motion target:
-    #
-    #   x,y       = stored planned script target
-    #   heading   = preferred direction from LUT at that x,y
-    #
-    # planned_location_json is NOT modified here.
+    # Build next command from current true -> current planned
     # ---------------------------------------------------------
-    preferred = lookup_preferred_direction(
-        x_m=float(planned_loc["x_m"]),
-        y_m=float(planned_loc["y_m"]),
-    )
-
-    if not bool(preferred.get("ok")):
-        _clear_pending_sequence(scanner)
-        _clear_outgoing_command_preview(scanner)
-
-        return {
-            "status": "stop",
-            "transition_to": S7_STOPPED,
-            "detail": (
-                "preferred-direction lookup failed in s5: "
-                f"{preferred.get('detail', '')}"
-            ),
-            "error": {
-                **err,
-                "preferred_direction": preferred,
-            },
-            "pending_sequence": [],
-        }
-
-    motion_target = {
-        "location_ok": True,
-        "x_m": float(planned_loc["x_m"]),
-        "y_m": float(planned_loc["y_m"]),
-        "heading_deg": utility._deg_norm_360(
-            float(preferred["preferred_heading_deg"])
-        ),
-    }
-
-    action, args, correction_detail = (
-        _build_command_from_true_to_target(
-            scanner,
-            motion_target,
-        )
-    )
-
-    correction_detail = {
-        **(correction_detail or {}),
-        "initial_script_execution":
-            initial_script_execution,
-        "correction_attempt_count":
-            correction_count,
-        "planned_location_unchanged":
-            planned_loc,
-        "motion_target":
-            motion_target,
-        "preferred_direction":
-            preferred,
-    }
+    action, args, correction_detail = _build_command_from_true_to_planned(scanner)
 
     if not action:
         _clear_pending_sequence(scanner)
         _clear_outgoing_command_preview(scanner)
-
         return {
             "status": "ok",
             "transition_to": S0_IDLE,
-            "detail": "no positional command needed",
+            "detail": "no command needed",
             "error": err,
             "pending_sequence": [],
-            "correction_detail":
-                correction_detail,
+            "correction_detail": correction_detail,
         }
 
     # ---------------------------------------------------------
-    # Path safety remains in S5.
-    # The preferred heading changes only the final turn; path endpoints remain
-    # current true x/y -> planned x/y.
+    # Path safety belongs to S5 now.
+    # Only commands with translational movement need path check.
+    # Turn-only and location-report commands do not sweep a path.
     # ---------------------------------------------------------
-    action, args = _normalize_mobility_command(
-        action,
-        args,
-    )
+    action, args = _normalize_mobility_command(action, args)
 
     needs_path_check = (
         action in (
             "mobility.turn_move_turn.forward",
             "mobility.turn_move_turn.backward",
         )
-        and abs(
-            float(
-                args.get("distance_m", 0.0)
-                or 0.0
-            )
-        ) > 1e-9
+        and abs(float(args.get("distance_m", 0.0) or 0.0)) > 1e-9
     )
 
     if needs_path_check:
         tx = float(true_loc["x_m"])
         ty = float(true_loc["y_m"])
 
-        simulated_target = (
-            _apply_mobility_command_to_pose(
-                true_loc,
-                action,
-                args,
-            )
-        )
-
+        simulated_target = _apply_mobility_command_to_pose(true_loc, action, args)
         px = float(simulated_target["x_m"])
         py = float(simulated_target["y_m"])
 
-        path_ok, blocked, path_debug = (
-            _is_path_clear_debug(
-                tx,
-                ty,
-                px,
-                py,
-                exclude_scanner=scanner,
-            )
+        path_ok, blocked, path_debug = _is_path_clear_debug(
+            tx,
+            ty,
+            px,
+            py,
+            exclude_scanner=scanner,
         )
 
         if not path_ok:
@@ -2215,53 +2032,33 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
                 "status": "stop",
                 "transition_to": S7_STOPPED,
                 "detail": (
-                    f"path unsafe in s5, "
-                    f"blocked={len(blocked)}, "
-                    f"start_grid="
-                    f"{path_debug.get('start', {}).get('grid')}, "
-                    f"target_grid="
-                    f"{path_debug.get('target', {}).get('grid')}, "
-                    f"blocked_cells="
-                    f"{path_debug.get('blocked_cells', [])[:10]}"
+                    f"path unsafe in s5, blocked={len(blocked)}, "
+                    f"start_grid={path_debug.get('start', {}).get('grid')}, "
+                    f"target_grid={path_debug.get('target', {}).get('grid')}, "
+                    f"blocked_cells={path_debug.get('blocked_cells', [])[:10]}"
                 ),
                 "error": {
                     **err,
                     "path_debug": path_debug,
                     "action": action,
                     "args": args,
-                    "simulated_target":
-                        simulated_target,
+                    "simulated_target": simulated_target,
                 },
                 "pending_sequence": [],
-                "correction_detail":
-                    correction_detail,
+                "correction_detail": correction_detail,
             }
 
-    seq = [
-        {
-            "action": action,
-            "args": args,
-        }
-    ]
+    seq = [{"action": action, "args": args}]
 
-    _save_pending_sequence(
-        scanner,
-        seq,
-        "computed_by_s5",
-    )
+    _save_pending_sequence(scanner, seq, "computed_by_s5")
 
     return {
         "status": "ok",
         "transition_to": S6_ISSUING_CORRECTION,
-        "detail": (
-            f"computed command {action} "
-            f"toward preferred heading "
-            f"{motion_target['heading_deg']:.1f} deg"
-        ),
+        "detail": f"computed command {action}",
         "error": err,
         "pending_sequence": seq,
-        "correction_detail":
-            correction_detail,
+        "correction_detail": correction_detail,
     }
 
 

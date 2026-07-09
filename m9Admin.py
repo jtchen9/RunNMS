@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 import config
 import utility
+import m8mobility
 
 router = APIRouter()
 
@@ -57,3 +58,20 @@ def admin_reset(req: ResetReq) -> Dict[str, Any]:
         "bundle_dir_untouched": str(config.BUNDLE_DIR),
         "note": "Redis keys removed; bundle ZIP files on disk are untouched.",
     }
+
+@router.post("/admin/_reset_mobility", tags=["9 Admin"])
+def admin_reset_mobility() -> Dict[str, Any]:
+    """
+    Admin-only: reset the whole mobility subsystem without deleting command queues.
+
+    Additional admin-level cleanup is owned by m8mobility:
+    - cancel active mobility timers
+    - clear the global mobility stop latch
+    - reuse mobility_init() for the existing per-scanner reset to S0_IDLE
+
+    Does NOT delete:
+    - nms:mobility:cmd
+    - nms:cmd:<scanner>
+    """
+    return m8mobility.mobility_admin_reset()
+
