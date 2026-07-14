@@ -636,6 +636,31 @@ def _is_mobility_csv_row(row: Dict[str, Any]) -> bool:
     return (row.get("category") or "").strip().lower() == "mobility"
 
 
+def _validate_experiment_mobility_action(action: str) -> None:
+    action_n = str(action or "").strip()
+
+    blocked = set(getattr(config, "MOBILITY_SCRIPT_BLOCKED_ACTIONS", set()))
+    if action_n in blocked:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{action_n} is not allowed in experiment CSV scripts. "
+                "Use mobility.move or site-level mobility macros; final robot "
+                "orientation is controlled by the NMS mobility policy."
+            ),
+        )
+
+    allowed = set(getattr(config, "MOBILITY_SCRIPT_ALLOWED_ACTIONS", set()))
+    if allowed and action_n not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"unsupported mobility action in experiment CSV: {action_n}. "
+                f"Allowed mobility actions: {sorted(allowed)}"
+            ),
+        )
+
+
 def _analyze_csv_rows_for_experiment(
     rows: List[Dict[str, Any]],
     *,
@@ -714,6 +739,7 @@ def _analyze_csv_rows_for_experiment(
             last_execute_at = execute_at_dt
 
         if category.strip().lower() == "mobility":
+            _validate_experiment_mobility_action(action)
             mobility_scanners.add(scanner)
             old = scanner_first.get(scanner)
             if old is None or offset < int(old.get("offset", 0)):

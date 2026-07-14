@@ -184,6 +184,51 @@ MOBILITY_ANGLE_CORRECT_MAX_DEG = 20.0
 MOBILITY_MAX_PRECOMP_DISTANCE_DELTA_M = 0.30
 MOBILITY_TAG_STALE_TIMEOUT_SEC = 120
 
+# -------- Site-specific mobility macros --------
+# NMS-only macro actions. These are never sent directly to robots.
+MOBILITY_MACRO_IN2OUT = "mobility.in2out"
+MOBILITY_MACRO_OUT2IN = "mobility.out2in"
+MOBILITY_SITE_MACRO_ACTIONS = {
+    MOBILITY_MACRO_IN2OUT,
+    MOBILITY_MACRO_OUT2IN,
+}
+
+# DemoRoom bump-crossing macro v1:
+# - admission uses true pose within start_tolerance_m of configured start point
+# - planned endpoint is computed from configured start point + crossing vector
+# - robot receives mobility.turn_move_turn.forward with move_profile=bump_crossing
+MOBILITY_BUMP_CROSSING_MACROS = {
+    MOBILITY_MACRO_IN2OUT: {
+        "start_x_m": 9.00,
+        "start_y_m": 4.75,
+        "start_tolerance_m": 0.20,
+        "target_heading_deg": 90.0,
+        "distance_m": 1.0,
+        "move_profile": "bump_crossing",
+    },
+    MOBILITY_MACRO_OUT2IN: {
+        "start_x_m": 9.00,
+        "start_y_m": 5.75,
+        "start_tolerance_m": 0.20,
+        "target_heading_deg": 270.0,
+        "distance_m": 1.0,
+        "move_profile": "bump_crossing",
+    },
+}
+
+# Script-level policy. Low-level turn-move-turn commands may still be generated
+# internally by NMS, but experiment CSVs should use semantic movement/macro actions.
+MOBILITY_SCRIPT_BLOCKED_ACTIONS = {
+    "mobility.turn",
+}
+MOBILITY_SCRIPT_ALLOWED_ACTIONS = {
+    "mobility.report.location",
+    "mobility.move",
+    MOBILITY_MACRO_IN2OUT,
+    MOBILITY_MACRO_OUT2IN,
+}
+
+
 # Dynamic obstacle freshness.
 # A powered-off / put-away robot must not remain as a phantom blocker.
 MOBILITY_DYNAMIC_OBSTACLE_TTL_SEC = 120

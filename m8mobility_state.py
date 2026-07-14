@@ -153,6 +153,144 @@ def _log_location_rare_case_noexcept(
 def s0idle(scanner: str) -> Dict[str, Any]:
     return {"state": S0_IDLE, "status": "ok", "detail": "idle"}
 
+
+def _is_site_macro_action(action: str) -> bool:
+    return str(action or "").strip() in set(
+        getattr(config, "MOBILITY_SITE_MACRO_ACTIONS", set())
+    )
+
+
+def _shortest_signed_angle_deg(target_deg: float, current_deg: float) -> float:
+    return float(_angle_diff_deg(float(target_deg), float(current_deg)))
+
+
+def _s0_stop_for_macro(scanner: str, detail: str) -> Dict[str, Any]:
+    _clear_pending_sequence(scanner)
+    _clear_outgoing_command_preview(scanner)
+    _set_state(scanner, S7_STOPPED, detail)
+    return s7stopped(scanner)
+
+
+def _s0_enter_site_macro(scanner: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    action = str(action or "").strip()
+    macro_cfg = dict(
+        getattr(config, "MOBILITY_BUMP_CROSSING_MACROS", {}).get(action) or {}
+    )
+
+    if not macro_cfg:
+        return _s0_stop_for_macro(
+            scanner,
+            f"unknown site mobility macro: {action}",
+        )
+
+    if args not in ({}, None):
+        return _s0_stop_for_macro(
+            scanner,
+            f"{action} does not accept arguments in macro v1",
+        )
+
+    true_loc = _load_true(scanner)
+    if not _is_loc_ok(true_loc):
+        return _s0_stop_for_macro(
+            scanner,
+            f"{action} requires valid true location",
+        )
+
+    try:
+        start_x = float(macro_cfg["start_x_m"])
+        start_y = float(macro_cfg["start_y_m"])
+        tol_m = float(macro_cfg.get("start_tolerance_m", 0.20))
+        target_heading = utility._deg_norm_360(
+            float(macro_cfg["target_heading_deg"])
+        )
+        distance_m = float(macro_cfg.get("distance_m", 1.0))
+        move_profile = str(macro_cfg.get("move_profile", "bump_crossing") or "bump_crossing")
+    except Exception as e:
+        return _s0_stop_for_macro(
+            scanner,
+            f"{action} macro config invalid: {type(e).__name__}: {e}",
+        )
+
+    tx = float(true_loc["x_m"])
+    ty = float(true_loc["y_m"])
+    th = utility._deg_norm_360(float(true_loc["heading_deg"]))
+    start_error_m = float(math.hypot(tx - start_x, ty - start_y))
+
+    if start_error_m > tol_m:
+        return _s0_stop_for_macro(
+            scanner,
+            (
+                f"{action} start check failed: true pose "
+                f"({tx:.3f}, {ty:.3f}) is {start_error_m:.3f} m from "
+                f"required start ({start_x:.3f}, {start_y:.3f}); "
+                f"tolerance={tol_m:.3f} m"
+            ),
+        )
+
+    heading_rad = math.radians(target_heading)
+    planned = {
+        "location_ok": True,
+        "x_m": float(start_x + distance_m * math.cos(heading_rad)),
+        "y_m": float(start_y + distance_m * math.sin(heading_rad)),
+        "heading_deg": target_heading,
+    }
+
+    pre_angle = _shortest_signed_angle_deg(target_heading, th)
+    low_action = "mobility.turn_move_turn.forward"
+    low_args = {
+        "distance_m": distance_m,
+        "pre_angle": pre_angle,
+        "post_angle": 0.0,
+        "move_profile": move_profile,
+    }
+
+    path_ok, blocked, path_debug = _is_path_clear_debug(
+        tx,
+        ty,
+        float(planned["x_m"]),
+        float(planned["y_m"]),
+        exclude_scanner=scanner,
+    )
+
+    if not path_ok:
+        return _s0_stop_for_macro(
+            scanner,
+            (
+                f"{action} path unsafe, blocked={len(blocked)}, "
+                f"start_grid={path_debug.get('start', {}).get('grid')}, "
+                f"target_grid={path_debug.get('target', {}).get('grid')}"
+            ),
+        )
+
+    _save_planned(scanner, planned)
+    _reset_correction_counter(scanner)
+    _clear_outgoing_command_preview(scanner)
+    _save_pending_sequence(
+        scanner,
+        [
+            {
+                "action": low_action,
+                "args": low_args,
+            }
+        ],
+        f"site_macro:{action}",
+    )
+
+    utility._hset_many(
+        key_state(scanner),
+        {
+            "last_site_macro_action": action,
+            "last_site_macro_translated_action": low_action,
+            "last_site_macro_translated_args_json": low_args,
+            "last_site_macro_start_error_m": f"{start_error_m:.6f}",
+            "last_site_macro_planned_json": planned,
+        },
+    )
+
+    _set_state(scanner, S6_ISSUING_CORRECTION, f"site macro accepted: {action}")
+    return run_state_machine(scanner)
+
+
 def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """
     Entry point for script command (mobility category).
@@ -173,12 +311,20 @@ def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> 
 
     try:
         # ---------------------------------------------------------
-        # Step 1: normalize script command
+        # Step 1: NMS-only site macro commands
+        # ---------------------------------------------------------
+        # These commands are script-level semantics. They are translated inside
+        # S0 and are never sent directly to robot command streams.
+        if _is_site_macro_action(action):
+            return _s0_enter_site_macro(scanner, action, args)
+
+        # ---------------------------------------------------------
+        # Step 2: normalize regular mobility command
         # ---------------------------------------------------------
         action, args = _normalize_mobility_command(action, args)
 
         # ---------------------------------------------------------
-        # Step 2A: location precondition command
+        # Step 3A: location precondition command
         # ---------------------------------------------------------
         # mobility.report.location is not a movement intent.  It must not
         # advance planned_location_json and it must not trigger S5 correction

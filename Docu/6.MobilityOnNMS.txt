@@ -7,7 +7,8 @@ Args:
 {
   "distance_m": 1.2,
   "pre_angle": 30,
-  "post_angle": -20
+  "post_angle": -20,
+  "move_profile": "bump_crossing" (optional)
 }
 
 B. mobility.turn_move_turn.backward
@@ -15,7 +16,8 @@ Args:
 {
   "distance_m": 1.2,
   "pre_angle": 30,
-  "post_angle": -20
+  "post_angle": -20,
+  "move_profile": "bump_crossing" (optional)
 }
 
 C. mobility.turn
