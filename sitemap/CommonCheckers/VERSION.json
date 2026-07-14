@@ -1,0 +1,7 @@
+{
+  "package_name": "AutoLab CommonCheckers",
+  "common_checkers_version": "2026.07.14.1",
+  "schema_version": 1,
+  "status": "development",
+  "description": "Common offline script checker core shared by all AutoLab sites."
+}

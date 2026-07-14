@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-14-04:27:07",
+  "common_checkers_version": "2026.07.14.1",
+  "file_hashes": {
+    "VERSION.json": "sha256:eb84cb7730b2af1db20eef078f76a776ae59d826129f793890a9f360774b8f45",
+    "checker/__init__.py": "sha256:43121429b65178e30bba21014c210c4aa4c3450004510d795776b4d6ed392f8e",
+    "checker/checker_runner.py": "sha256:23c686d30e622caee9a1c97d6089f38152c50860b69ddf46689caaae55e6b741",
+    "checker/initialization_rules.py": "sha256:09dc91d12e5b0751ee132e22d02ea8674cc541092c57c485fdd399626225769c",
+    "checker/script_model.py": "sha256:8d0e982f36a7b2d276551cba8420d9986b613e91979c22a53056532049cb349b",
+    "checker/timeline_rules.py": "sha256:5ada764c27978963389448a27dfef366c4cc0ad046e559548bd55215f7da1319",
+    "checker/validation_report.py": "sha256:57ec0b60307e3241756d2ba6bce3d1e33e51652eb889f10b1986171a9fcb4bfc",
+    "checker/vocabulary_rules.py": "sha256:9c286ef091103dbfaaf788e7be62cbbdd07580cede9d7d9b5d0a5b0d09eeb715",
+    "config/script_policy.json": "sha256:c314ecd3ca3a34eab777e191d4357463bebc76835bedf7467aefe349ef763a02",
+    "docs/README_for_script_writers.md": "sha256:51d97b0f4241a95a062c8a0bb08078e22f5ccf8870ed5d0265452344a83b8063"
+  }
+}

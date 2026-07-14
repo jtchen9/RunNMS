@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-14-04:27:07",
+  "site_authoring_version": "2026.07.14.1",
+  "file_hashes": {
+    "VERSION.json": "sha256:f22a50f7bd2909a76395085247bd9a1b2e7fcfa218637c2a44846781957a9ab7",
+    "config/bump_guard_zones.json": "sha256:803740c56a5e3079cc07bb61090b4c2d9ca6b8db4000c948c30228cee8dceb5f",
+    "config/macro_policy.json": "sha256:0312853b060d90a1e034e7d5f03d75fb1378081316a042f29e072864da0d0c08",
+    "config/safety_policy.json": "sha256:1cf626ee17ff78b1701112ec9b00a4e8b2d464f4d9e8ec573664efca307b91d5",
+    "examples/demo_initial_poses.csv": "sha256:946690c2dc54adf8a814176af364b748f200a797d0cd8ca57ad8727971c7cc38",
+    "examples/demo_invalid_timing.csv": "sha256:90ebb649b804f4a4c774a38e08f64fd9f0683057cdaf8bd78968231079683102",
+    "examples/demo_safe_script.csv": "sha256:6a8bdb26c4e6f545f74f849659722b4b10f53f63c742d040b11b0124ecd57df7"
+  }
+}

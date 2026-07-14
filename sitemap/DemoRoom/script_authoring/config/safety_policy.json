@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "site_id": "DemoRoom",
+  "default_initial_position_tolerance_m": 0.20,
+  "default_initial_heading_tolerance_deg": 10.0,
+  "robot_safety_radius_m": 0.25
+}
