@@ -167,8 +167,123 @@ def _shortest_signed_angle_deg(target_deg: float, current_deg: float) -> float:
 def _s0_stop_for_macro(scanner: str, detail: str) -> Dict[str, Any]:
     _clear_pending_sequence(scanner)
     _clear_outgoing_command_preview(scanner)
+    _clear_s0_command_arg_overrides(scanner)
     _set_state(scanner, S7_STOPPED, detail)
     return s7stopped(scanner)
+
+
+def _s0_stop_for_bad_script_action(scanner: str, action: str) -> Dict[str, Any]:
+    _clear_pending_sequence(scanner)
+    _clear_outgoing_command_preview(scanner)
+    _clear_s0_command_arg_overrides(scanner)
+    _set_state(
+        scanner,
+        S7_STOPPED,
+        f"{action} is not accepted as a script-level S0 command",
+    )
+    return s7stopped(scanner)
+
+
+def _is_script_blocked_action(action: str) -> bool:
+    return str(action or "").strip() in set(
+        getattr(config, "MOBILITY_SCRIPT_BLOCKED_ACTIONS", set())
+    )
+
+
+def _save_s0_command_arg_overrides(
+    scanner: str,
+    overrides: Dict[str, Any],
+    reason: str = "",
+) -> None:
+    utility._hset_many(
+        key_state(scanner),
+        {
+            "s0_command_arg_overrides_json": overrides or {},
+            "s0_command_arg_overrides_reason": reason,
+        },
+    )
+
+
+def _load_s0_command_arg_overrides(scanner: str) -> Dict[str, Any]:
+    raw = utility._hget(key_state(scanner), "s0_command_arg_overrides_json", "")
+    if not str(raw or "").strip():
+        return {}
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _clear_s0_command_arg_overrides(scanner: str) -> None:
+    utility._hset_many(
+        key_state(scanner),
+        {
+            "s0_command_arg_overrides_json": "",
+            "s0_command_arg_overrides_reason": "",
+        },
+    )
+
+
+def _s0_move_planned_pose_from_args(
+    scanner: str,
+    args: Dict[str, Any],
+) -> Dict[str, Any]:
+    planned = _s0_init_planned(scanner)
+    args = args or {}
+
+    has_abs_xy = (
+        ("x_m" in args and "y_m" in args)
+        or ("target_x_m" in args and "target_y_m" in args)
+    )
+    has_delta_xy = "dx_m" in args or "dy_m" in args
+
+    if has_abs_xy and has_delta_xy:
+        raise ValueError("mobility.move must use either absolute x/y or dx/dy, not both")
+
+    if has_abs_xy:
+        x_m = float(args.get("x_m", args.get("target_x_m")))
+        y_m = float(args.get("y_m", args.get("target_y_m")))
+    elif has_delta_xy:
+        x_m = float(planned["x_m"]) + float(args.get("dx_m", 0.0) or 0.0)
+        y_m = float(planned["y_m"]) + float(args.get("dy_m", 0.0) or 0.0)
+    else:
+        raise ValueError("mobility.move requires x_m/y_m, target_x_m/target_y_m, or dx_m/dy_m")
+
+    heading_deg = (
+        utility._deg_norm_360(float(args["heading_deg"]))
+        if "heading_deg" in args
+        else utility._deg_norm_360(float(planned["heading_deg"]))
+    )
+
+    return {
+        "location_ok": True,
+        "x_m": x_m,
+        "y_m": y_m,
+        "heading_deg": heading_deg,
+    }
+
+
+def _s0_enter_mobility_move(scanner: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    new_planned = _s0_move_planned_pose_from_args(scanner, args)
+    _save_planned(scanner, new_planned)
+
+    _clear_pending_sequence(scanner)
+    _clear_outgoing_command_preview(scanner)
+    _clear_s0_command_arg_overrides(scanner)
+    _reset_correction_counter(scanner)
+
+    utility._hset_many(
+        key_state(scanner),
+        {
+            "last_script_mobility_action": "mobility.move",
+            "last_script_mobility_args_json": args or {},
+            "last_script_mobility_planned_json": new_planned,
+        },
+    )
+
+    _set_state(scanner, S5_COMPUTING_CORRECTION, "script accepted: mobility.move")
+    return run_state_machine(scanner)
 
 
 def _s0_enter_site_macro(scanner: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -213,7 +328,6 @@ def _s0_enter_site_macro(scanner: str, action: str, args: Dict[str, Any]) -> Dic
 
     tx = float(true_loc["x_m"])
     ty = float(true_loc["y_m"])
-    th = utility._deg_norm_360(float(true_loc["heading_deg"]))
     start_error_m = float(math.hypot(tx - start_x, ty - start_y))
 
     if start_error_m > tol_m:
@@ -227,6 +341,9 @@ def _s0_enter_site_macro(scanner: str, action: str, args: Dict[str, Any]) -> Dic
             ),
         )
 
+    # Macro uses script-owned geometry. Planned pose is computed from the
+    # configured start point, not from noisy true pose. S5 remains responsible
+    # for computing the low-level robot turn-move-turn command.
     heading_rad = math.radians(target_heading)
     planned = {
         "location_ok": True,
@@ -235,61 +352,28 @@ def _s0_enter_site_macro(scanner: str, action: str, args: Dict[str, Any]) -> Dic
         "heading_deg": target_heading,
     }
 
-    pre_angle = _shortest_signed_angle_deg(target_heading, th)
-    low_action = "mobility.turn_move_turn.forward"
-    low_args = {
-        "distance_m": distance_m,
-        "pre_angle": pre_angle,
-        "post_angle": 0.0,
-        "move_profile": move_profile,
-    }
-
-    path_ok, blocked, path_debug = _is_path_clear_debug(
-        tx,
-        ty,
-        float(planned["x_m"]),
-        float(planned["y_m"]),
-        exclude_scanner=scanner,
-    )
-
-    if not path_ok:
-        return _s0_stop_for_macro(
-            scanner,
-            (
-                f"{action} path unsafe, blocked={len(blocked)}, "
-                f"start_grid={path_debug.get('start', {}).get('grid')}, "
-                f"target_grid={path_debug.get('target', {}).get('grid')}"
-            ),
-        )
-
     _save_planned(scanner, planned)
-    _reset_correction_counter(scanner)
+    _clear_pending_sequence(scanner)
     _clear_outgoing_command_preview(scanner)
-    _save_pending_sequence(
+    _save_s0_command_arg_overrides(
         scanner,
-        [
-            {
-                "action": low_action,
-                "args": low_args,
-            }
-        ],
+        {"move_profile": move_profile},
         f"site_macro:{action}",
     )
+    _reset_correction_counter(scanner)
 
     utility._hset_many(
         key_state(scanner),
         {
             "last_site_macro_action": action,
-            "last_site_macro_translated_action": low_action,
-            "last_site_macro_translated_args_json": low_args,
             "last_site_macro_start_error_m": f"{start_error_m:.6f}",
             "last_site_macro_planned_json": planned,
+            "last_site_macro_move_profile": move_profile,
         },
     )
 
-    _set_state(scanner, S6_ISSUING_CORRECTION, f"site macro accepted: {action}")
+    _set_state(scanner, S5_COMPUTING_CORRECTION, f"site macro accepted: {action}")
     return run_state_machine(scanner)
-
 
 def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -310,16 +394,33 @@ def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> 
         return s7stopped(scanner)
 
     try:
+        action = str(action or "").strip()
+        args = args or {}
+
         # ---------------------------------------------------------
-        # Step 1: NMS-only site macro commands
+        # Step 1: block low-level / obsolete script commands
         # ---------------------------------------------------------
-        # These commands are script-level semantics. They are translated inside
-        # S0 and are never sent directly to robot command streams.
+        if _is_script_blocked_action(action):
+            return _s0_stop_for_bad_script_action(scanner, action)
+
+        # ---------------------------------------------------------
+        # Step 2: NMS-only site macro commands
+        # ---------------------------------------------------------
+        # These commands are script-level semantics. S0 validates/adapts them
+        # into planned_location_json, then S5 computes the low-level command.
         if _is_site_macro_action(action):
             return _s0_enter_site_macro(scanner, action, args)
 
         # ---------------------------------------------------------
-        # Step 2: normalize regular mobility command
+        # Step 3: semantic script move command
+        # ---------------------------------------------------------
+        # mobility.move updates planned x/y. If heading_deg is omitted, planned
+        # heading is preserved. S5 computes the robot-understandable command.
+        if action == "mobility.move":
+            return _s0_enter_mobility_move(scanner, args)
+
+        # ---------------------------------------------------------
+        # Step 4: normalize remaining regular mobility command
         # ---------------------------------------------------------
         action, args = _normalize_mobility_command(action, args)
 
@@ -333,6 +434,7 @@ def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> 
         if action == "mobility.report.location":
             _clear_pending_sequence(scanner)
             _clear_outgoing_command_preview(scanner)
+            _clear_s0_command_arg_overrides(scanner)
             _reset_correction_counter(scanner)
 
             _save_outgoing_command_preview(
@@ -367,6 +469,7 @@ def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> 
         planned = _s0_init_planned(scanner)
         new_planned = _apply_mobility_command_to_pose(planned, action, args)
         _save_planned(scanner, new_planned)
+        _clear_s0_command_arg_overrides(scanner)
 
         # ---------------------------------------------------------
         # Step 3: reset correction counter for this new script command
@@ -2456,6 +2559,7 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
     if not seq:
         _clear_pending_sequence(scanner)
         _clear_outgoing_command_preview(scanner)
+        _clear_s0_command_arg_overrides(scanner)
         return {
             "status": "ok",
             "transition_to": S0_IDLE,
@@ -2469,6 +2573,7 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
     if not isinstance(cmd, dict):
         _clear_pending_sequence(scanner)
         _clear_outgoing_command_preview(scanner)
+        _clear_s0_command_arg_overrides(scanner)
         return {
             "status": "stop",
             "transition_to": S7_STOPPED,
@@ -2484,11 +2589,22 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
     except Exception as e:
         _clear_pending_sequence(scanner)
         _clear_outgoing_command_preview(scanner)
+        _clear_s0_command_arg_overrides(scanner)
         return {
             "status": "stop",
             "transition_to": S7_STOPPED,
             "detail": f"invalid command at s6: {e}",
             "issued_command": {},
+        }
+
+    # S0 may attach optional robot-side execution hints, such as
+    # move_profile=bump_crossing for site macros. S5 still owns command
+    # computation; this only appends safe optional args immediately before issue.
+    overrides = _load_s0_command_arg_overrides(scanner)
+    if overrides:
+        args = {
+            **args,
+            **overrides,
         }
 
     # ---------------------------------------------------------
@@ -2516,6 +2632,7 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
         action=action,
         args=args,
     )
+    _clear_s0_command_arg_overrides(scanner)
 
     # ---------------------------------------------------------
     # Increment command/correction counter

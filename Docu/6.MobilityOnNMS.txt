@@ -1,4 +1,36 @@
-🔧 1. Updated Mobility Commands (Replace Section 4)
+🔧 0. Scripted Mobility Commands
+mobility.move
+Args:
+{
+  "x_m": 9.0,
+  "y_m": 5.75
+}
+
+or 
+
+{
+  "target_x_m": 9.0,
+  "target_y_m": 5.75
+}
+
+or (relative) 
+
+{
+  "dx_m": 0.0,
+  "dy_m": 1.0
+}
+
+===
+Heading behavior:
+
+if heading_deg is omitted:
+    keep current planned heading
+
+if heading_deg is provided:
+    update planned heading
+    
+
+🔧 1. Low Level Mobility Commands (Passed to the robots)
 Mobility commands (current version)
     Only the following commands are supported now:
 

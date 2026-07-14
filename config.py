@@ -220,6 +220,8 @@ MOBILITY_BUMP_CROSSING_MACROS = {
 # internally by NMS, but experiment CSVs should use semantic movement/macro actions.
 MOBILITY_SCRIPT_BLOCKED_ACTIONS = {
     "mobility.turn",
+    "mobility.turn_move_turn.forward",
+    "mobility.turn_move_turn.backward",
 }
 MOBILITY_SCRIPT_ALLOWED_ACTIONS = {
     "mobility.report.location",
