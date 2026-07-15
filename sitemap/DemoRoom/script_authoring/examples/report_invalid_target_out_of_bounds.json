@@ -8,7 +8,7 @@
   "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_initial_poses.csv",
   "script_hash": "sha256:e5db94073cc5b414d0242d9af2cfb1520e9cd7975cd8eba5439ce67749d6e64a",
   "initial_poses_hash": "sha256:62e8ccb632f7ab3eef0211e459e5e0326d176a1ed136a79ad8186ef766407db5",
-  "error_count": 2,
+  "error_count": 5,
   "warning_count": 0,
   "issues": [
     {
@@ -19,6 +19,48 @@
       "action": "mobility.move",
       "message": "target pose (10.800, 4.400) is outside workspace bounds x=[1.2, 10.2], y=[0.0, 11.4].",
       "suggestion": "Choose a target inside the site workspace bounds."
+    },
+    {
+      "level": "error",
+      "code": "ROBOT_PATH_TOO_CLOSE",
+      "message": "path passes 0.000 m from robot twin-scout-bravo; required clearance is 0.250 m.",
+      "suggestion": "Choose a path/target that keeps more clearance from the other robot.",
+      "other_scanner": "twin-scout-bravo",
+      "distance_m": 0.0,
+      "safety_radius_m": 0.25,
+      "other_x_m": 2.4,
+      "other_y_m": 4.4,
+      "row_number": 3,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.move"
+    },
+    {
+      "level": "error",
+      "code": "ROBOT_PATH_TOO_CLOSE",
+      "message": "path passes 0.000 m from robot twin-scout-charlie; required clearance is 0.250 m.",
+      "suggestion": "Choose a path/target that keeps more clearance from the other robot.",
+      "other_scanner": "twin-scout-charlie",
+      "distance_m": 0.0,
+      "safety_radius_m": 0.25,
+      "other_x_m": 3.0,
+      "other_y_m": 4.4,
+      "row_number": 3,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.move"
+    },
+    {
+      "level": "error",
+      "code": "ROBOT_PATH_TOO_CLOSE",
+      "message": "path passes 0.000 m from robot twin-scout-delta; required clearance is 0.250 m.",
+      "suggestion": "Choose a path/target that keeps more clearance from the other robot.",
+      "other_scanner": "twin-scout-delta",
+      "distance_m": 4.440892098500626e-16,
+      "safety_radius_m": 0.25,
+      "other_x_m": 3.6,
+      "other_y_m": 4.4,
+      "row_number": 3,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.move"
     },
     {
       "level": "error",

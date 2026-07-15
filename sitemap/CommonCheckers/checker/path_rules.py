@@ -13,6 +13,7 @@ from .static_safety_core import (
     macro_planned_pose,
     point_in_bounds,
     point_restriction_status,
+    robot_clearance_issues,
 )
 
 
@@ -88,6 +89,7 @@ def check_planned_path_rules(
     macro_policy: Dict[str, Any],
     zone_policy: Dict[str, Any],
     path_policy: Dict[str, Any],
+    safety_policy: Dict[str, Any],
     site_dir: str | Path,
 ) -> List[Dict[str, Any]]:
     """
@@ -104,6 +106,7 @@ def check_planned_path_rules(
     - normal mobility.move paths do not enter/cross charging-zone circles
     - normal mobility.move paths do not cross restriction_map.npy restricted cells
     - macro path legality is handled by P4 and macro endpoints are checked here
+    - moving robot path/target keeps clearance from other planned robot poses
     """
     issues: List[Dict[str, Any]] = []
 
@@ -111,6 +114,7 @@ def check_planned_path_rules(
     bounds = path_policy.get("workspace_bounds", {}) or {}
     charging_zones = list(zone_policy.get("charging_zones", []) or [])
     macro_cfg_by_action = dict(macro_policy.get("macros", {}) or {})
+    robot_safety_radius_m = float(safety_policy.get("robot_safety_radius_m", 0.25))
     restriction_map, restriction_cfg, map_issues = load_restriction_map_from_policy(site_dir, path_policy)
     issues.extend(map_issues)
 
@@ -193,6 +197,20 @@ def check_planned_path_rules(
             ):
                 issues.append(_with_row_context(issue, row))
 
+            other_robot_poses = {
+                other_scanner: pose
+                for other_scanner, pose in planned_by_scanner.items()
+                if other_scanner != row.scanner
+            }
+            for issue in robot_clearance_issues(
+                moving_scanner=row.scanner,
+                start_pose=current,
+                end_pose=new_pose,
+                other_robot_poses=other_robot_poses,
+                safety_radius_m=robot_safety_radius_m,
+            ):
+                issues.append(_with_row_context(issue, row))
+
             restricted_sample = first_restricted_sample_on_segment(
                 restriction_map,
                 restriction_cfg,
@@ -222,6 +240,20 @@ def check_planned_path_rules(
                     bounds=bounds,
                     endpoint_name="macro target",
                 )
+
+            other_robot_poses = {
+                other_scanner: pose
+                for other_scanner, pose in planned_by_scanner.items()
+                if other_scanner != row.scanner
+            }
+            for issue in robot_clearance_issues(
+                moving_scanner=row.scanner,
+                start_pose=current,
+                end_pose=new_pose,
+                other_robot_poses=other_robot_poses,
+                safety_radius_m=robot_safety_radius_m,
+            ):
+                issues.append(_with_row_context(issue, row))
 
             planned_by_scanner[row.scanner] = new_pose
             continue

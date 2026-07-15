@@ -88,6 +88,7 @@ def validate_script(
     bump_guard_zones = _load_json(site_dir / "script_authoring" / "config" / "bump_guard_zones.json")
     zone_policy = _load_json(site_dir / "script_authoring" / "config" / "zone_policy.json")
     path_policy = _load_json(site_dir / "script_authoring" / "config" / "path_policy.json")
+    safety_policy = _load_json(site_dir / "script_authoring" / "config" / "safety_policy.json")
 
     rows, issues = load_script_csv(script_csv)
     initial_poses, pose_issues = load_initial_poses_csv(initial_poses_csv)
@@ -103,7 +104,7 @@ def validate_script(
     if not _has_initial_pose_file_blocking_error(pose_issues):
         issues.extend(check_initial_poses_exist(rows, initial_poses))
         issues.extend(check_macro_and_bump_rules(rows, initial_poses, macro_policy, bump_guard_zones))
-        issues.extend(check_planned_path_rules(rows, initial_poses, macro_policy, zone_policy, path_policy, site_dir))
+        issues.extend(check_planned_path_rules(rows, initial_poses, macro_policy, zone_policy, path_policy, safety_policy, site_dir))
 
     issues.extend(check_global_moving_command_spacing(rows, policy))
 

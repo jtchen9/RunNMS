@@ -8,7 +8,7 @@
   "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_initial_poses.csv",
   "script_hash": "sha256:5281f6e347eca7c946e1eba7c4042236ca0269695d6930cc8137c270e0ed7378",
   "initial_poses_hash": "sha256:62e8ccb632f7ab3eef0211e459e5e0326d176a1ed136a79ad8186ef766407db5",
-  "error_count": 3,
+  "error_count": 4,
   "warning_count": 0,
   "issues": [
     {
@@ -27,6 +27,20 @@
       "message": "path crosses charging zone charlie_charging_zone, which remains restricted.",
       "suggestion": "Choose a path/target that does not pass through charging zones.",
       "zone": "charlie_charging_zone",
+      "row_number": 3,
+      "scanner": "twin-scout-delta",
+      "action": "mobility.move"
+    },
+    {
+      "level": "error",
+      "code": "ROBOT_PATH_TOO_CLOSE",
+      "message": "path passes 0.190 m from robot twin-scout-charlie; required clearance is 0.250 m.",
+      "suggestion": "Choose a path/target that keeps more clearance from the other robot.",
+      "other_scanner": "twin-scout-charlie",
+      "distance_m": 0.18973665961010236,
+      "safety_radius_m": 0.25,
+      "other_x_m": 3.0,
+      "other_y_m": 4.4,
       "row_number": 3,
       "scanner": "twin-scout-delta",
       "action": "mobility.move"

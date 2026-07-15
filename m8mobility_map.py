@@ -12,10 +12,36 @@ import math
 import numpy as np
 import config
 import re
+import sys
 
 import utility
 
 from m8mobility_state_store import key_pose, key_time, key_state, _is_loc_ok
+
+
+def _ensure_common_checkers_on_path() -> None:
+    """
+    Allow production runtime modules at the NMS root to import the shared
+    checker safety core under sitemap/CommonCheckers.
+
+    This keeps m8mobility_map.py usable from the existing runtime location
+    without requiring global PYTHONPATH changes.
+    """
+    root = Path(getattr(config, "MOBILITY_SITEMAP_ROOT", Path(".") / "sitemap"))
+    common_dir = root / "CommonCheckers"
+    common_s = str(common_dir)
+    if common_dir.exists() and common_s not in sys.path:
+        sys.path.insert(0, common_s)
+
+
+_ensure_common_checkers_on_path()
+
+from checker.static_safety_core import (  # type: ignore # noqa: E402
+    normalize_restriction_map_array,
+    sample_path_cells_legacy,
+    validate_map_resolution,
+    world_to_grid_clamped,
+)
 
 
 # ===== asset loaders =====
@@ -27,8 +53,13 @@ def _load_static_map() -> np.ndarray:
 
     Requirements:
     - .npy file
-    - square 2-D array
-    - uint8 values 0/1
+    - 2-D array
+    - uint8-compatible values 0/1
+
+    P5c-b1 refactor:
+    - keep the existing runtime API and error behavior
+    - delegate array normalization and resolution validation to the shared
+      static_safety_core.py so preflight/runtime use the same semantics
     """
     site_cfg = _load_site_config()
     path = Path(config.mobility_restriction_map_path())
@@ -36,28 +67,16 @@ def _load_static_map() -> np.ndarray:
         raise FileNotFoundError(f"static restriction map not found: {path}")
 
     arr = np.load(str(path), allow_pickle=False)
+    arr = normalize_restriction_map_array(arr)
 
-    if not isinstance(arr, np.ndarray):
-        raise ValueError("static restriction map is not a numpy array")
-    if arr.ndim != 2:
-        raise ValueError("static restriction map must be 2-D")
-    # Rectangular maps are allowed, but DemoRoom is currently square.
-
-    if arr.dtype != np.uint8:
-        arr = arr.astype(np.uint8)
-
-    arr = (arr > 0).astype(np.uint8)
-
-    rows, cols = int(arr.shape[0]), int(arr.shape[1])
-    expected_res_x = float(site_cfg["world_width_m"]) / float(cols)
-    expected_res_y = float(site_cfg["world_height_m"]) / float(rows)
-    desired_res = float(site_cfg["grid_resolution_m"])
-
-    if abs(expected_res_x - desired_res) > 1e-9 or abs(expected_res_y - desired_res) > 1e-9:
-        raise ValueError(
-            f"static map resolution mismatch: "
-            f"x={expected_res_x:.6f} y={expected_res_y:.6f}, site.json wants {desired_res:.6f}"
-        )
+    mismatch = validate_map_resolution(
+        map_shape=(int(arr.shape[0]), int(arr.shape[1])),
+        world_width_m=float(site_cfg["world_width_m"]),
+        world_height_m=float(site_cfg["world_height_m"]),
+        grid_resolution_m=float(site_cfg["grid_resolution_m"]),
+    )
+    if mismatch:
+        raise ValueError(mismatch)
 
     return arr
 
@@ -211,17 +230,24 @@ def _grid_resolution_m(static_map: np.ndarray) -> float:
     return float(_load_site_config()["grid_resolution_m"])
 
 def _world_to_grid(x_m: float, y_m: float, static_map: np.ndarray) -> tuple[int, int]:
+    """
+    Convert world coordinates to a clamped grid cell.
+
+    Preserves the previous runtime behavior exactly: coordinates outside the
+    map are clamped to the closest valid cell. New safety code should prefer the
+    non-clamped helpers in static_safety_core.py, but this legacy helper remains
+    unchanged for callers that expect clamping.
+    """
     site_cfg = _load_site_config()
-    rows = int(static_map.shape[0])
-    cols = int(static_map.shape[1])
     res = float(site_cfg["grid_resolution_m"])
-
-    col = int(math.floor(x_m / res))
-    row = int(math.floor(y_m / res))
-
-    col = max(0, min(cols - 1, col))
-    row = max(0, min(rows - 1, row))
-    return row, col
+    return world_to_grid_clamped(
+        x_m,
+        y_m,
+        static_map=static_map,
+        resolution_m=res,
+        origin_x_m=0.0,
+        origin_y_m=0.0,
+    )
 
 
 # ===== raster/map construction =====
@@ -413,24 +439,26 @@ def _build_effective_map(exclude_scanner: str = "") -> tuple[np.ndarray, np.ndar
 def _sample_path_cells(x0_m: float, y0_m: float, x1_m: float, y1_m: float, static_map: np.ndarray) -> list[tuple[int, int]]:
     """
     Sample a straight path at grid resolution.
+
+    Preserves the previous runtime behavior:
+    - sample at site grid resolution
+    - clamp world coordinates into valid map cells
+    - return unique cells in traversal order
+
+    The implementation now calls shared static_safety_core.py so preflight and
+    runtime remain aligned on coordinate conversion and sampling conventions.
     """
     res = _grid_resolution_m(static_map)
-    dist = math.hypot(x1_m - x0_m, y1_m - y0_m)
-
-    steps = max(1, int(math.ceil(dist / res)))
-    out = []
-    seen = set()
-
-    for i in range(steps + 1):
-        t = i / steps
-        x = x0_m + t * (x1_m - x0_m)
-        y = y0_m + t * (y1_m - y0_m)
-        rc = _world_to_grid(x, y, static_map)
-        if rc not in seen:
-            seen.add(rc)
-            out.append(rc)
-
-    return out
+    return sample_path_cells_legacy(
+        x0_m,
+        y0_m,
+        x1_m,
+        y1_m,
+        static_map,
+        resolution_m=res,
+        origin_x_m=0.0,
+        origin_y_m=0.0,
+    )
 
 def _is_path_clear(x0_m: float, y0_m: float, x1_m: float, y1_m: float, exclude_scanner: str = "") -> tuple[bool, list[tuple[int, int]]]:
     """
@@ -462,12 +490,25 @@ def _is_path_clear_debug(
     - distinguish static-map blockage from dynamic robot keep-out blockage
     - show sampled cells
     - show start/target world coordinates
+
+    P6b note:
+    - This function is still diagnostic only.
+    - It does not change the safety decision.
+    - It adds clearer static/dynamic/effective summaries so lab tests can tell
+      whether a blockage came from the static map or another active robot.
     """
     static_map, dynamic_map, effective_map = _build_effective_map(exclude_scanner=exclude_scanner)
     cells = _sample_path_cells(x0_m, y0_m, x1_m, y1_m, static_map)
 
     blocked: list[tuple[int, int]] = []
     cell_details: list[Dict[str, Any]] = []
+
+    static_blocked: list[Dict[str, Any]] = []
+    dynamic_blocked: list[Dict[str, Any]] = []
+    effective_blocked: list[Dict[str, Any]] = []
+    static_only_blocked: list[Dict[str, Any]] = []
+    dynamic_only_blocked: list[Dict[str, Any]] = []
+    static_and_dynamic_blocked: list[Dict[str, Any]] = []
 
     for row, col in cells:
         s = int(static_map[row, col] != 0)
@@ -483,8 +524,28 @@ def _is_path_clear_debug(
         }
         cell_details.append(item)
 
+        if s:
+            static_blocked.append(item)
+        if d:
+            dynamic_blocked.append(item)
         if e:
             blocked.append((row, col))
+            effective_blocked.append(item)
+
+        if s and d:
+            static_and_dynamic_blocked.append(item)
+        elif s:
+            static_only_blocked.append(item)
+        elif d:
+            dynamic_only_blocked.append(item)
+
+    dynamic_radius = float(
+        getattr(
+            config,
+            "MOBILITY_ROBOT_RESTRICT_RADIUS_M",
+            0.25,
+        )
+    )
 
     debug = {
         "start": {
@@ -497,13 +558,26 @@ def _is_path_clear_debug(
             "y_m": float(y1_m),
             "grid": _world_to_grid(x1_m, y1_m, static_map),
         },
+        "exclude_scanner": str(exclude_scanner or ""),
+        "dynamic_obstacle_radius_m": dynamic_radius,
         "sample_count": len(cells),
         "sample_cells": cell_details[:30],
         "blocked_count": len(blocked),
-        "blocked_cells": [
-            d for d in cell_details
-            if int(d.get("effective", 0)) != 0
-        ][:30],
+        "static_blocked_count": len(static_blocked),
+        "dynamic_blocked_count": len(dynamic_blocked),
+        "static_only_blocked_count": len(static_only_blocked),
+        "dynamic_only_blocked_count": len(dynamic_only_blocked),
+        "static_and_dynamic_blocked_count": len(static_and_dynamic_blocked),
+        "blocked_cells": effective_blocked[:30],
+        "static_blocked_cells": static_blocked[:30],
+        "dynamic_blocked_cells": dynamic_blocked[:30],
+        "static_only_blocked_cells": static_only_blocked[:30],
+        "dynamic_only_blocked_cells": dynamic_only_blocked[:30],
+        "static_and_dynamic_blocked_cells": static_and_dynamic_blocked[:30],
+        "diagnostic_note": (
+            "P6b diagnostic only: path decision is still effective_map != 0; "
+            "dynamic cells come from active/fresh robot true/planned poses."
+        ),
     }
 
     return (len(blocked) == 0), blocked, debug

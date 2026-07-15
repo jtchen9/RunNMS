@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 # Auto-detect:
-#   <workspace>/sitemap/DemoRoom/script_authoring/examples/run_p5_regression_examples.py
+#   <workspace>/sitemap/DemoRoom/script_authoring/examples/run_p6_regression_examples.py
 SITEMAP_DIR = Path(__file__).resolve().parents[3]
 COMMON_DIR = SITEMAP_DIR / "CommonCheckers"
 SITE_DIR = SITEMAP_DIR / "DemoRoom"
@@ -19,34 +19,19 @@ from checker.checker_runner import validate_script  # type: ignore # noqa: E402
 
 TESTS = [
     {
-        "name": "safe normal move",
-        "script": SITE_DIR / "script_authoring" / "examples" / "demo_safe_script.csv",
-        "initial_poses": SITE_DIR / "script_authoring" / "examples" / "demo_initial_poses.csv",
-        "expect_ok": True,
-        "expected_error_codes": [],
-    },
-    {
-        "name": "invalid target out of bounds",
-        "script": SITE_DIR / "script_authoring" / "examples" / "demo_p5_invalid_out_of_bounds.csv",
+        "name": "invalid robot path clearance",
+        "script": SITE_DIR / "script_authoring" / "examples" / "demo_p6_invalid_robot_path_clearance.csv",
         "initial_poses": SITE_DIR / "script_authoring" / "examples" / "demo_initial_poses.csv",
         "expect_ok": False,
-        "expected_error_codes": ["PATH_ENDPOINT_OUT_OF_BOUNDS"],
+        "expected_error_codes": ["ROBOT_FINAL_POSE_TOO_CLOSE"],
     },
     {
-        "name": "invalid path enters charging zone",
-        "script": SITE_DIR / "script_authoring" / "examples" / "demo_p5_invalid_enters_charging_zone.csv",
+        "name": "invalid robot final clearance",
+        "script": SITE_DIR / "script_authoring" / "examples" / "demo_p6_invalid_robot_final_clearance.csv",
         "initial_poses": SITE_DIR / "script_authoring" / "examples" / "demo_initial_poses.csv",
         "expect_ok": False,
-        "expected_error_codes": ["PATH_ENDS_INSIDE_CHARGING_ZONE"],
+        "expected_error_codes": ["ROBOT_FINAL_POSE_TOO_CLOSE"],
     },
-    {
-        "name": "invalid path crosses restriction map",
-        "script": SITE_DIR / "script_authoring" / "examples" / "demo_p5_invalid_restriction_map.csv",
-        "initial_poses": SITE_DIR / "script_authoring" / "examples" / "demo_initial_poses.csv",
-        "expect_ok": False,
-        "expected_error_codes": ["PATH_CROSSES_RESTRICTION_MAP"],
-    },
-
 ]
 
 
@@ -77,7 +62,7 @@ def run_tests() -> None:
             print(json.dumps(report, indent=2, ensure_ascii=False))
 
     print("=" * 72)
-    print("ALL P5 REGRESSION EXAMPLES:", "PASS" if all_passed else "FAIL")
+    print("ALL P6 REGRESSION EXAMPLES:", "PASS" if all_passed else "FAIL")
 
 
 if __name__ == "__main__":

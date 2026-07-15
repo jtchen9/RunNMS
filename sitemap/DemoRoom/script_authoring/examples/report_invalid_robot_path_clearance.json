@@ -1,0 +1,29 @@
+{
+  "ok": false,
+  "status": "fail",
+  "site_id": "DemoRoom",
+  "site_version": "2026.07.14.1",
+  "common_checkers_version": "2026.07.14.1",
+  "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_p6_invalid_robot_path_clearance.csv",
+  "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_initial_poses.csv",
+  "script_hash": "sha256:8ac50a0db0a6aa18ac8140f0c78386a27559a15a7ef72cfb9c82be1d87929d46",
+  "initial_poses_hash": "sha256:62e8ccb632f7ab3eef0211e459e5e0326d176a1ed136a79ad8186ef766407db5",
+  "error_count": 1,
+  "warning_count": 0,
+  "issues": [
+    {
+      "level": "error",
+      "code": "ROBOT_FINAL_POSE_TOO_CLOSE",
+      "message": "target pose is 0.000 m from robot twin-scout-bravo; required clearance is 0.250 m.",
+      "suggestion": "Choose a target farther from the other robot.",
+      "other_scanner": "twin-scout-bravo",
+      "distance_m": 0.0,
+      "safety_radius_m": 0.25,
+      "other_x_m": 2.4,
+      "other_y_m": 4.4,
+      "row_number": 4,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.move"
+    }
+  ]
+}

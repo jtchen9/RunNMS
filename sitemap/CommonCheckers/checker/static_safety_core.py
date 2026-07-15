@@ -625,3 +625,78 @@ def charging_zone_crossing_issues(
             })
 
     return issues
+
+def robot_clearance_issues(
+    *,
+    moving_scanner: str,
+    start_pose: Pose,
+    end_pose: Pose,
+    other_robot_poses: Dict[str, Pose],
+    safety_radius_m: float,
+) -> List[Issue]:
+    """
+    Shared robot-to-robot clearance geometry.
+
+    This function is pose-source agnostic:
+    - preflight passes simulated planned poses
+    - runtime may pass fresh true/planned poses or dynamic obstacle snapshots
+
+    Checks:
+    - moving segment must not pass within safety_radius_m of another robot pose
+    - final target must not land within safety_radius_m of another robot pose
+
+    Wrappers decide which robots are included and add CSV/runtime context.
+    """
+    issues: List[Issue] = []
+
+    x0 = float(start_pose["x_m"])
+    y0 = float(start_pose["y_m"])
+    x1 = float(end_pose["x_m"])
+    y1 = float(end_pose["y_m"])
+    radius = float(safety_radius_m)
+
+    for other_scanner, other_pose in sorted((other_robot_poses or {}).items()):
+        if str(other_scanner) == str(moving_scanner):
+            continue
+
+        ox = float(other_pose["x_m"])
+        oy = float(other_pose["y_m"])
+
+        segment_dist = distance_point_to_segment(ox, oy, x0, y0, x1, y1)
+        final_dist = math.hypot(x1 - ox, y1 - oy)
+
+        if final_dist <= radius:
+            issues.append({
+                "level": "error",
+                "code": "ROBOT_FINAL_POSE_TOO_CLOSE",
+                "message": (
+                    f"target pose is {final_dist:.3f} m from robot {other_scanner}; "
+                    f"required clearance is {radius:.3f} m."
+                ),
+                "suggestion": "Choose a target farther from the other robot.",
+                "other_scanner": other_scanner,
+                "distance_m": final_dist,
+                "safety_radius_m": radius,
+                "other_x_m": ox,
+                "other_y_m": oy,
+            })
+            continue
+
+        if segment_dist <= radius:
+            issues.append({
+                "level": "error",
+                "code": "ROBOT_PATH_TOO_CLOSE",
+                "message": (
+                    f"path passes {segment_dist:.3f} m from robot {other_scanner}; "
+                    f"required clearance is {radius:.3f} m."
+                ),
+                "suggestion": "Choose a path/target that keeps more clearance from the other robot.",
+                "other_scanner": other_scanner,
+                "distance_m": segment_dist,
+                "safety_radius_m": radius,
+                "other_x_m": ox,
+                "other_y_m": oy,
+            })
+
+    return issues
+

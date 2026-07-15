@@ -12,6 +12,7 @@ import math
 import threading
 import uuid
 import re
+import sys
 from pathlib import Path
 import config
 import utility
@@ -38,6 +39,28 @@ from m8mobility_pose import (
     _apply_mobility_command_to_pose, _pose_error 
 ) 
 from m8mobility_map import _is_path_clear, _is_path_clear_debug 
+
+
+def _ensure_common_checkers_on_path() -> None:
+    """
+    Allow production runtime modules at the NMS root to import the shared
+    checker safety core under sitemap/CommonCheckers.
+    """
+    root = Path(getattr(config, "MOBILITY_SITEMAP_ROOT", Path(".") / "sitemap"))
+    common_dir = root / "CommonCheckers"
+    common_s = str(common_dir)
+    if common_dir.exists() and common_s not in sys.path:
+        sys.path.insert(0, common_s)
+
+
+_ensure_common_checkers_on_path()
+
+from checker.static_safety_core import (  # type: ignore # noqa: E402
+    bump_guard_crossing_issues,
+    macro_planned_pose,
+    macro_start_pose_issues,
+    point_inside_axis_aligned_rect,
+)
 from m8mobility_command_model import ( 
     _normalize_mobility_command, 
     _build_turn_only_command, _build_turn_move_turn_forward_command, 
@@ -190,6 +213,133 @@ def _is_script_blocked_action(action: str) -> bool:
     )
 
 
+def _load_runtime_site_policy_json(filename: str) -> Dict[str, Any]:
+    """
+    Best-effort runtime loader for sitemap site policy JSON files.
+
+    Runtime must keep working if a policy file is temporarily missing, so callers
+    provide fallback behavior.
+    """
+    try:
+        path = (
+            Path(config.mobility_site_dir())
+            / "script_authoring"
+            / "config"
+            / filename
+        )
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _load_runtime_macro_cfg_by_action() -> Dict[str, Any]:
+    """
+    Runtime macro policy source of truth.
+
+    Prefer sitemap/DemoRoom/script_authoring/config/macro_policy.json so runtime
+    stays aligned with preflight. Fall back to config.MOBILITY_BUMP_CROSSING_MACROS
+    for compatibility during bring-up.
+    """
+    policy = _load_runtime_site_policy_json("macro_policy.json")
+    macros = policy.get("macros") if isinstance(policy, dict) else None
+    if isinstance(macros, dict) and macros:
+        return dict(macros)
+
+    return dict(getattr(config, "MOBILITY_BUMP_CROSSING_MACROS", {}) or {})
+
+
+def _load_runtime_bump_guard_zones() -> Dict[str, Any]:
+    """
+    Runtime bump guard policy.
+
+    Missing file means no explicit bump guard zones. Static restriction map and
+    dynamic obstacle checks still run as before.
+    """
+    data = _load_runtime_site_policy_json("bump_guard_zones.json")
+    if isinstance(data.get("zones"), list):
+        return data
+    return {"zones": []}
+
+
+def _runtime_issue_message(issue: Dict[str, Any]) -> str:
+    code = str(issue.get("code") or "RUNTIME_SAFETY_ISSUE")
+    msg = str(issue.get("message") or "").strip()
+    if msg:
+        return f"{code}: {msg}"
+    return code
+
+
+def _grid_cell_center_m(row: int, col: int) -> tuple[float, float]:
+    """
+    Convert a map cell to its approximate world-center coordinate.
+
+    This is used only to decide whether a static blocked cell belongs to the
+    measured bump guard rectangle for bump-crossing macros.
+    """
+    try:
+        site = json.loads(Path(config.mobility_site_json_path()).read_text(encoding="utf-8"))
+        res = float(site.get("grid_resolution_m", getattr(config, "MOBILITY_GRID_RESOLUTION_M", 0.1)))
+    except Exception:
+        res = float(getattr(config, "MOBILITY_GRID_RESOLUTION_M", 0.1))
+
+    return (float(col) + 0.5) * res, (float(row) + 0.5) * res
+
+
+def _blocked_cells_after_bump_macro_allowance(
+    blocked_cells: list[Dict[str, Any]],
+    *,
+    move_profile: str,
+    bump_guard_zones: Dict[str, Any],
+) -> list[Dict[str, Any]]:
+    """
+    For move_profile=bump_crossing, allow static blocked cells only when their
+    cell centers lie inside a configured bump guard rectangle.
+
+    Dynamic robot blockers remain blockers. Static blockers outside the bump
+    guard remain blockers. Normal mobility.move has no allowance.
+    """
+    if str(move_profile or "").strip() != "bump_crossing":
+        return list(blocked_cells or [])
+
+    rects = [
+        z for z in (bump_guard_zones.get("zones", []) or [])
+        if str(z.get("type", "")).strip() == "axis_aligned_rectangle"
+    ]
+    if not rects:
+        return list(blocked_cells or [])
+
+    remaining: list[Dict[str, Any]] = []
+
+    for cell in blocked_cells or []:
+        if int(cell.get("dynamic", 0) or 0) != 0:
+            remaining.append(cell)
+            continue
+
+        # Only static-only bump cells are eligible for allowance.
+        if int(cell.get("static", 0) or 0) == 0:
+            remaining.append(cell)
+            continue
+
+        try:
+            row = int(cell["row"])
+            col = int(cell["col"])
+            x_m, y_m = _grid_cell_center_m(row, col)
+        except Exception:
+            remaining.append(cell)
+            continue
+
+        inside_bump = any(
+            point_inside_axis_aligned_rect(x_m, y_m, rect)
+            for rect in rects
+        )
+
+        if not inside_bump:
+            remaining.append(cell)
+
+    return remaining
+
+
 def _save_s0_command_arg_overrides(
     scanner: str,
     overrides: Dict[str, Any],
@@ -265,7 +415,25 @@ def _s0_move_planned_pose_from_args(
 
 
 def _s0_enter_mobility_move(scanner: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    start_planned = _s0_init_planned(scanner)
     new_planned = _s0_move_planned_pose_from_args(scanner, args)
+
+    # Runtime bump guard check for semantic mobility.move.
+    #
+    # The static restriction map still runs later in S5. This S0 check adds the
+    # new rule that a normal semantic mobility.move may not cross the bump guard
+    # rectangle; only mobility.in2out/out2in macros may do so.
+    bump_issues = bump_guard_crossing_issues(
+        start_pose=start_planned,
+        end_pose=new_planned,
+        bump_guard_zones=_load_runtime_bump_guard_zones(),
+    )
+    if bump_issues:
+        return _s0_stop_for_bad_script_action(
+            scanner,
+            _runtime_issue_message(bump_issues[0]),
+        )
+
     _save_planned(scanner, new_planned)
 
     _clear_pending_sequence(scanner)
@@ -288,9 +456,7 @@ def _s0_enter_mobility_move(scanner: str, args: Dict[str, Any]) -> Dict[str, Any
 
 def _s0_enter_site_macro(scanner: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
     action = str(action or "").strip()
-    macro_cfg = dict(
-        getattr(config, "MOBILITY_BUMP_CROSSING_MACROS", {}).get(action) or {}
-    )
+    macro_cfg = dict(_load_runtime_macro_cfg_by_action().get(action) or {})
 
     if not macro_cfg:
         return _s0_stop_for_macro(
@@ -311,46 +477,38 @@ def _s0_enter_site_macro(scanner: str, action: str, args: Dict[str, Any]) -> Dic
             f"{action} requires valid true location",
         )
 
-    try:
-        start_x = float(macro_cfg["start_x_m"])
-        start_y = float(macro_cfg["start_y_m"])
-        tol_m = float(macro_cfg.get("start_tolerance_m", 0.20))
-        target_heading = utility._deg_norm_360(
-            float(macro_cfg["target_heading_deg"])
+    start_issues = macro_start_pose_issues(true_loc, macro_cfg)
+    if start_issues:
+        first = start_issues[0]
+        if first.get("code") == "MACRO_CONFIG_BAD_NUMERIC_VALUE":
+            return _s0_stop_for_macro(
+                scanner,
+                f"{action} macro config invalid: {first.get('message', '')}",
+            )
+
+        return _s0_stop_for_macro(
+            scanner,
+            f"{action} start check failed: {_runtime_issue_message(first)}",
         )
+
+    start_error_m = 0.0
+
+    try:
         distance_m = float(macro_cfg.get("distance_m", 1.0))
         move_profile = str(macro_cfg.get("move_profile", "bump_crossing") or "bump_crossing")
+        planned = {
+            "location_ok": True,
+            **macro_planned_pose(macro_cfg),
+        }
     except Exception as e:
         return _s0_stop_for_macro(
             scanner,
             f"{action} macro config invalid: {type(e).__name__}: {e}",
         )
 
-    tx = float(true_loc["x_m"])
-    ty = float(true_loc["y_m"])
-    start_error_m = float(math.hypot(tx - start_x, ty - start_y))
-
-    if start_error_m > tol_m:
-        return _s0_stop_for_macro(
-            scanner,
-            (
-                f"{action} start check failed: true pose "
-                f"({tx:.3f}, {ty:.3f}) is {start_error_m:.3f} m from "
-                f"required start ({start_x:.3f}, {start_y:.3f}); "
-                f"tolerance={tol_m:.3f} m"
-            ),
-        )
-
     # Macro uses script-owned geometry. Planned pose is computed from the
     # configured start point, not from noisy true pose. S5 remains responsible
     # for computing the low-level robot turn-move-turn command.
-    heading_rad = math.radians(target_heading)
-    planned = {
-        "location_ok": True,
-        "x_m": float(start_x + distance_m * math.cos(heading_rad)),
-        "y_m": float(start_y + distance_m * math.sin(heading_rad)),
-        "heading_deg": target_heading,
-    }
 
     _save_planned(scanner, planned)
     _clear_pending_sequence(scanner)
@@ -2462,7 +2620,22 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
             )
         )
 
+        s0_overrides = _load_s0_command_arg_overrides(scanner)
+        move_profile = str(
+            (s0_overrides or {}).get("move_profile")
+            or args.get("move_profile")
+            or ""
+        )
+
+        blocked_after_allowance = list(path_debug.get("blocked_cells", []) or [])
         if not path_ok:
+            blocked_after_allowance = _blocked_cells_after_bump_macro_allowance(
+                blocked_after_allowance,
+                move_profile=move_profile,
+                bump_guard_zones=_load_runtime_bump_guard_zones(),
+            )
+
+        if blocked_after_allowance:
             _clear_pending_sequence(scanner)
             _clear_outgoing_command_preview(scanner)
 
@@ -2471,17 +2644,19 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
                 "transition_to": S7_STOPPED,
                 "detail": (
                     f"path unsafe in s5, "
-                    f"blocked={len(blocked)}, "
+                    f"blocked={len(blocked_after_allowance)}, "
                     f"start_grid="
                     f"{path_debug.get('start', {}).get('grid')}, "
                     f"target_grid="
                     f"{path_debug.get('target', {}).get('grid')}, "
                     f"blocked_cells="
-                    f"{path_debug.get('blocked_cells', [])[:10]}"
+                    f"{blocked_after_allowance[:10]}"
                 ),
                 "error": {
                     **err,
                     "path_debug": path_debug,
+                    "blocked_after_bump_allowance": blocked_after_allowance[:30],
+                    "move_profile": move_profile,
                     "action": action,
                     "args": args,
                     "simulated_target":

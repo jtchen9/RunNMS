@@ -14,7 +14,7 @@ SITE_DIR = SITEMAP_DIR / "DemoRoom"
 if str(COMMON_DIR) not in sys.path:
     sys.path.insert(0, str(COMMON_DIR))
 
-from checker.checker_runner import validate_script  # noqa: E402
+from checker.checker_runner import validate_script  # type: ignore # noqa: E402
 
 
 TESTS = [

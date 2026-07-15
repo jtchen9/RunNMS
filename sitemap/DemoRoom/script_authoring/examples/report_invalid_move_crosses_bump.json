@@ -8,7 +8,7 @@
   "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_initial_poses.csv",
   "script_hash": "sha256:7570cd8471b47715e6d88b98fb60a70c4748116888883a3aab4c13b7fd51c612",
   "initial_poses_hash": "sha256:62e8ccb632f7ab3eef0211e459e5e0326d176a1ed136a79ad8186ef766407db5",
-  "error_count": 2,
+  "error_count": 5,
   "warning_count": 0,
   "issues": [
     {
@@ -17,6 +17,48 @@
       "message": "mobility.move path crosses bump guard zone DemoRoom_bump_guard; bump crossing is allowed only through mobility.in2out or mobility.out2in.",
       "suggestion": "Use the site macro mobility.in2out or mobility.out2in for bump crossing.",
       "zone": "DemoRoom_bump_guard",
+      "row_number": 3,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.move"
+    },
+    {
+      "level": "error",
+      "code": "ROBOT_PATH_TOO_CLOSE",
+      "message": "path passes 0.049 m from robot twin-scout-bravo; required clearance is 0.250 m.",
+      "suggestion": "Choose a path/target that keeps more clearance from the other robot.",
+      "other_scanner": "twin-scout-bravo",
+      "distance_m": 0.04908921893965578,
+      "safety_radius_m": 0.25,
+      "other_x_m": 2.4,
+      "other_y_m": 4.4,
+      "row_number": 3,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.move"
+    },
+    {
+      "level": "error",
+      "code": "ROBOT_PATH_TOO_CLOSE",
+      "message": "path passes 0.098 m from robot twin-scout-charlie; required clearance is 0.250 m.",
+      "suggestion": "Choose a path/target that keeps more clearance from the other robot.",
+      "other_scanner": "twin-scout-charlie",
+      "distance_m": 0.09817843787931156,
+      "safety_radius_m": 0.25,
+      "other_x_m": 3.0,
+      "other_y_m": 4.4,
+      "row_number": 3,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.move"
+    },
+    {
+      "level": "error",
+      "code": "ROBOT_PATH_TOO_CLOSE",
+      "message": "path passes 0.147 m from robot twin-scout-delta; required clearance is 0.250 m.",
+      "suggestion": "Choose a path/target that keeps more clearance from the other robot.",
+      "other_scanner": "twin-scout-delta",
+      "distance_m": 0.14726765681896822,
+      "safety_radius_m": 0.25,
+      "other_x_m": 3.6,
+      "other_y_m": 4.4,
       "row_number": 3,
       "scanner": "twin-scout-alpha",
       "action": "mobility.move"
