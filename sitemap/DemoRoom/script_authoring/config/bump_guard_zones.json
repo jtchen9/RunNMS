@@ -1,6 +1,16 @@
 {
   "schema_version": 1,
   "site_id": "DemoRoom",
-  "status": "placeholder_until_measured",
-  "zones": []
+  "status": "measured",
+  "zones": [
+    {
+      "name": "DemoRoom_bump_guard",
+      "type": "axis_aligned_rectangle",
+      "x_min_m": 8.610,
+      "x_max_m": 9.608,
+      "y_min_m": 4.653,
+      "y_max_m": 5.827,
+      "purpose": "Normal mobility.move paths must not cross this rectangle. Crossing is allowed only through mobility.in2out or mobility.out2in macros."
+    }
+  ]
 }

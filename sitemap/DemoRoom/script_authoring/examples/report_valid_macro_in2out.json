@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "status": "pass",
+  "site_id": "DemoRoom",
+  "site_version": "2026.07.14.1",
+  "common_checkers_version": "2026.07.14.1",
+  "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_p4_valid_macro_in2out.csv",
+  "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_p4_macro_start_initial_poses.csv",
+  "script_hash": "sha256:2b5999e1f17badbc67ed50e704643c8e1ca51a4b34b0e80a39b47534c60ab27e",
+  "initial_poses_hash": "sha256:88b5765f32788876625ab3a3c8695c6b383d7b3c83e11bb6a2bc88cd46037ab2",
+  "error_count": 0,
+  "warning_count": 0,
+  "issues": []
+}

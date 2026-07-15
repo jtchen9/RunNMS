@@ -1,0 +1,43 @@
+{
+  "ok": false,
+  "status": "fail",
+  "site_id": "DemoRoom",
+  "site_version": "2026.07.14.1",
+  "common_checkers_version": "2026.07.14.1",
+  "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_p5_invalid_out_of_bounds.csv",
+  "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_initial_poses.csv",
+  "script_hash": "sha256:e5db94073cc5b414d0242d9af2cfb1520e9cd7975cd8eba5439ce67749d6e64a",
+  "initial_poses_hash": "sha256:62e8ccb632f7ab3eef0211e459e5e0326d176a1ed136a79ad8186ef766407db5",
+  "error_count": 2,
+  "warning_count": 0,
+  "issues": [
+    {
+      "level": "error",
+      "code": "PATH_ENDPOINT_OUT_OF_BOUNDS",
+      "row_number": 3,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.move",
+      "message": "target pose (10.800, 4.400) is outside workspace bounds x=[1.2, 10.2], y=[0.0, 11.4].",
+      "suggestion": "Choose a target inside the site workspace bounds."
+    },
+    {
+      "level": "error",
+      "code": "PATH_CROSSES_RESTRICTION_MAP",
+      "row_number": 3,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.move",
+      "message": "planned path touches a restricted cell in restriction_map.npy near (9.400, 4.400), row=44, col=94.",
+      "suggestion": "Choose a target/path that avoids restricted map cells.",
+      "sample": {
+        "x_m": 9.4,
+        "y_m": 4.4,
+        "row": 44,
+        "col": 94,
+        "value": 1,
+        "out_of_map": false,
+        "sample_index": 152,
+        "sample_count": 180
+      }
+    }
+  ]
+}

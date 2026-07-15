@@ -1,0 +1,26 @@
+{
+  "ok": false,
+  "status": "fail",
+  "site_id": "DemoRoom",
+  "site_version": "2026.07.14.1",
+  "common_checkers_version": "2026.07.14.1",
+  "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_p4_invalid_macro_wrong_start.csv",
+  "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_initial_poses.csv",
+  "script_hash": "sha256:2b5999e1f17badbc67ed50e704643c8e1ca51a4b34b0e80a39b47534c60ab27e",
+  "initial_poses_hash": "sha256:62e8ccb632f7ab3eef0211e459e5e0326d176a1ed136a79ad8186ef766407db5",
+  "error_count": 1,
+  "warning_count": 0,
+  "issues": [
+    {
+      "level": "error",
+      "code": "MACRO_START_POSE_MISMATCH",
+      "message": "planned/true pose (1.800, 4.400) is 7.309 m from macro start (9.109, 4.353); tolerance=0.200 m.",
+      "suggestion": "Move the robot to the macro start point before this macro.",
+      "start_error_m": 7.3091511135014855,
+      "start_tolerance_m": 0.2,
+      "row_number": 3,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.in2out"
+    }
+  ]
+}

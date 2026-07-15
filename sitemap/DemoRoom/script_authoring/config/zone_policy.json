@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "site_id": "DemoRoom",
+  "policy_name": "DemoRoom_path_zone_policy",
+  "status": "development",
+  "description": "P5 path-safety zone policy. This file separates normal blocked space, charging/rest zones, and the special bump guard zone. Charging-zone centers represent actual charging/rest positions; script initial poses are separate.",
+  "zone_semantics": {
+    "blocked_zone": {
+      "meaning": "Normal robot paths must not enter or cross this zone.",
+      "normal_mobility_move": "forbidden",
+      "macro_move": "forbidden_unless_macro_policy_explicitly_allows"
+    },
+    "charging_zone": {
+      "meaning": "Robot may start/end here for charging or rest. A robot may leave its own charging zone or enter its own charging zone, but this is not treated as general open walking space.",
+      "normal_mobility_move": "endpoint_allowed_for_owner_robot",
+      "pass_through": "forbidden_by_default"
+    },
+    "bump_guard_zone": {
+      "meaning": "Special rectangle around the floor bump. Normal mobility.move must not cross it. Crossing is legal only through in2out/out2in macros.",
+      "normal_mobility_move": "forbidden",
+      "allowed_macros": [
+        "mobility.in2out",
+        "mobility.out2in"
+      ]
+    }
+  },
+  "charging_zones": [
+    {
+      "name": "alpha_charging_zone",
+      "scanner": "twin-scout-alpha",
+      "type": "circle",
+      "center_x_m": 1.8,
+      "center_y_m": 4.8,
+      "radius_m": 0.2,
+      "heading_deg": 270.0,
+      "status": "rough_until_fine_tuned",
+      "note": "This is the actual charging/rest restriction zone. The script initial pose for this robot is expected to be manually moved to y=4.4 before the experiment starts."
+    },
+    {
+      "name": "bravo_charging_zone",
+      "scanner": "twin-scout-bravo",
+      "type": "circle",
+      "center_x_m": 2.4,
+      "center_y_m": 4.8,
+      "radius_m": 0.2,
+      "heading_deg": 270.0,
+      "status": "rough_until_fine_tuned",
+      "note": "This is the actual charging/rest restriction zone. The script initial pose for this robot is expected to be manually moved to y=4.4 before the experiment starts."
+    },
+    {
+      "name": "charlie_charging_zone",
+      "scanner": "twin-scout-charlie",
+      "type": "circle",
+      "center_x_m": 3.0,
+      "center_y_m": 4.8,
+      "radius_m": 0.2,
+      "heading_deg": 270.0,
+      "status": "rough_until_fine_tuned",
+      "note": "This is the actual charging/rest restriction zone. The script initial pose for this robot is expected to be manually moved to y=4.4 before the experiment starts."
+    },
+    {
+      "name": "delta_charging_zone",
+      "scanner": "twin-scout-delta",
+      "type": "circle",
+      "center_x_m": 3.6,
+      "center_y_m": 4.8,
+      "radius_m": 0.2,
+      "heading_deg": 270.0,
+      "status": "rough_until_fine_tuned",
+      "note": "This is the actual charging/rest restriction zone. The script initial pose for this robot is expected to be manually moved to y=4.4 before the experiment starts."
+    }
+  ],
+  "restriction_map_policy": {
+    "source": "site restriction map, to be wired in P5 implementation",
+    "default_semantics": "blocked_zone",
+    "charging_zone_override": "Charging zones remain restricted and are already covered by restriction_map.npy. Script initial poses should normally be outside charging zones, e.g. y=4.4 for the current rough DemoRoom setup."
+  },
+  "bump_guard_zone_source": "script_authoring/config/bump_guard_zones.json"
+}

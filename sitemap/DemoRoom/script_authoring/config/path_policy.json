@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "site_id": "DemoRoom",
+  "policy_name": "DemoRoom_simple_path_policy",
+  "status": "development",
+  "description": "P5 planned-path policy with restriction_map.npy scanning.",
+  "workspace_bounds": {
+    "x_min_m": 1.2,
+    "x_max_m": 10.2,
+    "y_min_m": 0.0,
+    "y_max_m": 11.4
+  },
+  "charging_zone_path_policy": {
+    "source": "script_authoring/config/zone_policy.json",
+    "semantics": "charging zones are already covered by restriction_map.npy; circles in zone_policy.json provide semantic labels and clearer diagnostics",
+    "normal_mobility_move": {
+      "start_inside_any_charging_zone": "error",
+      "end_inside_any_charging_zone": "error",
+      "path_crosses_any_charging_zone": "error"
+    },
+    "note": "Robots should be manually moved out to the script initial poses before experiment start."
+  },
+  "restriction_map": {
+    "enabled": true,
+    "relative_path": "restriction_map.npy",
+    "format": "npy_uint8_2d",
+    "free_value": 0,
+    "restricted_value": 1,
+    "resolution_m": 0.1,
+    "origin_x_m": 0.0,
+    "origin_y_m": 0.0,
+    "indexing": "row=floor((y-origin_y_m)/resolution_m), col=floor((x-origin_x_m)/resolution_m)",
+    "segment_sample_step_m": 0.05,
+    "out_of_map_is_restricted": true,
+    "note": "This map is the authoritative source for blocked zones, including charging zones."
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "ok": false,
+  "status": "fail",
+  "site_id": "DemoRoom",
+  "site_version": "2026.07.14.1",
+  "common_checkers_version": "2026.07.14.1",
+  "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_p4_invalid_move_crosses_bump.csv",
+  "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_initial_poses.csv",
+  "script_hash": "sha256:7570cd8471b47715e6d88b98fb60a70c4748116888883a3aab4c13b7fd51c612",
+  "initial_poses_hash": "sha256:62e8ccb632f7ab3eef0211e459e5e0326d176a1ed136a79ad8186ef766407db5",
+  "error_count": 2,
+  "warning_count": 0,
+  "issues": [
+    {
+      "level": "error",
+      "code": "MOVE_CROSSES_BUMP_GUARD_ZONE",
+      "message": "mobility.move path crosses bump guard zone DemoRoom_bump_guard; bump crossing is allowed only through mobility.in2out or mobility.out2in.",
+      "suggestion": "Use the site macro mobility.in2out or mobility.out2in for bump crossing.",
+      "zone": "DemoRoom_bump_guard",
+      "row_number": 3,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.move"
+    },
+    {
+      "level": "error",
+      "code": "PATH_CROSSES_RESTRICTION_MAP",
+      "row_number": 3,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.move",
+      "message": "planned path touches a restricted cell in restriction_map.npy near (4.236, 4.600), row=46, col=42.",
+      "suggestion": "Choose a target/path that avoids restricted map cells.",
+      "sample": {
+        "x_m": 4.2363333333333335,
+        "y_m": 4.6000000000000005,
+        "row": 46,
+        "col": 42,
+        "value": 1,
+        "out_of_map": false,
+        "sample_index": 49,
+        "sample_count": 147
+      }
+    }
+  ]
+}

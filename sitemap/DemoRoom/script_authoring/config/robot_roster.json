@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "site_id": "DemoRoom",
+  "robots": [
+    {
+      "scanner": "twin-scout-alpha",
+      "display_name": "Alpha",
+      "rough_initial_pose": {
+        "x_m": 1.8,
+        "y_m": 4.4,
+        "heading_deg": 270.0
+      }
+    },
+    {
+      "scanner": "twin-scout-bravo",
+      "display_name": "Bravo",
+      "rough_initial_pose": {
+        "x_m": 2.4,
+        "y_m": 4.4,
+        "heading_deg": 270.0
+      }
+    },
+    {
+      "scanner": "twin-scout-charlie",
+      "display_name": "Charlie",
+      "rough_initial_pose": {
+        "x_m": 3.0,
+        "y_m": 4.4,
+        "heading_deg": 270.0
+      }
+    },
+    {
+      "scanner": "twin-scout-delta",
+      "display_name": "Delta",
+      "rough_initial_pose": {
+        "x_m": 3.6,
+        "y_m": 4.4,
+        "heading_deg": 270.0
+      }
+    }
+  ]
+}

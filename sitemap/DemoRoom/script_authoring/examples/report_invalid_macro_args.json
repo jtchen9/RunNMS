@@ -1,0 +1,24 @@
+{
+  "ok": false,
+  "status": "fail",
+  "site_id": "DemoRoom",
+  "site_version": "2026.07.14.1",
+  "common_checkers_version": "2026.07.14.1",
+  "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_p4_invalid_macro_args.csv",
+  "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_p4_macro_start_initial_poses.csv",
+  "script_hash": "sha256:eab5602aac837caace3b3917ee71a3a9a1a3be6ca06e1c92d6b72f9faf8b3b45",
+  "initial_poses_hash": "sha256:88b5765f32788876625ab3a3c8695c6b383d7b3c83e11bb6a2bc88cd46037ab2",
+  "error_count": 1,
+  "warning_count": 0,
+  "issues": [
+    {
+      "level": "error",
+      "code": "MACRO_ARGS_NOT_ALLOWED",
+      "row_number": 3,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.in2out",
+      "message": "mobility.in2out does not accept args_json in macro v1.",
+      "suggestion": "Use empty args_json {} for this macro."
+    }
+  ]
+}

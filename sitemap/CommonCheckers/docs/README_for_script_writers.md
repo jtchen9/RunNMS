@@ -38,3 +38,16 @@ No PowerShell command-line arguments are required.
 - P3 no two moving mobility commands within 180 seconds globally
 
 Later versions will add macro/bump guard zones, path simulation, and robot-to-robot checks.
+
+## Initial pose file reminder
+
+`SCRIPT_CSV` and `INITIAL_POSES_CSV` are two different files.
+
+Use:
+
+```python
+SCRIPT_CSV = SITEMAP_DIR / "DemoRoom" / "script_authoring" / "examples" / "demo_safe_script.csv"
+INITIAL_POSES_CSV = SITEMAP_DIR / "DemoRoom" / "script_authoring" / "examples" / "demo_initial_poses.csv"
+```
+
+Do not point `INITIAL_POSES_CSV` to a command script such as `demo_safe_script.csv` or `demo_invalid_timing.csv`.

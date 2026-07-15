@@ -1,0 +1,54 @@
+{
+  "ok": false,
+  "status": "fail",
+  "site_id": "DemoRoom",
+  "site_version": "2026.07.14.1",
+  "common_checkers_version": "2026.07.14.1",
+  "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_p5_invalid_enters_charging_zone.csv",
+  "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_initial_poses.csv",
+  "script_hash": "sha256:5281f6e347eca7c946e1eba7c4042236ca0269695d6930cc8137c270e0ed7378",
+  "initial_poses_hash": "sha256:62e8ccb632f7ab3eef0211e459e5e0326d176a1ed136a79ad8186ef766407db5",
+  "error_count": 3,
+  "warning_count": 0,
+  "issues": [
+    {
+      "level": "error",
+      "code": "PATH_ENDS_INSIDE_CHARGING_ZONE",
+      "message": "path ends inside charging zone bravo_charging_zone, which remains restricted.",
+      "suggestion": "Choose an endpoint outside charging zones.",
+      "zone": "bravo_charging_zone",
+      "row_number": 3,
+      "scanner": "twin-scout-delta",
+      "action": "mobility.move"
+    },
+    {
+      "level": "error",
+      "code": "PATH_CROSSES_CHARGING_ZONE",
+      "message": "path crosses charging zone charlie_charging_zone, which remains restricted.",
+      "suggestion": "Choose a path/target that does not pass through charging zones.",
+      "zone": "charlie_charging_zone",
+      "row_number": 3,
+      "scanner": "twin-scout-delta",
+      "action": "mobility.move"
+    },
+    {
+      "level": "error",
+      "code": "PATH_CROSSES_RESTRICTION_MAP",
+      "row_number": 3,
+      "scanner": "twin-scout-delta",
+      "action": "mobility.move",
+      "message": "planned path touches a restricted cell in restriction_map.npy near (2.954, 4.615), row=46, col=29.",
+      "suggestion": "Choose a target/path that avoids restricted map cells.",
+      "sample": {
+        "x_m": 2.953846153846154,
+        "y_m": 4.615384615384616,
+        "row": 46,
+        "col": 29,
+        "value": 1,
+        "out_of_map": false,
+        "sample_index": 14,
+        "sample_count": 26
+      }
+    }
+  ]
+}
