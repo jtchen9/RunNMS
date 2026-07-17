@@ -117,6 +117,12 @@ def mobility_init() -> Dict[str, Any]:
         _cancel_runtime_timers(scanner)
  
     _save_stop(False, "")
+    state_machine_test_key = getattr(
+        config,
+        "KEY_MOBILITY_STATE_MACHINE_TEST_ENABLED",
+        f"{config.KEY_PREFIX}debug:mobility_state_machine_test_enabled",
+    )
+    config.r.set(state_machine_test_key, "false")
     queue_cleanup = _clear_all_command_queues()
 
     for scanner in scanners:
@@ -181,6 +187,8 @@ def mobility_init() -> Dict[str, Any]:
         "skipped_not_whitelisted": skipped_not_whitelisted,
         "queue_cleanup": queue_cleanup,
         "global_stop_cleared": True,
+        "state_machine_test_enabled": False,
+        "state_machine_test_key": state_machine_test_key,
     }
 
 def manual_resume(scanner: str) -> Dict[str, Any]:

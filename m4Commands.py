@@ -419,6 +419,201 @@ def cmd_list_command_queue(scanner: str) -> Dict[str, Any]:
     }
 
 
+
+def _cmd_redis_text(v: Any) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, bytes):
+        return v.decode("utf-8", errors="replace")
+    return str(v)
+
+
+def _experiment_runtime_status() -> Dict[str, Any]:
+    """
+    Decide whether manual mobility commands should be blocked.
+
+    Policy:
+    - /cmd/_enqueue is the manual/direct command API.
+    - Manual mobility commands are state-free when no experiment is currently
+      running.
+    - During the experiment runtime window, manual mobility commands are blocked
+      so they cannot interfere with the script/state-machine path.
+
+    Runtime window:
+        start_at <= now <= end_at + NORTHBOUND_EXPERIMENT_WRAPUP_SEC
+
+    Notes:
+    - A future registered experiment does not block manual testing yet.
+    - A past experiment does not block manual testing after its wrap-up window.
+    - Cancelled/deleted/completed registry rows are ignored.
+    """
+    try:
+        rows = config.r.xrange(config.KEY_EXPERIMENT_REGISTRY, min="-", max="+")
+    except Exception as e:
+        return {
+            "active": True,
+            "reason": f"unable to inspect experiment registry: {type(e).__name__}: {e}",
+            "fail_closed": True,
+        }
+
+    if not rows:
+        return {
+            "active": False,
+            "reason": "no registered experiment",
+            "registered_count": 0,
+        }
+
+    now_dt = utility.parse_local_dt(utility.local_ts())
+    wrapup_sec = int(getattr(config, "NORTHBOUND_EXPERIMENT_WRAPUP_SEC", 120) or 0)
+
+    checked = 0
+    future_count = 0
+    past_count = 0
+
+    for stream_id, raw_fields in rows:
+        fields = {
+            _cmd_redis_text(k): _cmd_redis_text(v)
+            for k, v in dict(raw_fields).items()
+        }
+
+        state = fields.get("state", "").strip().lower()
+        if state in {"cancelled", "canceled", "deleted", "completed"}:
+            continue
+
+        start_s = fields.get("start_at", "")
+        end_s = fields.get("end_at", "")
+        if not start_s or not end_s:
+            # Registry exists but does not carry a usable runtime window.
+            # Fail closed during experiment-mode uncertainty, because allowing
+            # manual direct motion could interfere with queued script commands.
+            return {
+                "active": True,
+                "reason": "experiment registry row missing start_at/end_at",
+                "fail_closed": True,
+                "stream_id": _cmd_redis_text(stream_id),
+                "experiment_id": fields.get("experiment_id", ""),
+            }
+
+        try:
+            start_dt = utility.parse_local_dt(start_s)
+            end_dt = utility.parse_local_dt(end_s) + timedelta(seconds=wrapup_sec)
+        except Exception as e:
+            return {
+                "active": True,
+                "reason": f"experiment registry time parse failed: {type(e).__name__}: {e}",
+                "fail_closed": True,
+                "stream_id": _cmd_redis_text(stream_id),
+                "experiment_id": fields.get("experiment_id", ""),
+            }
+
+        checked += 1
+
+        if now_dt < start_dt:
+            future_count += 1
+            continue
+
+        if now_dt > end_dt:
+            past_count += 1
+            continue
+
+        return {
+            "active": True,
+            "reason": "experiment runtime window active",
+            "fail_closed": False,
+            "stream_id": _cmd_redis_text(stream_id),
+            "experiment_id": fields.get("experiment_id", ""),
+            "session_id": fields.get("session_id", ""),
+            "lab_id": fields.get("lab_id", ""),
+            "start_at": start_s,
+            "end_at": fields.get("end_at", ""),
+            "wrapup_sec": wrapup_sec,
+            "state": state,
+        }
+
+    return {
+        "active": False,
+        "reason": "no experiment is currently inside its runtime window",
+        "registered_count": len(rows),
+        "checked_runtime_rows": checked,
+        "future_experiment_count": future_count,
+        "past_experiment_count": past_count,
+        "wrapup_sec": wrapup_sec,
+    }
+
+
+
+def _cmd_redis_truthy(v: Any) -> bool:
+    if v is None:
+        return False
+    text = _cmd_redis_text(v).strip().lower()
+    return text in {"1", "true", "yes", "on", "enabled"}
+
+
+def _mobility_state_machine_test_enabled() -> bool:
+    """
+    Persistent runtime debug flag.
+
+    This flag is intentionally ignored during an active experiment runtime
+    window. It exists only to make interactive state-machine testing convenient
+    outside experiments.
+    """
+    try:
+        key = getattr(
+            config,
+            "KEY_MOBILITY_STATE_MACHINE_TEST_ENABLED",
+            f"{config.KEY_PREFIX}debug:mobility_state_machine_test_enabled",
+        )
+        return _cmd_redis_truthy(config.r.get(key))
+    except Exception:
+        return False
+
+
+def _enqueue_manual_direct_command(
+    *,
+    scanner: str,
+    cmd: "Cmd",
+    action: str,
+    execute_at: str,
+    created_at: str,
+    args_json: str,
+    route_detail: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Original/manual direct robot polling queue path.
+
+    This deliberately bypasses the mobility state machine. It is used when no
+    experiment is currently running, so operators can test robot mobility
+    commands without S0/S1/S5 state dependencies.
+    """
+    fields = {
+        "category": cmd.category,
+        "action": action,
+        "execute_at": execute_at,
+        "created_at": created_at,
+        "args_json": args_json,
+        "route": "manual_direct_no_active_experiment",
+    }
+
+    xid = config.r.xadd(
+        config.key_cmd_stream(scanner),
+        fields,
+        maxlen=5000,
+        approximate=True,
+    )
+
+    return {
+        "status": "ok",
+        "scanner": scanner,
+        "cmd_id": xid,
+        "created_at": created_at,
+        "execute_at": execute_at,
+        "time_format": config.TIME_FMT,
+        "route": "manual_direct_no_active_experiment",
+        "detail": "manual mobility command enqueued directly to robot polling queue",
+        "experiment_runtime_status": route_detail,
+    }
+
+
 def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
     m1Registry.require_whitelisted(scanner)
 
@@ -458,9 +653,55 @@ def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
         )
 
     if category_n == "mobility":
-        if (cmd.execute_at or "").strip() not in ("", created_at):
-            raise HTTPException(status_code=400, detail="Phase 1 mobility testing only supports immediate execution")
-        return m8mobility.on_command_issued(scanner, action_n, args_obj)
+        experiment_status = _experiment_runtime_status()
+
+        if experiment_status.get("active"):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "manual_mobility_blocked_during_experiment",
+                    "message": (
+                        "Manual /cmd/_enqueue mobility commands are blocked while "
+                        "an experiment runtime window is active. Use the "
+                        "script/scheduler/state-machine path for experiment motion."
+                    ),
+                    "experiment_runtime_status": experiment_status,
+                },
+            )
+
+        if _mobility_state_machine_test_enabled():
+            if (cmd.execute_at or "").strip() not in ("", created_at):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "mobility state-machine test mode only supports immediate "
+                        "manual commands"
+                    ),
+                )
+
+            result = m8mobility.on_command_issued(scanner, action_n, args_obj)
+            if isinstance(result, dict):
+                result.setdefault("route", "manual_state_machine_test")
+                result.setdefault("experiment_runtime_status", experiment_status)
+                result.setdefault(
+                    "state_machine_test_key",
+                    getattr(
+                        config,
+                        "KEY_MOBILITY_STATE_MACHINE_TEST_ENABLED",
+                        f"{config.KEY_PREFIX}debug:mobility_state_machine_test_enabled",
+                    ),
+                )
+            return result
+
+        return _enqueue_manual_direct_command(
+            scanner=scanner,
+            cmd=cmd,
+            action=action_n,
+            execute_at=execute_at_norm,
+            created_at=created_at,
+            args_json=args_json,
+            route_detail=experiment_status,
+        )
 
     fields = {
         "category": cmd.category,

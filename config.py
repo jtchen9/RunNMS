@@ -103,6 +103,12 @@ NB_DEBUG_TTL_SEC: int = 48 * 3600
 
 KEY_EXPERIMENT_REGISTRY: str = f"{KEY_PREFIX}experiment:registry"
 
+# Persistent runtime debug flag.
+# When true and no experiment runtime window is active, manual /cmd/_enqueue
+# mobility commands are routed through the mobility state machine for
+# interactive state-machine testing. /mobility/init resets this flag to false.
+KEY_MOBILITY_STATE_MACHINE_TEST_ENABLED: str = f"{KEY_PREFIX}debug:mobility_state_machine_test_enabled"
+
 # -------------------
 # 6) AP command poll, status and performance upload
 # -------------------
