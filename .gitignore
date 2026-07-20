@@ -1,2 +1,5 @@
 bundles/
 __pycache__/
+testLocation/output/
+testLocation/input/
+locationSolver/output/
