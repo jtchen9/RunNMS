@@ -184,6 +184,14 @@ MOBILITY_POS_IGNORE_THRESH_M = 0.05
 MOBILITY_POS_CORRECT_THRESH_M = 0.15
 MOBILITY_POS_CORRECT_MAX_M = 0.60
 
+# Strict runtime safety gates used by S5 during AutoLab bring-up.
+# Any single physical move longer than this is rejected and stops the experiment.
+MOBILITY_MAX_RUNTIME_MOVE_M = 3.0
+
+# After a correction command has already been attempted, residual position error
+# above this value means the robot did not converge reliably; stop the experiment.
+MOBILITY_POST_CORRECTION_FAIL_THRESH_M = 0.15
+
 MOBILITY_ANGLE_IGNORE_THRESH_DEG = 2.0
 MOBILITY_ANGLE_CORRECT_MAX_DEG = 20.0
 

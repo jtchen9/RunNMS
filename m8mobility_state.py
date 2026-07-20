@@ -2354,6 +2354,54 @@ def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
 
 # ===== s5computing_correction/ compute-next-command =====
 
+def _s5_stop_experiment(
+    scanner: str,
+    *,
+    detail: str,
+    error: Dict[str, Any],
+    correction_detail: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Strict runtime safety stop from S5.
+
+    This is used when S5 has enough runtime information to decide that the
+    current experiment should not continue, for example:
+    - post-correction residual error is still too large
+    - the next physical move would exceed the bring-up distance limit
+    - the path enters static/dynamic restriction zones
+    """
+    _clear_pending_sequence(scanner)
+    _clear_outgoing_command_preview(scanner)
+    _clear_s0_command_arg_overrides(scanner)
+
+    _save_stop(True, detail)
+
+    utility._hset_many(
+        key_state(scanner),
+        {
+            "stop_experiment": "true",
+            "stop_reason": detail[:300],
+            "robot_safety_state": "UNSAFE_STOP",
+            "s5_runtime_safety_stop_json": {
+                "detail": detail,
+                "error": error or {},
+                "correction_detail": correction_detail or {},
+            },
+        },
+    )
+
+    out = {
+        "status": "stop",
+        "transition_to": S7_STOPPED,
+        "detail": detail,
+        "error": error or {},
+        "pending_sequence": [],
+    }
+    if correction_detail is not None:
+        out["correction_detail"] = correction_detail
+    return out
+
+
 def s5computing_correction(scanner: str) -> Dict[str, Any]:
     result = _s5_compute_correction(scanner)
 
@@ -2490,25 +2538,58 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
             }
 
     # ---------------------------------------------------------
-    # Correction / command issue limit.
+    # Post-correction convergence gate.
     #
     # Counter semantics:
     #   -1 : no command issued yet
-    #    0 : initial modified command already issued
-    #   >=1: true correction attempts
+    #    0 : initial modified command issued
+    #   >=1: true correction attempts already issued
+    #
+    # During bring-up, after the allowed correction has already run, the system
+    # must either be close enough or stop the whole experiment.  Do not silently
+    # return to idle with a large residual error.
     # ---------------------------------------------------------
     if correction_count >= CORRECTION_ATTEMPT_LIMIT:
+        post_fail_thresh_m = float(
+            getattr(
+                config,
+                "MOBILITY_POST_CORRECTION_FAIL_THRESH_M",
+                0.15,
+            )
+        )
+
+        if dpos > post_fail_thresh_m:
+            return _s5_stop_experiment(
+                scanner,
+                detail=(
+                    "post-correction residual too large: "
+                    f"dpos={dpos:.3f}m > "
+                    f"{post_fail_thresh_m:.3f}m"
+                ),
+                error={
+                    **err,
+                    "correction_attempt_count": correction_count,
+                    "post_correction_fail_thresh_m": post_fail_thresh_m,
+                },
+            )
+
         _clear_pending_sequence(scanner)
         _clear_outgoing_command_preview(scanner)
+        _clear_s0_command_arg_overrides(scanner)
 
         return {
             "status": "ok",
             "transition_to": S0_IDLE,
             "detail": (
-                f"correction limit reached "
-                f"({CORRECTION_ATTEMPT_LIMIT})"
+                "post-correction residual accepted: "
+                f"dpos={dpos:.3f}m <= "
+                f"{post_fail_thresh_m:.3f}m"
             ),
-            "error": err,
+            "error": {
+                **err,
+                "correction_attempt_count": correction_count,
+                "post_correction_fail_thresh_m": post_fail_thresh_m,
+            },
             "pending_sequence": [],
         }
 
@@ -2597,6 +2678,41 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         args,
     )
 
+    # Strict bring-up rule: do not allow a single runtime physical movement
+    # longer than the configured maximum.  This applies to both initial script
+    # commands and follow-up correction commands because both pass through S5.
+    command_distance_m = abs(
+        float(
+            args.get("distance_m", 0.0)
+            or 0.0
+        )
+    )
+    max_runtime_move_m = float(
+        getattr(
+            config,
+            "MOBILITY_MAX_RUNTIME_MOVE_M",
+            3.0,
+        )
+    )
+
+    if command_distance_m > max_runtime_move_m:
+        return _s5_stop_experiment(
+            scanner,
+            detail=(
+                "runtime move distance too large: "
+                f"distance={command_distance_m:.3f}m > "
+                f"{max_runtime_move_m:.3f}m"
+            ),
+            error={
+                **err,
+                "action": action,
+                "args": args,
+                "command_distance_m": command_distance_m,
+                "max_runtime_move_m": max_runtime_move_m,
+            },
+            correction_detail=correction_detail,
+        )
+
     needs_path_check = (
         action in (
             "mobility.turn_move_turn.forward",
@@ -2651,13 +2767,9 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
             )
 
         if blocked_after_allowance:
-            _clear_pending_sequence(scanner)
-            _clear_outgoing_command_preview(scanner)
-
-            return {
-                "status": "stop",
-                "transition_to": S7_STOPPED,
-                "detail": (
+            return _s5_stop_experiment(
+                scanner,
+                detail=(
                     f"path unsafe in s5, "
                     f"blocked={len(blocked_after_allowance)}, "
                     f"start_grid="
@@ -2667,7 +2779,7 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
                     f"blocked_cells="
                     f"{blocked_after_allowance[:10]}"
                 ),
-                "error": {
+                error={
                     **err,
                     "path_debug": path_debug,
                     "blocked_after_bump_allowance": blocked_after_allowance[:30],
@@ -2677,10 +2789,8 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
                     "simulated_target":
                         simulated_target,
                 },
-                "pending_sequence": [],
-                "correction_detail":
-                    correction_detail,
-            }
+                correction_detail=correction_detail,
+            )
 
     seq = [
         {
