@@ -177,12 +177,17 @@ MOBILITY_STATIC_RESTRICTION_MAP_NPY = str(mobility_restriction_map_path())
 MOBILITY_WORLD_SIZE_M = 20.0
 MOBILITY_GRID_RESOLUTION_M = 0.1
 
-MOBILITY_ROBOT_RESTRICT_RADIUS_M = 0.25
+MOBILITY_ROBOT_RESTRICT_RADIUS_M = 0.40
 # -------- Mobility correction thresholds --------
 
 MOBILITY_POS_IGNORE_THRESH_M = 0.05
 MOBILITY_POS_CORRECT_THRESH_M = 0.15
 MOBILITY_POS_CORRECT_MAX_M = 0.60
+
+# Strict runtime convergence gate used by S5 during AutoLab bring-up.
+# After a correction command has already been attempted, residual position error
+# above this value means the robot did not converge reliably; stop the experiment.
+MOBILITY_POST_CORRECTION_FAIL_THRESH_M = 0.15
 
 MOBILITY_ANGLE_IGNORE_THRESH_DEG = 2.0
 MOBILITY_ANGLE_CORRECT_MAX_DEG = 20.0
