@@ -2401,7 +2401,25 @@ def _s5_stop_experiment(
     return out
 
 
+def _s5_clear_runtime_safety_stop(scanner: str) -> None:
+    """
+    Clear stale S5 runtime-safety diagnostics at the beginning of each S5 run.
+
+    _s5_stop_experiment() writes a fresh value if this S5 evaluation actually
+    stops. Successful S5 evaluations should not carry an old stop record from a
+    previous test or command.
+    """
+    utility._hset_many(
+        key_state(scanner),
+        {
+            "s5_runtime_safety_stop_json": "",
+        },
+    )
+
+
 def s5computing_correction(scanner: str) -> Dict[str, Any]:
+    _s5_clear_runtime_safety_stop(scanner)
+
     result = _s5_compute_correction(scanner)
 
     transition_to = result["transition_to"]

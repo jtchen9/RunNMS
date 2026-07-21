@@ -177,7 +177,7 @@ MOBILITY_STATIC_RESTRICTION_MAP_NPY = str(mobility_restriction_map_path())
 # Grid resolution fallback is kept for legacy/debug helpers that need a default.
 MOBILITY_GRID_RESOLUTION_M = 0.1
 
-MOBILITY_ROBOT_RESTRICT_RADIUS_M = 0.40
+MOBILITY_ROBOT_RESTRICT_RADIUS_M = 0.60
 # -------- Mobility correction thresholds --------
 
 # Ignore very small residual position errors. Used by S5.
