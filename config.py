@@ -173,27 +173,26 @@ def mobility_tag_location_path() -> Path:
 # Kept only for old code references; new code should call mobility_restriction_map_path().
 MOBILITY_STATIC_RESTRICTION_MAP_NPY = str(mobility_restriction_map_path())
 
-# Fallback only. Runtime should read site.json.
-MOBILITY_WORLD_SIZE_M = 20.0
+# Runtime should read world size from site.json.
+# Grid resolution fallback is kept for legacy/debug helpers that need a default.
 MOBILITY_GRID_RESOLUTION_M = 0.1
 
 MOBILITY_ROBOT_RESTRICT_RADIUS_M = 0.40
 # -------- Mobility correction thresholds --------
 
+# Ignore very small residual position errors. Used by S5.
 MOBILITY_POS_IGNORE_THRESH_M = 0.05
-MOBILITY_POS_CORRECT_THRESH_M = 0.15
-MOBILITY_POS_CORRECT_MAX_M = 0.60
+
+# Strict runtime gate used by S5 before issuing the first correction.
+# If the main/scripted command ends more than this far from the planned target,
+# do not try a large correction; stop the experiment for manual review.
+MOBILITY_FIRST_CORRECTION_MAX_M = 0.60
 
 # Strict runtime convergence gate used by S5 during AutoLab bring-up.
 # After a correction command has already been attempted, residual position error
 # above this value means the robot did not converge reliably; stop the experiment.
 MOBILITY_POST_CORRECTION_FAIL_THRESH_M = 0.15
 
-MOBILITY_ANGLE_IGNORE_THRESH_DEG = 2.0
-MOBILITY_ANGLE_CORRECT_MAX_DEG = 20.0
-
-MOBILITY_MAX_PRECOMP_DISTANCE_DELTA_M = 0.30
-MOBILITY_TAG_STALE_TIMEOUT_SEC = 120
 
 # -------- Site-specific mobility macros --------
 # NMS-only macro actions. These are never sent directly to robots.

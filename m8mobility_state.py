@@ -2536,6 +2536,38 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
                 },
             }
 
+        # -----------------------------------------------------
+        # First-correction size gate.
+        #
+        # correction_count == 0 means the main/scripted physical command has
+        # already executed, and S5 is about to issue the first true correction.
+        # If that correction would be larger than the bring-up safety limit,
+        # stop the experiment instead of commanding a large recovery move.
+        # -----------------------------------------------------
+        first_correction_max_m = float(
+            getattr(
+                config,
+                "MOBILITY_FIRST_CORRECTION_MAX_M",
+                0.60,
+            )
+        )
+
+        if correction_count == 0 and dpos > first_correction_max_m:
+            return _s5_stop_experiment(
+                scanner,
+                detail=(
+                    "first correction too large: "
+                    f"dpos={dpos:.3f}m > "
+                    f"{first_correction_max_m:.3f}m"
+                ),
+                error={
+                    **err,
+                    "correction_attempt_count": correction_count,
+                    "first_correction_max_m": first_correction_max_m,
+                    "followup_decision": decision,
+                },
+            )
+
     # ---------------------------------------------------------
     # Post-correction convergence gate.
     #
