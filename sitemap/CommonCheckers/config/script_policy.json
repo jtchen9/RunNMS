@@ -1,10 +1,27 @@
 {
   "schema_version": 1,
   "policy_name": "common_script_policy",
-  "allowed_mobility_actions": ["mobility.report.location", "mobility.move", "mobility.in2out", "mobility.out2in"],
-  "blocked_mobility_actions": ["mobility.turn", "mobility.turn_move_turn.forward", "mobility.turn_move_turn.backward"],
-  "moving_mobility_actions": ["mobility.move", "mobility.in2out", "mobility.out2in"],
-  "nonmoving_mobility_actions": ["mobility.report.location"],
+  "allowed_mobility_actions": [
+    "mobility.report.location",
+    "mobility.move",
+    "mobility.in2out",
+    "mobility.out2in"
+  ],
+  "blocked_mobility_actions": [
+    "mobility.turn",
+    "mobility.turn_move_turn.forward",
+    "mobility.turn_move_turn.backward"
+  ],
+  "moving_mobility_actions": [
+    "mobility.move",
+    "mobility.in2out",
+    "mobility.out2in"
+  ],
+  "nonmoving_mobility_actions": [
+    "mobility.report.location"
+  ],
   "first_mobility_action_required": "mobility.report.location",
-  "global_min_seconds_between_moving_mobility_commands": 180
+  "min_seconds_after_report_location_before_first_move": 60,
+  "global_min_seconds_between_moving_mobility_commands": 180,
+  "max_single_mobility_move_distance_m": 3.0
 }

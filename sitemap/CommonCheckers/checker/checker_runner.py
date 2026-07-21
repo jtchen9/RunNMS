@@ -18,7 +18,8 @@ if __package__ in (None, ""):
 
     from checker.initialization_rules import check_first_mobility_command, check_initial_poses_exist
     from checker.script_model import load_initial_poses_csv, load_script_csv
-    from checker.timeline_rules import check_global_moving_command_spacing
+    from checker.timeline_rules import check_first_move_after_report_location_spacing, check_global_moving_command_spacing
+    from checker.movement_rules import check_max_single_mobility_move_distance
     from checker.validation_report import make_report, write_report
     from checker.vocabulary_rules import check_vocabulary
     from checker.macro_rules import check_macro_and_bump_rules
@@ -26,7 +27,8 @@ if __package__ in (None, ""):
 else:
     from .initialization_rules import check_first_mobility_command, check_initial_poses_exist
     from .script_model import load_initial_poses_csv, load_script_csv
-    from .timeline_rules import check_global_moving_command_spacing
+    from .timeline_rules import check_first_move_after_report_location_spacing, check_global_moving_command_spacing
+    from .movement_rules import check_max_single_mobility_move_distance
     from .validation_report import make_report, write_report
     from .vocabulary_rules import check_vocabulary
     from .macro_rules import check_macro_and_bump_rules
@@ -103,9 +105,11 @@ def validate_script(
     # file path or wrong CSV type.
     if not _has_initial_pose_file_blocking_error(pose_issues):
         issues.extend(check_initial_poses_exist(rows, initial_poses))
+        issues.extend(check_max_single_mobility_move_distance(rows, initial_poses, policy))
         issues.extend(check_macro_and_bump_rules(rows, initial_poses, macro_policy, bump_guard_zones))
         issues.extend(check_planned_path_rules(rows, initial_poses, macro_policy, zone_policy, path_policy, safety_policy, site_dir))
 
+    issues.extend(check_first_move_after_report_location_spacing(rows, policy))
     issues.extend(check_global_moving_command_spacing(rows, policy))
 
     ok = not any(x.get("level") == "error" for x in issues)
@@ -146,7 +150,7 @@ def run_from_vscode() -> Dict[str, Any]:
     #   <workspace>/sitemap/CommonCheckers/checker/checker_runner.py
     SITEMAP_DIR = Path(__file__).resolve().parents[2]
 
-    SCRIPT_CSV = SITEMAP_DIR / "DemoRoom" / "script_authoring" / "examples" / "demo_safe_script.csv"
+    SCRIPT_CSV = SITEMAP_DIR / "DemoRoom" / "script_authoring" / "examples" / "demo_invalid_move_too_long.csv"
     INITIAL_POSES_CSV = SITEMAP_DIR / "DemoRoom" / "script_authoring" / "examples" / "demo_initial_poses.csv"
     SITE_DIR = SITEMAP_DIR / "DemoRoom"
     COMMON_DIR = SITEMAP_DIR / "CommonCheckers"

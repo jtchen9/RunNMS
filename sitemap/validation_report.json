@@ -1,14 +1,49 @@
 {
-  "ok": true,
-  "status": "pass",
+  "ok": false,
+  "status": "fail",
   "site_id": "DemoRoom",
   "site_version": "2026.07.14.1",
   "common_checkers_version": "2026.07.14.1",
-  "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_safe_script.csv",
+  "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_invalid_move_too_long.csv",
   "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\examples\\demo_initial_poses.csv",
-  "script_hash": "sha256:e7b02842ea08f7ab70049357f0924baddf91a8935b4d9380077961af49088b50",
+  "script_hash": "sha256:1987027a1f6fec1a97a68a2ee6c82133e18854737a42aa7679669adc90031b7f",
   "initial_poses_hash": "sha256:62e8ccb632f7ab3eef0211e459e5e0326d176a1ed136a79ad8186ef766407db5",
-  "error_count": 0,
+  "error_count": 2,
   "warning_count": 0,
-  "issues": []
+  "issues": [
+    {
+      "level": "error",
+      "code": "MOBILITY_MOVE_DISTANCE_TOO_LONG",
+      "row_number": 3,
+      "scanner": "twin-scout-delta",
+      "action": "mobility.move",
+      "message": "mobility.move at row 3 moves 3.400 m; maximum allowed single move is 3.000 m.",
+      "suggestion": "Split this movement into shorter mobility.move rows, each no longer than 3.000 m, with enough time between movements.",
+      "distance_m": 3.4,
+      "max_distance_m": 3.0,
+      "start_x_m": 3.6,
+      "start_y_m": 4.4,
+      "target_x_m": 7.0,
+      "target_y_m": 4.4
+    },
+    {
+      "level": "error",
+      "code": "PATH_CROSSES_RESTRICTION_MAP",
+      "row_number": 3,
+      "scanner": "twin-scout-delta",
+      "action": "mobility.move",
+      "message": "planned path touches a restricted cell in restriction_map.npy near (4.000, 4.400), row=44, col=40.",
+      "suggestion": "Choose a target/path that avoids restricted map cells.",
+      "sample": {
+        "x_m": 4.0,
+        "y_m": 4.4,
+        "row": 44,
+        "col": 40,
+        "value": 1,
+        "out_of_map": false,
+        "sample_index": 8,
+        "sample_count": 68
+      }
+    }
+  ]
 }
