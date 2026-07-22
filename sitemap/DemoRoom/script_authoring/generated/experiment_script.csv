@@ -1,4 +1,4 @@
 ﻿scanner,t_offset_sec,category,action,args_json
 "twin-scout-delta",0,"mobility","mobility.report.location","{}"
-"twin-scout-delta",180,"mobility","mobility.move","{""x_m"":3.9,""y_m"":4.2}"
+"twin-scout-delta",180,"mobility","mobility.move","{""x_m"":3.9,""y_m"":4.2,""heading_deg"":270}"
 "twin-scout-delta",360,"mobility","mobility.report.location","{}"
