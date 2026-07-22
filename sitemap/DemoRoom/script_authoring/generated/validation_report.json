@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "status": "pass",
+  "site_id": "DemoRoom",
+  "site_version": "2026.07.14.1",
+  "common_checkers_version": "2026.07.14.1",
+  "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\experiment_script.csv",
+  "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\initial_poses.csv",
+  "script_hash": "sha256:81094481875e8eefb3bd5c0539baf160ca78be7392363cd6d37dc84490bd7aaf",
+  "initial_poses_hash": "sha256:0e9bc7f7cc37621b81cc334195fbd4d5980017a4ad681297e7dece2072c61553",
+  "error_count": 0,
+  "warning_count": 0,
+  "issues": [],
+  "generated_by": "autolab_xlsm_run_checker.py",
+  "generated_at": "2026-07-22T15:04:37"
+}
