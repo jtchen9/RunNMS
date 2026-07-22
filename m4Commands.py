@@ -734,6 +734,42 @@ def _nms_lab_id() -> str:
     return str(getattr(config, "NMS_NAME", "DemoRoom") or "DemoRoom")
 
 
+def _require_experiment_t0_future(t0_dt) -> Dict[str, Any]:
+    """
+    Experiment registration rule: t0 must be in the future.
+
+    Offline CommonCheckers cannot validate this because script writers run it
+    before the lab operator chooses an actual registration time. Therefore this
+    check belongs to /cmd/_load_csv_file.
+    """
+    now_s = utility.local_ts()
+    now_dt = utility.parse_local_dt(now_s)
+
+    if t0_dt <= now_dt:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "experiment_t0_not_future",
+                "message": (
+                    "Experiment t0 must be in the future relative to NMS local time. "
+                    "Use current NMS local time plus a preparation margin, such as 30-60 seconds."
+                ),
+                "t0": t0_dt.strftime(config.TIME_FMT),
+                "server_now": now_dt.strftime(config.TIME_FMT),
+                "time_format": config.TIME_FMT,
+            },
+        )
+
+    return {
+        "status": "ok",
+        "rule": "t0_future",
+        "t0": t0_dt.strftime(config.TIME_FMT),
+        "server_now": now_dt.strftime(config.TIME_FMT),
+        "lead_time_sec": int((t0_dt - now_dt).total_seconds()),
+        "detail": "t0 is in the future relative to NMS local time",
+    }
+
+
 def _require_empty_experiment_registry() -> Dict[str, Any]:
     """
     Enforce the Auto-Lab rule that at most one experiment may be registered.
@@ -2008,12 +2044,12 @@ async def cmd_load_csv_file(
           config.KEY_EXPERIMENT_REGISTRY = "nms:experiment:registry"
 
     Safe mutation order:
-        1. parse/decode CSV
-        2. dry-analyze accepted rows and compute end_at
-        3. reject if command_count == 0
-        4. check same-lab time conflict
-        5. if replace_existing=true, clear old queues/state
-        6. if mobility rows exist, resume listed mobility scanners to s0idle
+        1. parse t0 and require it to be in the future
+        2. parse/decode CSV
+        3. dry-analyze accepted rows and compute end_at
+        4. reject if command_count == 0
+        5. check single-experiment registration gate
+        6. reset lab mobility state
         7. enqueue accepted commands
         8. write registry record
 
@@ -2037,6 +2073,8 @@ async def cmd_load_csv_file(
             status_code=400,
             detail=f"Invalid t0; expected like '{utility.local_ts()}' (format {config.TIME_FMT})"
         )
+
+    t0_preflight = _require_experiment_t0_future(t0_dt)
 
     original_filename = (csv_file.filename or "").strip()
     filename_lower = original_filename.lower()
@@ -2117,6 +2155,7 @@ async def cmd_load_csv_file(
 
     preflight = {
         **analysis["preflight"],
+        "t0_gate": t0_preflight,
         "single_experiment_gate": single_experiment_gate,
         "mobility_reset": mobility_reset,
     }

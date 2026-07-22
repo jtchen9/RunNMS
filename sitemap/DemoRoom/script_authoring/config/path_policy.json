@@ -6,9 +6,9 @@
   "description": "P5 planned-path policy with restriction_map.npy scanning.",
   "workspace_bounds": {
     "x_min_m": 1.2,
-    "x_max_m": 10.2,
-    "y_min_m": 0.0,
-    "y_max_m": 11.4
+    "x_max_m": 10.4,
+    "y_min_m": 0.1,
+    "y_max_m": 11.3
   },
   "charging_zone_path_policy": {
     "source": "script_authoring/config/zone_policy.json",

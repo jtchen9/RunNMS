@@ -6,10 +6,10 @@
     {
       "name": "DemoRoom_bump_guard",
       "type": "axis_aligned_rectangle",
-      "x_min_m": 8.610,
-      "x_max_m": 9.608,
-      "y_min_m": 4.653,
-      "y_max_m": 5.827,
+      "x_min_m": 8.6,
+      "x_max_m": 9.4,
+      "y_min_m": 4.6,
+      "y_max_m": 5.9,
       "purpose": "Normal mobility.move paths must not cross this rectangle. Crossing is allowed only through mobility.in2out or mobility.out2in macros."
     }
   ]

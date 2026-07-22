@@ -1,7 +1,6 @@
 {
   "schema_version": 1,
   "site_id": "DemoRoom",
-  "default_initial_position_tolerance_m": 0.20,
-  "default_initial_heading_tolerance_deg": 10.0,
-  "robot_safety_radius_m": 0.25
+  "robot_safety_radius_m": 0.6,
+  "robot_safety_radius_note": "Must match config.py MOBILITY_ROBOT_RESTRICT_RADIUS_M for DemoRoom runtime S5 dynamic robot obstacle checks. This JSON value is used by CommonCheckers for offline planned robot-to-robot clearance."
 }

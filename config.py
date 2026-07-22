@@ -177,6 +177,11 @@ MOBILITY_STATIC_RESTRICTION_MAP_NPY = str(mobility_restriction_map_path())
 # Grid resolution fallback is kept for legacy/debug helpers that need a default.
 MOBILITY_GRID_RESOLUTION_M = 0.1
 
+# Runtime copy of DemoRoom script_authoring/config/safety_policy.json:
+#   robot_safety_radius_m
+# Keep this synchronized with the site preflight safety policy. CommonCheckers
+# uses that JSON value for planned robot-to-robot clearance; S5 runtime uses
+# this config.py value for dynamic robot obstacle blocking.
 MOBILITY_ROBOT_RESTRICT_RADIUS_M = 0.60
 # -------- Mobility correction thresholds --------
 

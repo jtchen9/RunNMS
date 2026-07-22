@@ -4,8 +4,8 @@
   "macros": {
     "mobility.in2out": {
       "args_allowed": false,
-      "start_x_m": 9.109,
-      "start_y_m": 4.353,
+      "start_x_m": 9.0,
+      "start_y_m": 4.35,
       "start_tolerance_m": 0.2,
       "target_heading_deg": 90.0,
       "distance_m": 2.0,
@@ -13,8 +13,8 @@
     },
     "mobility.out2in": {
       "args_allowed": false,
-      "start_x_m": 9.109,
-      "start_y_m": 6.127,
+      "start_x_m": 9.0,
+      "start_y_m": 6.15,
       "start_tolerance_m": 0.2,
       "target_heading_deg": 270.0,
       "distance_m": 2.0,

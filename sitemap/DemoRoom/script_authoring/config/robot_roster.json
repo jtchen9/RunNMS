@@ -6,7 +6,7 @@
       "scanner": "twin-scout-alpha",
       "display_name": "Alpha",
       "rough_initial_pose": {
-        "x_m": 1.8,
+        "x_m": 1.5,
         "y_m": 4.4,
         "heading_deg": 270.0
       }
@@ -15,7 +15,7 @@
       "scanner": "twin-scout-bravo",
       "display_name": "Bravo",
       "rough_initial_pose": {
-        "x_m": 2.4,
+        "x_m": 2.37,
         "y_m": 4.4,
         "heading_deg": 270.0
       }
@@ -24,7 +24,7 @@
       "scanner": "twin-scout-charlie",
       "display_name": "Charlie",
       "rough_initial_pose": {
-        "x_m": 3.0,
+        "x_m": 3.13,
         "y_m": 4.4,
         "heading_deg": 270.0
       }
@@ -33,7 +33,7 @@
       "scanner": "twin-scout-delta",
       "display_name": "Delta",
       "rough_initial_pose": {
-        "x_m": 3.6,
+        "x_m": 3.9,
         "y_m": 4.4,
         "heading_deg": 270.0
       }
