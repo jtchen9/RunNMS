@@ -1,6 +1,40 @@
 {
   "schema_version": 1,
   "policy_name": "common_script_policy",
+  "allowed_categories": [
+    "mobility",
+    "scan"
+  ],
+  "allowed_actions_by_category": {
+    "mobility": [
+      "mobility.report.location",
+      "mobility.move",
+      "mobility.in2out",
+      "mobility.out2in"
+    ],
+    "scan": [
+      "scan.start",
+      "scan.stop",
+      "scan.once"
+    ]
+  },
+  "blocked_actions_by_category": {
+    "mobility": [
+      "mobility.turn",
+      "mobility.turn_move_turn.forward",
+      "mobility.turn_move_turn.backward"
+    ]
+  },
+  "allowed_scan_actions": [
+    "scan.start",
+    "scan.stop",
+    "scan.once"
+  ],
+  "nonmoving_scan_actions": [
+    "scan.start",
+    "scan.stop",
+    "scan.once"
+  ],
   "allowed_mobility_actions": [
     "mobility.report.location",
     "mobility.move",
