@@ -7,7 +7,8 @@ from .static_safety_core import (
     apply_mobility_move_pose,
     bump_guard_crossing_issues,
     deg_norm_360,
-    macro_planned_pose,
+    macro_robot_clearance_issues,
+    macro_segment_from_current_pose,
     macro_start_pose_issues,
 )
 
@@ -25,6 +26,7 @@ def check_macro_and_bump_rules(
     initial_poses: Dict[str, InitialPose],
     macro_policy: Dict[str, Any],
     bump_guard_zones: Dict[str, Any],
+    safety_policy: Dict[str, Any] | None = None,
 ) -> List[Dict[str, Any]]:
     """
     P4 preflight adapter.
@@ -37,10 +39,12 @@ def check_macro_and_bump_rules(
     - macro planned-current pose must be within configured start tolerance
     - normal mobility.move must not cross any bump guard rectangle
     - macro rows may cross the bump guard zone by design
+    - macro crossing path must not be blocked by other planned robots
     """
     issues: List[Dict[str, Any]] = []
 
     macro_cfg_by_action = dict(macro_policy.get("macros", {}) or {})
+    safety_radius_m = float((safety_policy or {}).get("robot_safety_radius_m", 0.60))
 
     planned_by_scanner: Dict[str, Dict[str, float]] = {
         scanner: {
@@ -102,10 +106,35 @@ def check_macro_and_bump_rules(
             for issue in macro_start_issues:
                 issues.append(_with_row_context(issue, row))
 
-            if any(x.get("code") == "MACRO_CONFIG_BAD_NUMERIC_VALUE" for x in macro_start_issues):
+            if macro_start_issues:
+                # Do not admit or advance a macro if the robot is not staged
+                # within tolerance, or if macro config is invalid.
                 continue
 
-            planned_by_scanner[row.scanner] = macro_planned_pose(cfg)
+            macro_start_pose, macro_end_pose = macro_segment_from_current_pose(current, cfg)
+            other_robot_poses = {
+                scanner: pose
+                for scanner, pose in planned_by_scanner.items()
+                if scanner != row.scanner
+            }
+
+            macro_clearance_issues = macro_robot_clearance_issues(
+                moving_scanner=row.scanner,
+                macro_action=row.action,
+                start_pose=macro_start_pose,
+                end_pose=macro_end_pose,
+                other_robot_poses=other_robot_poses,
+                safety_radius_m=safety_radius_m,
+            )
+            for issue in macro_clearance_issues:
+                issues.append(_with_row_context(issue, row))
+
+            if macro_clearance_issues:
+                # Treat a blocked macro corridor as not admitted; keep planned
+                # pose at the staging point for later follow-on diagnostics.
+                continue
+
+            planned_by_scanner[row.scanner] = macro_end_pose
             continue
 
     return issues

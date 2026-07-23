@@ -502,6 +502,46 @@ def macro_planned_pose(macro_cfg: Dict[str, Any]) -> Pose:
     }
 
 
+def macro_planned_pose_from_current(current: Pose, macro_cfg: Dict[str, Any]) -> Pose:
+    """
+    Return macro endpoint using the admitted current pose as the start.
+
+    Macro contract:
+    - start_x_m/start_y_m define the admissible staging center
+    - macro_start_pose_issues() checks current pose is within tolerance
+    - once admitted, the low-level macro moves distance_m from the current pose
+      along target_heading_deg
+
+    Therefore the crossing path is not a hardcoded absolute segment. It is a
+    relative motion from the robot's planned/true pose at admission time.
+    """
+    heading = deg_norm_360(float(macro_cfg["target_heading_deg"]))
+    distance = float(macro_cfg["distance_m"])
+    rad = math.radians(heading)
+    return {
+        "x_m": float(current["x_m"]) + distance * math.cos(rad),
+        "y_m": float(current["y_m"]) + distance * math.sin(rad),
+        "heading_deg": heading,
+    }
+
+
+def macro_segment_from_current_pose(current: Pose, macro_cfg: Dict[str, Any]) -> Tuple[Pose, Pose]:
+    """
+    Return the actual admitted macro segment as (current_pose, endpoint).
+
+    Pose-source agnostic:
+    - preflight passes planned current pose
+    - runtime passes true current pose
+    """
+    start_pose: Pose = {
+        "x_m": float(current["x_m"]),
+        "y_m": float(current["y_m"]),
+        "heading_deg": deg_norm_360(float(macro_cfg["target_heading_deg"])),
+    }
+    return start_pose, macro_planned_pose_from_current(current, macro_cfg)
+
+
+
 def macro_start_pose_issues(
     current: Pose,
     macro_cfg: Dict[str, Any],
@@ -529,7 +569,7 @@ def macro_start_pose_issues(
 
     return [{
         "level": "error",
-        "code": "MACRO_START_POSE_MISMATCH",
+        "code": "MACRO_START_POSE_NOT_READY",
         "message": (
             f"planned/true pose ({float(current['x_m']):.3f}, {float(current['y_m']):.3f}) "
             f"is {err:.3f} m from macro start "
@@ -699,4 +739,58 @@ def robot_clearance_issues(
             })
 
     return issues
+
+
+def macro_robot_clearance_issues(
+    *,
+    moving_scanner: str,
+    macro_action: str,
+    start_pose: Pose,
+    end_pose: Pose,
+    other_robot_poses: Dict[str, Pose],
+    safety_radius_m: float,
+) -> List[Issue]:
+    """
+    Shared robot-clearance check for site-specific mobility macros.
+
+    The geometry is pose-source agnostic. Preflight supplies planned poses;
+    runtime can later supply true/current poses. This wrapper returns
+    macro-specific issue codes while reusing the common robot-clearance
+    calculation.
+    """
+    out: List[Issue] = []
+
+    for issue in robot_clearance_issues(
+        moving_scanner=moving_scanner,
+        start_pose=start_pose,
+        end_pose=end_pose,
+        other_robot_poses=other_robot_poses,
+        safety_radius_m=safety_radius_m,
+    ):
+        item = dict(issue)
+        original_code = str(item.get("code", ""))
+
+        if original_code == "ROBOT_PATH_TOO_CLOSE":
+            item["code"] = "MACRO_PATH_BLOCKED_BY_ROBOT"
+            item["message"] = (
+                f"{macro_action} path for {moving_scanner} passes "
+                f"{float(item.get('distance_m', 0.0)):.3f} m from robot "
+                f"{item.get('other_scanner')}; required clearance is "
+                f"{float(item.get('safety_radius_m', safety_radius_m)):.3f} m."
+            )
+            item["suggestion"] = "Move the other robot away from the bump-crossing corridor or schedule the macro later."
+        elif original_code == "ROBOT_FINAL_POSE_TOO_CLOSE":
+            item["code"] = "MACRO_FINAL_POSE_TOO_CLOSE"
+            item["message"] = (
+                f"{macro_action} final pose for {moving_scanner} is "
+                f"{float(item.get('distance_m', 0.0)):.3f} m from robot "
+                f"{item.get('other_scanner')}; required clearance is "
+                f"{float(item.get('safety_radius_m', safety_radius_m)):.3f} m."
+            )
+            item["suggestion"] = "Move the other robot away from the macro endpoint or schedule the macro later."
+
+        item["macro_action"] = macro_action
+        out.append(item)
+
+    return out
 
