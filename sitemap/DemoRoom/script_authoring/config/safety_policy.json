@@ -2,5 +2,5 @@
   "schema_version": 1,
   "site_id": "DemoRoom",
   "robot_safety_radius_m": 0.6,
-  "robot_safety_radius_note": "Must match config.py MOBILITY_ROBOT_RESTRICT_RADIUS_M for DemoRoom runtime S5 dynamic robot obstacle checks. This JSON value is used by CommonCheckers for offline planned robot-to-robot clearance."
+  "robot_safety_radius_note": "Authoritative site-specific robot clearance radius. CommonCheckers uses this JSON for planned robot-to-robot clearance, and config.py now loads the same JSON for runtime S5 dynamic robot obstacle checks."
 }

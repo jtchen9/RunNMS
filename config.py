@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import redis
 
 # Unique identity of this NMS/lab instance.
@@ -158,17 +159,46 @@ TRAFFIC_EVENT_TEMP_MAXLEN: int = 5000
 MOBILITY_SITE_NAME = "DemoRoom"
 MOBILITY_SITEMAP_ROOT = Path(r".\sitemap")
 
-def mobility_site_dir() -> Path:
-    return MOBILITY_SITEMAP_ROOT / MOBILITY_SITE_NAME
+def _resolve_mobility_site_name(site_name: str | None = None) -> str:
+    return str(site_name or MOBILITY_SITE_NAME or NMS_NAME)
 
-def mobility_site_json_path() -> Path:
-    return mobility_site_dir() / "site.json"
+def mobility_site_dir(site_name: str | None = None) -> Path:
+    return MOBILITY_SITEMAP_ROOT / _resolve_mobility_site_name(site_name)
 
-def mobility_restriction_map_path() -> Path:
-    return mobility_site_dir() / "restriction_map.npy"
+def mobility_site_json_path(site_name: str | None = None) -> Path:
+    return mobility_site_dir(site_name) / "site.json"
 
-def mobility_tag_location_path() -> Path:
-    return mobility_site_dir() / "tag_location.txt"
+def mobility_restriction_map_path(site_name: str | None = None) -> Path:
+    return mobility_site_dir(site_name) / "restriction_map.npy"
+
+def mobility_tag_location_path(site_name: str | None = None) -> Path:
+    return mobility_site_dir(site_name) / "tag_location.txt"
+
+def mobility_script_authoring_config_dir(site_name: str | None = None) -> Path:
+    return mobility_site_dir(site_name) / "script_authoring" / "config"
+
+def mobility_macro_policy_path(site_name: str | None = None) -> Path:
+    return mobility_script_authoring_config_dir(site_name) / "macro_policy.json"
+
+def mobility_safety_policy_path(site_name: str | None = None) -> Path:
+    return mobility_script_authoring_config_dir(site_name) / "safety_policy.json"
+
+def _load_json_policy(path: Path) -> dict:
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+def load_mobility_macro_policy(site_name: str | None = None) -> dict:
+    return _load_json_policy(mobility_macro_policy_path(site_name))
+
+def load_mobility_safety_policy(site_name: str | None = None) -> dict:
+    return _load_json_policy(mobility_safety_policy_path(site_name))
+
+def mobility_bump_crossing_macros(site_name: str | None = None) -> dict:
+    return dict(load_mobility_macro_policy(site_name).get("macros", {}) or {})
+
+def mobility_robot_safety_radius_m(site_name: str | None = None) -> float:
+    policy = load_mobility_safety_policy(site_name)
+    return float(policy["robot_safety_radius_m"])
 
 # Kept only for old code references; new code should call mobility_restriction_map_path().
 MOBILITY_STATIC_RESTRICTION_MAP_NPY = str(mobility_restriction_map_path())
@@ -177,12 +207,15 @@ MOBILITY_STATIC_RESTRICTION_MAP_NPY = str(mobility_restriction_map_path())
 # Grid resolution fallback is kept for legacy/debug helpers that need a default.
 MOBILITY_GRID_RESOLUTION_M = 0.1
 
-# Runtime copy of DemoRoom script_authoring/config/safety_policy.json:
-#   robot_safety_radius_m
-# Keep this synchronized with the site preflight safety policy. CommonCheckers
-# uses that JSON value for planned robot-to-robot clearance; S5 runtime uses
-# this config.py value for dynamic robot obstacle blocking.
-MOBILITY_ROBOT_RESTRICT_RADIUS_M = 0.60
+# Site-specific robot-to-robot safety radius.
+#
+# The authoritative value lives in:
+#   sitemap/<site_name>/script_authoring/config/safety_policy.json
+#
+# Keep this public constant name for existing runtime modules. The value is now
+# loaded from the same site policy JSON that CommonCheckers uses, so callers do
+# not need to change their interface while avoiding duplicate definitions.
+MOBILITY_ROBOT_RESTRICT_RADIUS_M = mobility_robot_safety_radius_m()
 # -------- Mobility correction thresholds --------
 
 # Ignore very small residual position errors. Used by S5.
@@ -208,28 +241,15 @@ MOBILITY_SITE_MACRO_ACTIONS = {
     MOBILITY_MACRO_OUT2IN,
 }
 
-# DemoRoom bump-crossing macro v1:
-# - admission uses true pose within start_tolerance_m of configured start point
-# - planned endpoint is computed from configured start point + crossing vector
-# - robot receives mobility.turn_move_turn.forward with move_profile=bump_crossing
-MOBILITY_BUMP_CROSSING_MACROS = {
-    MOBILITY_MACRO_IN2OUT: {
-        "start_x_m": 9.00,
-        "start_y_m": 4.75,
-        "start_tolerance_m": 0.20,
-        "target_heading_deg": 90.0,
-        "distance_m": 1.0,
-        "move_profile": "bump_crossing",
-    },
-    MOBILITY_MACRO_OUT2IN: {
-        "start_x_m": 9.00,
-        "start_y_m": 5.75,
-        "start_tolerance_m": 0.20,
-        "target_heading_deg": 270.0,
-        "distance_m": 1.0,
-        "move_profile": "bump_crossing",
-    },
-}
+# Site-specific bump-crossing macro geometry.
+#
+# The authoritative values live in:
+#   sitemap/<site_name>/script_authoring/config/macro_policy.json
+#
+# Keep this public constant name for existing runtime modules. The value is now
+# loaded from the same site policy JSON that CommonCheckers uses, so callers do
+# not need to change their interface while avoiding duplicate definitions.
+MOBILITY_BUMP_CROSSING_MACROS = mobility_bump_crossing_macros()
 
 # Script-level policy. Low-level turn-move-turn commands may still be generated
 # internally by NMS, but experiment CSVs should use semantic movement/macro actions.
