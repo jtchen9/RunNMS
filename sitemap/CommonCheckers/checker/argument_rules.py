@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Any, Dict, List
 
 from .script_model import ScriptRow
+
+
+_MAC_ADDRESS_RE = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
 
 
 def _row_issue(
@@ -81,6 +85,8 @@ def check_command_arguments(
         allowed_keys = set(rule.get("allowed_keys", []) or [])
         required_keys = set(rule.get("required_keys", []) or [])
         numeric_ranges = rule.get("numeric_ranges", {}) or {}
+        integer_ranges = rule.get("integer_ranges", {}) or {}
+        string_formats = rule.get("string_formats", {}) or {}
 
         actual_keys = set(args.keys())
         unknown_keys = sorted(str(key) for key in actual_keys - allowed_keys)
@@ -193,6 +199,93 @@ def check_command_arguments(
                         actual_value=numeric_value,
                         min_inclusive=minimum,
                         max_exclusive=maximum,
+                    )
+                )
+
+        for field_name, range_rule in integer_ranges.items():
+            if field_name not in args:
+                continue
+
+            value = args[field_name]
+            if not isinstance(value, int) or isinstance(value, bool):
+                issues.append(
+                    _row_issue(
+                        row,
+                        code="COMMAND_ARG_BAD_TYPE",
+                        message=(
+                            f"{row.action} argument {field_name} must be a "
+                            f"JSON integer; got {value!r}."
+                        ),
+                        suggestion=f"Enter {field_name} as a whole number without quotes.",
+                        field=field_name,
+                        actual_value=value,
+                        expected_type="integer",
+                    )
+                )
+                continue
+
+            minimum_inclusive = range_rule.get("min_inclusive")
+            minimum_exclusive = range_rule.get("min_exclusive")
+            maximum_inclusive = range_rule.get("max_inclusive")
+            maximum_exclusive = range_rule.get("max_exclusive")
+
+            out_of_range = (
+                (minimum_inclusive is not None and value < int(minimum_inclusive))
+                or (minimum_exclusive is not None and value <= int(minimum_exclusive))
+                or (maximum_inclusive is not None and value > int(maximum_inclusive))
+                or (maximum_exclusive is not None and value >= int(maximum_exclusive))
+            )
+            if out_of_range:
+                issues.append(
+                    _row_issue(
+                        row,
+                        code="COMMAND_ARG_OUT_OF_RANGE",
+                        message=(
+                            f"{row.action} argument {field_name}={value} is "
+                            "outside the configured integer range."
+                        ),
+                        suggestion=f"Choose {field_name} within the configured range.",
+                        field=field_name,
+                        actual_value=value,
+                        range_rule=range_rule,
+                    )
+                )
+
+        for field_name, format_name in string_formats.items():
+            if field_name not in args:
+                continue
+
+            value = args[field_name]
+            if not isinstance(value, str):
+                issues.append(
+                    _row_issue(
+                        row,
+                        code="COMMAND_ARG_BAD_TYPE",
+                        message=(
+                            f"{row.action} argument {field_name} must be a "
+                            f"JSON string; got {value!r}."
+                        ),
+                        suggestion=f"Enter {field_name} as text.",
+                        field=field_name,
+                        actual_value=value,
+                        expected_type="string",
+                    )
+                )
+                continue
+
+            if format_name == "mac_address" and not _MAC_ADDRESS_RE.fullmatch(value.strip()):
+                issues.append(
+                    _row_issue(
+                        row,
+                        code="COMMAND_ARG_BAD_FORMAT",
+                        message=(
+                            f"{row.action} argument {field_name} is not a "
+                            "six-octet colon-separated MAC address."
+                        ),
+                        suggestion="Use a MAC address such as aa:bb:cc:dd:ee:ff.",
+                        field=field_name,
+                        actual_value=value,
+                        expected_format="xx:xx:xx:xx:xx:xx",
                     )
                 )
 

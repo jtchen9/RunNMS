@@ -90,3 +90,40 @@ def check_vocabulary(rows: List[ScriptRow], policy: Dict[str, Any]) -> List[Dict
             })
 
     return issues
+
+
+def check_device_targets(
+    rows: List[ScriptRow],
+    initial_pose_scanners: set[str],
+    ap_scanners: set[str],
+) -> List[Dict[str, Any]]:
+    """Reject commands addressed to the wrong DemoRoom device type."""
+    issues: List[Dict[str, Any]] = []
+
+    for row in rows:
+        if row.category == "ap":
+            if row.scanner not in ap_scanners:
+                issues.append({
+                    "level": "error",
+                    "code": "AP_COMMAND_BAD_TARGET",
+                    "row_number": row.row_number,
+                    "scanner": row.scanner,
+                    "category": row.category,
+                    "action": row.action,
+                    "message": f"AP command target is not in the DemoRoom AP roster: {row.scanner}.",
+                    "suggestion": f"Choose one of these APs: {sorted(ap_scanners)}.",
+                })
+        elif row.category in {"mobility", "scan"}:
+            if row.scanner in ap_scanners:
+                issues.append({
+                    "level": "error",
+                    "code": "ROBOT_COMMAND_TARGETS_AP",
+                    "row_number": row.row_number,
+                    "scanner": row.scanner,
+                    "category": row.category,
+                    "action": row.action,
+                    "message": f"{row.category} command cannot target AP device {row.scanner}.",
+                    "suggestion": "Choose a robot from InitialPoses.",
+                })
+
+    return issues

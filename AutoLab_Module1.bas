@@ -53,12 +53,13 @@ Private Const COL_STATUS As Long = 17
 Private Const COL_ISSUE_CODE As Long = 18
 Private Const COL_MESSAGE As Long = 19
 Private Const COL_SUGGESTION As Long = 20
+Private Const POSE_COL_DEVICE_TYPE As Long = 7
 
 ' First row below the CommandSheet header row. This includes Key/Value command rows.
 Private Const FIRST_DATA_ROW As Long = 4
 
 Private Const COMMAND_GUI_MAX_ROW As Long = 200
-Private Const CMD_LIST_CSV As String = "mobility.report.location,mobility.move,mobility.in2out,mobility.out2in,scan.start,scan.stop,scan.once"
+Private Const CMD_LIST_CSV As String = "mobility.report.location,mobility.move,mobility.in2out,mobility.out2in,scan.start,scan.stop,scan.once,ap.association.get,ap.sta.disassociate,ap.txpower.set,ap.traffic.enable,ap.traffic.disable"
 
 ' ============================================================
 ' Phase-3 map macros
@@ -278,6 +279,8 @@ Private Sub DrawPlannedOverlay(ByVal selectedCmdRowID As Long, ByVal selectedVal
         DrawRobotCenter wsMap, CDbl(xDict(scanner)), CDbl(yDict(scanner)), RobotShortLabel(CStr(scanner))
     Next scanner
 
+    DrawApMarkersFromInitialPoses wsPose, wsMap
+
     WriteMapStatus wsMap, selectedCmdRowID, selectedScanner, selectedIsMovement, selectedIsMacro, selectedAction, _
                    selectedStartX, selectedStartY, selectedTargetX, selectedTargetY, _
                    macroPolicyStartX, macroPolicyStartY, macroStartErrorM
@@ -289,12 +292,30 @@ Private Sub LoadInitialPoses(wsPose As Worksheet, ByRef xDict As Object, ByRef y
 
     Dim r As Long, scanner As String
     For r = 4 To lastRow
-        If IsTruthy(wsPose.Cells(r, 1).value) Then
+        If IsTruthy(wsPose.Cells(r, 1).value) And _
+           LCase$(Trim$(CStr(wsPose.Cells(r, POSE_COL_DEVICE_TYPE).value))) <> "ap" Then
             scanner = Trim$(CStr(wsPose.Cells(r, 2).value))
             If scanner <> "" Then
                 xDict(scanner) = CDbl(wsPose.Cells(r, 3).value)
                 yDict(scanner) = CDbl(wsPose.Cells(r, 4).value)
                 hDict(scanner) = CDbl(wsPose.Cells(r, 5).value)
+            End If
+        End If
+    Next r
+End Sub
+
+Private Sub DrawApMarkersFromInitialPoses(wsPose As Worksheet, wsMap As Worksheet)
+    Dim lastRow As Long
+    lastRow = wsPose.Cells(wsPose.rows.Count, 2).End(xlUp).Row
+
+    Dim r As Long
+    Dim scanner As String
+    For r = 4 To lastRow
+        If IsTruthy(wsPose.Cells(r, 1).value) And _
+           LCase$(Trim$(CStr(wsPose.Cells(r, POSE_COL_DEVICE_TYPE).value))) = "ap" Then
+            scanner = Trim$(CStr(wsPose.Cells(r, 2).value))
+            If scanner <> "" And IsNumeric(wsPose.Cells(r, 3).value) And IsNumeric(wsPose.Cells(r, 4).value) Then
+                DrawApCenter wsMap, CDbl(wsPose.Cells(r, 3).value), CDbl(wsPose.Cells(r, 4).value), ApShortLabel(scanner)
             End If
         End If
     Next r
@@ -532,6 +553,22 @@ Private Sub DrawRobotCenter(wsMap As Worksheet, ByVal xM As Double, ByVal yM As 
     End If
 End Sub
 
+Private Sub DrawApCenter(wsMap As Worksheet, ByVal xM As Double, ByVal yM As Double, ByVal label As String)
+    Dim rr As Long, cc As Long
+    XYToGrid xM, yM, rr, cc
+
+    If InGrid(rr, cc) Then
+        With GridCell(wsMap, rr, cc)
+            .Interior.Color = RGB(237, 125, 49)
+            .value = label
+            .Font.Color = RGB(255, 255, 255)
+            .Font.Bold = True
+            .HorizontalAlignment = xlCenter
+            .VerticalAlignment = xlCenter
+        End With
+    End If
+End Sub
+
 Private Sub WriteMapStatus(wsMap As Worksheet, ByVal cmdRowId As Long, ByVal scanner As String, ByVal isMovement As Boolean, _
                            ByVal isMacro As Boolean, ByVal action As String, _
                            ByVal sx As Double, ByVal sy As Double, ByVal tx As Double, ByVal ty As Double, _
@@ -596,6 +633,7 @@ End Sub
 Public Sub BuildArgsJson()
     Dim wsCmd As Worksheet
     Set wsCmd = ThisWorkbook.Worksheets(SHEET_COMMAND)
+    Dim buildError As String
 
     Dim lastRow As Long
     lastRow = wsCmd.Cells(wsCmd.rows.Count, COL_CMD_ID).End(xlUp).Row
@@ -604,7 +642,9 @@ Public Sub BuildArgsJson()
     Dim builtCount As Long
     Dim errorCount As Long
 
+    On Error GoTo Failed
     Application.ScreenUpdating = False
+    wsCmd.Unprotect
 
     For r = 4 To lastRow
         If LCase$(Trim$(CStr(wsCmd.Cells(r, COL_LINE_TYPE).value))) = "value" Then
@@ -623,12 +663,22 @@ Public Sub BuildArgsJson()
         End If
     Next r
 
+    wsCmd.Protect UserInterfaceOnly:=True, AllowFormattingCells:=True, AllowFormattingColumns:=True, AllowFormattingRows:=True
     Application.ScreenUpdating = True
 
     MsgBox "Build Args JSON finished." & vbCrLf & _
            "Built rows: " & builtCount & vbCrLf & _
            "Rows with errors: " & errorCount, _
            IIf(errorCount > 0, vbExclamation, vbInformation)
+    Exit Sub
+
+Failed:
+    buildError = Err.Description
+    On Error Resume Next
+    wsCmd.Protect UserInterfaceOnly:=True, AllowFormattingCells:=True, AllowFormattingColumns:=True, AllowFormattingRows:=True
+    Application.ScreenUpdating = True
+    On Error GoTo 0
+    MsgBox "Build Args JSON stopped:" & vbCrLf & buildError, vbCritical
 End Sub
 
 Private Function BuildArgsJsonForRow(wsCmd As Worksheet, ByVal r As Long) As Boolean
@@ -667,13 +717,20 @@ Private Function BuildArgsJsonForRow(wsCmd As Worksheet, ByVal r As Long) As Boo
 
     Select Case action
         Case "mobility.report.location", "mobility.in2out", "mobility.out2in", _
-             "scan.start", "scan.stop", "scan.once"
+             "scan.start", "scan.stop", "scan.once", _
+             "ap.association.get", "ap.traffic.enable", "ap.traffic.disable"
             wsCmd.Cells(r, COL_ARGS_JSON).value = "{}"
             wsCmd.Cells(r, COL_STATUS).value = "OK"
             BuildArgsJsonForRow = True
 
         Case "mobility.move"
             BuildArgsJsonForRow = BuildMobilityMoveArgs(wsCmd, r)
+
+        Case "ap.sta.disassociate"
+            BuildArgsJsonForRow = BuildApStaDisassociateArgs(wsCmd, r)
+
+        Case "ap.txpower.set"
+            BuildArgsJsonForRow = BuildApTxpowerSetArgs(wsCmd, r)
 
         Case Else
             wsCmd.Cells(r, COL_STATUS).value = "ERROR"
@@ -682,6 +739,110 @@ Private Function BuildArgsJsonForRow(wsCmd As Worksheet, ByVal r As Long) As Boo
             wsCmd.Cells(r, COL_SUGGESTION).value = "Choose a supported command from the dropdown list."
             BuildArgsJsonForRow = False
     End Select
+End Function
+
+Private Function BuildApStaDisassociateArgs(wsCmd As Worksheet, ByVal r As Long) As Boolean
+    Dim staMac As String
+    Dim periodVal As Variant
+    staMac = Trim$(CStr(wsCmd.Cells(r, COL_PARAM1).value))
+    periodVal = wsCmd.Cells(r, COL_PARAM2).value
+
+    If Not IsMacAddress(staMac) Then
+        SetCommandValidationError wsCmd, r, "COMMAND_ARG_BAD_FORMAT", _
+            "ap.sta.disassociate sta_mac must be a six-octet colon-separated MAC address.", _
+            "Use a MAC address such as aa:bb:cc:dd:ee:ff."
+        Exit Function
+    End If
+
+    If Not IsIntegerCellValue(periodVal) Then
+        SetCommandValidationError wsCmd, r, "COMMAND_ARG_BAD_TYPE", _
+            "ap.sta.disassociate time_period must be a required integer.", _
+            "Enter an integer from 1 through 299 seconds."
+        Exit Function
+    End If
+
+    Dim periodSec As Long
+    periodSec = CLng(periodVal)
+    If periodSec <= 0 Or periodSec >= 300 Then
+        SetCommandValidationError wsCmd, r, "COMMAND_ARG_OUT_OF_RANGE", _
+            "ap.sta.disassociate time_period must be in the range (0, 300).", _
+            "Enter an integer from 1 through 299 seconds."
+        Exit Function
+    End If
+
+    wsCmd.Cells(r, COL_ARGS_JSON).value = _
+        "{""sta_mac"":""" & LCase$(staMac) & """,""time_period"":" & CStr(periodSec) & "}"
+    wsCmd.Cells(r, COL_STATUS).value = "OK"
+    BuildApStaDisassociateArgs = True
+End Function
+
+Private Function BuildApTxpowerSetArgs(wsCmd As Worksheet, ByVal r As Long) As Boolean
+    Dim powerVal As Variant
+    Dim staMac As String
+    powerVal = wsCmd.Cells(r, COL_PARAM1).value
+    staMac = Trim$(CStr(wsCmd.Cells(r, COL_PARAM2).value))
+
+    If Not IsIntegerCellValue(powerVal) Then
+        SetCommandValidationError wsCmd, r, "COMMAND_ARG_BAD_TYPE", _
+            "ap.txpower.set txpower must be a required integer.", _
+            "Enter an integer from 0 through 30 dBm."
+        Exit Function
+    End If
+
+    Dim txpower As Long
+    txpower = CLng(powerVal)
+    If txpower < 0 Or txpower > 30 Then
+        SetCommandValidationError wsCmd, r, "COMMAND_ARG_OUT_OF_RANGE", _
+            "ap.txpower.set txpower must be in the range [0, 30].", _
+            "Enter an integer from 0 through 30 dBm."
+        Exit Function
+    End If
+
+    If staMac <> "" And Not IsMacAddress(staMac) Then
+        SetCommandValidationError wsCmd, r, "COMMAND_ARG_BAD_FORMAT", _
+            "ap.txpower.set sta_mac must be blank or a six-octet colon-separated MAC address.", _
+            "Clear sta_mac for overall AP power, or use aa:bb:cc:dd:ee:ff."
+        Exit Function
+    End If
+
+    Dim args As String
+    args = "{""txpower"":" & CStr(txpower)
+    If staMac <> "" Then args = args & ",""sta_mac"":""" & LCase$(staMac) & """"
+    args = args & "}"
+
+    wsCmd.Cells(r, COL_ARGS_JSON).value = args
+    wsCmd.Cells(r, COL_STATUS).value = "OK"
+    BuildApTxpowerSetArgs = True
+End Function
+
+Private Sub SetCommandValidationError( _
+    wsCmd As Worksheet, _
+    ByVal r As Long, _
+    ByVal issueCode As String, _
+    ByVal issueMessage As String, _
+    ByVal issueSuggestion As String)
+
+    wsCmd.Cells(r, COL_ARGS_JSON).ClearContents
+    wsCmd.Cells(r, COL_STATUS).value = "ERROR"
+    wsCmd.Cells(r, COL_ISSUE_CODE).value = issueCode
+    wsCmd.Cells(r, COL_MESSAGE).value = issueMessage
+    wsCmd.Cells(r, COL_SUGGESTION).value = issueSuggestion
+End Sub
+
+Private Function IsIntegerCellValue(ByVal v As Variant) As Boolean
+    If IsError(v) Then Exit Function
+    If IsBlankCellValue(v) Then Exit Function
+    If Not IsNumeric(v) Then Exit Function
+    If CDbl(v) <> Fix(CDbl(v)) Then Exit Function
+    IsIntegerCellValue = True
+End Function
+
+Private Function IsMacAddress(ByVal textValue As String) As Boolean
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Pattern = "^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
+    re.Global = False
+    IsMacAddress = re.Test(Trim$(textValue))
 End Function
 
 Private Function BuildMobilityMoveArgs(wsCmd As Worksheet, ByVal r As Long) As Boolean
@@ -857,6 +1018,8 @@ End Sub
 Private Function BuildArgsJsonSilent() As Boolean
     Dim wsCmd As Worksheet
     Set wsCmd = ThisWorkbook.Worksheets(SHEET_COMMAND)
+    Dim errorNumber As Long
+    Dim errorDescription As String
 
     Dim lastRow As Long
     lastRow = wsCmd.Cells(wsCmd.rows.Count, COL_CMD_ID).End(xlUp).Row
@@ -865,7 +1028,9 @@ Private Function BuildArgsJsonSilent() As Boolean
     Dim ok As Boolean
     ok = True
 
+    On Error GoTo Failed
     Application.ScreenUpdating = False
+    wsCmd.Unprotect
 
     For r = 4 To lastRow
         If LCase$(Trim$(CStr(wsCmd.Cells(r, COL_LINE_TYPE).value))) = "value" Then
@@ -877,9 +1042,20 @@ Private Function BuildArgsJsonSilent() As Boolean
         End If
     Next r
 
+    wsCmd.Protect UserInterfaceOnly:=True, AllowFormattingCells:=True, AllowFormattingColumns:=True, AllowFormattingRows:=True
     Application.ScreenUpdating = True
 
     BuildArgsJsonSilent = ok
+    Exit Function
+
+Failed:
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    On Error Resume Next
+    wsCmd.Protect UserInterfaceOnly:=True, AllowFormattingCells:=True, AllowFormattingColumns:=True, AllowFormattingRows:=True
+    Application.ScreenUpdating = True
+    On Error GoTo 0
+    Err.Raise errorNumber, "BuildArgsJsonSilent", errorDescription
 End Function
 
 Private Function BuildScriptCsvText(wsCmd As Worksheet, wsExport As Worksheet) As String
@@ -1073,7 +1249,8 @@ Private Function BuildInitialPosesCsvText(wsPose As Worksheet, wsPreview As Work
     outRow = 2
 
     For r = 4 To lastRow
-        If IsTruthy(wsPose.Cells(r, 1).value) Then
+        If IsTruthy(wsPose.Cells(r, 1).value) And _
+           LCase$(Trim$(CStr(wsPose.Cells(r, POSE_COL_DEVICE_TYPE).value))) <> "ap" Then
             Dim scanner As String
             Dim xM As Variant
             Dim yM As Variant
@@ -1117,7 +1294,8 @@ Private Function CountInitialPoseRows(wsPose As Worksheet) As Long
     n = 0
 
     For r = 4 To lastRow
-        If IsTruthy(wsPose.Cells(r, 1).value) Then
+        If IsTruthy(wsPose.Cells(r, 1).value) And _
+           LCase$(Trim$(CStr(wsPose.Cells(r, POSE_COL_DEVICE_TYPE).value))) <> "ap" Then
             If Trim$(CStr(wsPose.Cells(r, 2).value)) <> "" Then
                 n = n + 1
             End If
@@ -1153,6 +1331,10 @@ Public Sub RunCommonCheckers()
         MsgBox "Please save this workbook first. The macro needs the workbook folder for generated CSV and report files.", vbExclamation
         Exit Sub
     End If
+
+    On Error GoTo RosterFailed
+    ValidateInitialPoseApRoster ThisWorkbook.Worksheets(SHEET_POSES)
+    On Error GoTo 0
 
     Dim generatedFolder As String
     generatedFolder = JoinPath(ThisWorkbook.path, "generated")
@@ -1261,6 +1443,11 @@ Failed:
     Application.ScreenUpdating = True
     WritePreflightException wsStatus, Err.Description
     MsgBox "RunCommonCheckers failed:" & vbCrLf & Err.Description, vbCritical
+    Exit Sub
+
+RosterFailed:
+    MsgBox "RunCommonCheckers stopped because the AP roster is missing, invalid, or does not match InitialPoses:" & _
+           vbCrLf & Err.Description, vbCritical
 End Sub
 
 Private Sub WritePreflightLaunchStatus(wsStatus As Worksheet, ByVal generatedFolder As String, _
@@ -1651,6 +1838,79 @@ End Function
 ' Phase-8a GUI hardening macros
 ' ============================================================
 
+Public Sub InitializeScriptTemplate()
+    Dim wsCmd As Worksheet
+    Dim wsPose As Worksheet
+    Dim initError As String
+    Set wsCmd = ThisWorkbook.Worksheets(SHEET_COMMAND)
+    Set wsPose = ThisWorkbook.Worksheets(SHEET_POSES)
+
+    If ThisWorkbook.path = "" Then
+        MsgBox "Please save the workbook beside the config folder before initialization.", vbExclamation
+        Exit Sub
+    End If
+
+    On Error GoTo Failed
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+
+    ' Load and validate the roster before clearing any script rows.
+    LoadApRosterIntoInitialPoses wsPose
+
+    wsCmd.Unprotect
+    wsCmd.Range(wsCmd.Cells(FIRST_DATA_ROW, COL_CMD_ID), _
+                wsCmd.Cells(COMMAND_GUI_MAX_ROW, COL_SUGGESTION)).ClearContents
+
+    Dim i As Long
+    Dim keyRow As Long
+    Dim valueRow As Long
+    For i = 0 To 4
+        keyRow = FIRST_DATA_ROW + (i * 2)
+        valueRow = keyRow + 1
+
+        wsCmd.Cells(keyRow, COL_CMD_ID).value = i + 1
+        wsCmd.Cells(keyRow, COL_LINE_TYPE).value = "Key"
+
+        wsCmd.Cells(valueRow, COL_CMD_ID).value = i + 1
+        wsCmd.Cells(valueRow, COL_LINE_TYPE).value = "Value"
+        wsCmd.Cells(valueRow, COL_ENABLED).value = True
+        wsCmd.Cells(valueRow, COL_MINUTE).value = i * 3
+        wsCmd.Cells(valueRow, COL_SECOND).value = 0
+        wsCmd.Cells(valueRow, COL_SCANNER).value = "twin-scout-alpha"
+        wsCmd.Cells(valueRow, COL_COMMAND_ID).value = "mobility.report.location"
+        wsCmd.Cells(valueRow, COL_CATEGORY).value = "mobility"
+        wsCmd.Cells(valueRow, COL_ACTION).value = "mobility.report.location"
+        wsCmd.Cells(valueRow, COL_ARGS_JSON).value = "{}"
+        wsCmd.Cells(valueRow, COL_STATUS).value = "NOT CHECKED"
+    Next i
+
+    ApplyCommandDropdowns wsCmd
+    ApplyCommandSheetBaseProtection wsCmd
+
+    For i = 0 To 4
+        ApplyCommandLayoutToValueRow wsCmd, FIRST_DATA_ROW + (i * 2) + 1
+    Next i
+
+    wsCmd.Protect UserInterfaceOnly:=True, AllowFormattingCells:=True, AllowFormattingColumns:=True, AllowFormattingRows:=True
+
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+
+    MsgBox "Script template initialized." & vbCrLf & _
+           "Five mobility.report.location commands were created at minutes 0, 3, 6, 9, and 12." & vbCrLf & _
+           "AP1 through AP6 were refreshed from config\ap_roster.json.", vbInformation
+    Exit Sub
+
+Failed:
+    initError = Err.Description
+    On Error Resume Next
+    wsCmd.Protect UserInterfaceOnly:=True, AllowFormattingCells:=True, AllowFormattingColumns:=True, AllowFormattingRows:=True
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+    On Error GoTo 0
+    MsgBox "InitializeScriptTemplate stopped before completion:" & vbCrLf & initError, vbCritical
+End Sub
+
 Public Sub ApplyCommandGuiRules()
     Dim wsCmd As Worksheet
     Set wsCmd = ThisWorkbook.Worksheets(SHEET_COMMAND)
@@ -1740,6 +2000,16 @@ Private Sub ApplyCommandDropdowns(wsCmd As Worksheet)
     Dim r As Long
     For r = FIRST_DATA_ROW To COMMAND_GUI_MAX_ROW
         If LCase$(Trim$(CStr(wsCmd.Cells(r, COL_LINE_TYPE).value))) = "value" Or wsCmd.Cells(r, COL_LINE_TYPE).value = "" Then
+            With wsCmd.Cells(r, COL_ENABLED).Validation
+                .Delete
+                .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, Formula1:="TRUE,FALSE"
+                .IgnoreBlank = False
+                .InCellDropdown = True
+                .ShowError = True
+                .ErrorTitle = "Invalid Enabled value"
+                .ErrorMessage = "Choose TRUE or FALSE from the dropdown list."
+            End With
+
             With wsCmd.Cells(r, COL_COMMAND_ID).Validation
                 .Delete
                 .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, Formula1:=CMD_LIST_CSV
@@ -1778,6 +2048,13 @@ Private Sub ApplyCommandLayoutToValueRow(wsCmd As Worksheet, ByVal valueRow As L
     Dim commandId As String
     commandId = Trim$(CStr(wsCmd.Cells(valueRow, COL_COMMAND_ID).value))
 
+    Dim previousAction As String
+    previousAction = Trim$(CStr(wsCmd.Cells(valueRow, COL_ACTION).value))
+    If StrComp(previousAction, commandId, vbBinaryCompare) <> 0 Then
+        wsCmd.Range(wsCmd.Cells(valueRow, COL_PARAM1), wsCmd.Cells(valueRow, COL_PARAM6)).ClearContents
+        wsCmd.Cells(valueRow, COL_ARGS_JSON).ClearContents
+    End If
+
     ClearParamKeyLabels wsCmd, keyRow
     ClearParamEditStyle wsCmd, valueRow
 
@@ -1798,6 +2075,7 @@ Private Sub ApplyCommandLayoutToValueRow(wsCmd As Worksheet, ByVal valueRow As L
     wsCmd.Cells(valueRow, COL_COMMAND_ID).Interior.Color = RGB(255, 255, 255)
     wsCmd.Cells(valueRow, COL_CATEGORY).value = CategoryForCommandId(commandId)
     wsCmd.Cells(valueRow, COL_ACTION).value = commandId
+    ApplyScannerDropdownForCommand wsCmd, valueRow, commandId
 
     Select Case commandId
         Case "mobility.move"
@@ -1810,9 +2088,26 @@ Private Sub ApplyCommandLayoutToValueRow(wsCmd As Worksheet, ByVal valueRow As L
             wsCmd.Cells(valueRow, COL_PARAM3).Interior.Color = RGB(255, 242, 204)
 
         Case "mobility.report.location", "mobility.in2out", "mobility.out2in", _
-             "scan.start", "scan.stop", "scan.once"
+             "scan.start", "scan.stop", "scan.once", _
+             "ap.association.get", "ap.traffic.enable", "ap.traffic.disable"
             ' These commands use fixed args_json = {} and no editable params in Phase-10a.
             wsCmd.Range(wsCmd.Cells(valueRow, COL_PARAM1), wsCmd.Cells(valueRow, COL_PARAM6)).ClearContents
+
+        Case "ap.sta.disassociate"
+            wsCmd.Cells(keyRow, COL_PARAM1).value = "sta_mac"
+            wsCmd.Cells(keyRow, COL_PARAM2).value = "time_period"
+            UnlockParamCell wsCmd.Cells(valueRow, COL_PARAM1)
+            UnlockParamCell wsCmd.Cells(valueRow, COL_PARAM2)
+            If IsBlankCellValue(wsCmd.Cells(valueRow, COL_PARAM2).value) Then
+                wsCmd.Cells(valueRow, COL_PARAM2).value = 10
+            End If
+
+        Case "ap.txpower.set"
+            wsCmd.Cells(keyRow, COL_PARAM1).value = "txpower"
+            wsCmd.Cells(keyRow, COL_PARAM2).value = "sta_mac"
+            UnlockParamCell wsCmd.Cells(valueRow, COL_PARAM1)
+            UnlockParamCell wsCmd.Cells(valueRow, COL_PARAM2)
+            wsCmd.Cells(valueRow, COL_PARAM2).Interior.Color = RGB(255, 242, 204)
     End Select
 
     wsCmd.Cells(valueRow, COL_STATUS).value = IIf(IsEnabledValue(wsCmd.Cells(valueRow, COL_ENABLED).value), "NOT CHECKED", "DISABLED")
@@ -1820,6 +2115,80 @@ Private Sub ApplyCommandLayoutToValueRow(wsCmd As Worksheet, ByVal valueRow As L
     wsCmd.Cells(valueRow, COL_MESSAGE).value = ""
     wsCmd.Cells(valueRow, COL_SUGGESTION).value = ""
 End Sub
+
+Private Sub ApplyScannerDropdownForCommand(wsCmd As Worksheet, ByVal valueRow As Long, ByVal commandId As String)
+    Dim listCsv As String
+    If Left$(commandId, 3) = "ap." Then
+        listCsv = DeviceScannerListCsv("ap")
+    Else
+        listCsv = DeviceScannerListCsv("robot")
+    End If
+
+    With wsCmd.Cells(valueRow, COL_SCANNER).Validation
+        .Delete
+        If listCsv <> "" Then
+            .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, Formula1:=listCsv
+            .IgnoreBlank = False
+            .InCellDropdown = True
+            .ShowError = True
+            .ErrorTitle = "Invalid device"
+            .ErrorMessage = "Choose a device of the correct type for this command."
+        End If
+    End With
+
+    If listCsv <> "" And Not CsvListContains(listCsv, Trim$(CStr(wsCmd.Cells(valueRow, COL_SCANNER).value))) Then
+        wsCmd.Cells(valueRow, COL_SCANNER).value = DefaultScannerForCommand(commandId, listCsv)
+    End If
+End Sub
+
+Private Function DefaultScannerForCommand(ByVal commandId As String, ByVal listCsv As String) As String
+    Dim preferred As String
+    If Left$(commandId, 3) = "ap." Then
+        preferred = "AP1"
+    Else
+        preferred = "twin-scout-alpha"
+    End If
+
+    If CsvListContains(listCsv, preferred) Then
+        DefaultScannerForCommand = preferred
+    Else
+        DefaultScannerForCommand = Trim$(CStr(Split(listCsv, ",")(0)))
+    End If
+End Function
+
+Private Function CsvListContains(ByVal listCsv As String, ByVal candidate As String) As Boolean
+    If candidate = "" Then Exit Function
+    Dim items As Variant
+    Dim item As Variant
+    items = Split(listCsv, ",")
+    For Each item In items
+        If StrComp(Trim$(CStr(item)), candidate, vbBinaryCompare) = 0 Then
+            CsvListContains = True
+            Exit Function
+        End If
+    Next item
+End Function
+
+Private Function DeviceScannerListCsv(ByVal deviceType As String) As String
+    Dim wsPose As Worksheet
+    Set wsPose = ThisWorkbook.Worksheets(SHEET_POSES)
+
+    Dim lastRow As Long
+    lastRow = wsPose.Cells(wsPose.rows.Count, 2).End(xlUp).Row
+
+    Dim r As Long
+    Dim scanner As String
+    Dim rowType As String
+    For r = 4 To lastRow
+        scanner = Trim$(CStr(wsPose.Cells(r, 2).value))
+        rowType = LCase$(Trim$(CStr(wsPose.Cells(r, POSE_COL_DEVICE_TYPE).value)))
+        If rowType = "" Then rowType = "robot"
+        If scanner <> "" And rowType = LCase$(deviceType) Then
+            If DeviceScannerListCsv <> "" Then DeviceScannerListCsv = DeviceScannerListCsv & ","
+            DeviceScannerListCsv = DeviceScannerListCsv & scanner
+        End If
+    Next r
+End Function
 
 Private Sub ClearParamKeyLabels(wsCmd As Worksheet, ByVal keyRow As Long)
     If keyRow < FIRST_DATA_ROW Then Exit Sub
@@ -1845,7 +2214,9 @@ End Sub
 Private Function IsSupportedCommandId(ByVal commandId As String) As Boolean
     Select Case Trim$(commandId)
         Case "mobility.report.location", "mobility.move", "mobility.in2out", "mobility.out2in", _
-             "scan.start", "scan.stop", "scan.once"
+             "scan.start", "scan.stop", "scan.once", _
+             "ap.association.get", "ap.sta.disassociate", "ap.txpower.set", _
+             "ap.traffic.enable", "ap.traffic.disable"
             IsSupportedCommandId = True
         Case Else
             IsSupportedCommandId = False
@@ -1860,6 +2231,8 @@ Private Function CategoryForCommandId(ByVal commandId As String) As String
         CategoryForCommandId = "mobility"
     ElseIf Left$(s, 5) = "scan." Then
         CategoryForCommandId = "scan"
+    ElseIf Left$(s, 3) = "ap." Then
+        CategoryForCommandId = "ap"
     Else
         CategoryForCommandId = ""
     End If
@@ -2035,6 +2408,176 @@ Private Function ExtractJsonNumber(ByVal jsonText As String, ByVal quotedKey As 
     ExtractJsonNumber = out
 End Function
 
+Private Function ApRosterPath() As String
+    ApRosterPath = JoinPath(JoinPath(ThisWorkbook.path, "config"), "ap_roster.json")
+End Function
+
+Private Sub LoadApRosterDictionaries(ByRef xDict As Object, ByRef yDict As Object)
+    Dim rosterPath As String
+    rosterPath = ApRosterPath()
+    If Not FileExists(rosterPath) Then
+        Err.Raise vbObjectError + 6200, "LoadApRosterDictionaries", _
+                  "AP roster not found: " & rosterPath
+    End If
+
+    Dim jsonText As String
+    jsonText = ReadTextFileUtf8(rosterPath)
+
+    Set xDict = CreateObject("Scripting.Dictionary")
+    Set yDict = CreateObject("Scripting.Dictionary")
+
+    Dim i As Long
+    Dim scanner As String
+    Dim block As String
+    Dim xText As String, yText As String
+    Dim xM As Double, yM As Double
+
+    For i = 1 To 6
+        scanner = "AP" & i
+        If CountTextOccurrences(jsonText, """" & scanner & """") <> 1 Then
+            Err.Raise vbObjectError + 6201, "LoadApRosterDictionaries", _
+                      "AP roster must contain exactly one entry for " & scanner & "."
+        End If
+
+        block = ExtractJsonObjectAroundToken(jsonText, """" & scanner & """")
+        xText = ExtractJsonNumber(block, """x_m""")
+        yText = ExtractJsonNumber(block, """y_m""")
+        If xText = "" Or yText = "" Or Not IsNumeric(xText) Or Not IsNumeric(yText) Then
+            Err.Raise vbObjectError + 6202, "LoadApRosterDictionaries", _
+                      scanner & " must contain numeric x_m and y_m."
+        End If
+
+        xM = CDbl(xText)
+        yM = CDbl(yText)
+        If xM < 0 Or xM >= MAP_COLS * CELL_M Or yM < 0 Or yM >= MAP_ROWS * CELL_M Then
+            Err.Raise vbObjectError + 6203, "LoadApRosterDictionaries", _
+                      scanner & " is outside the DemoRoom map."
+        End If
+
+        xDict(scanner) = xM
+        yDict(scanner) = yM
+    Next i
+End Sub
+
+Private Sub LoadApRosterIntoInitialPoses(wsPose As Worksheet)
+    Dim apX As Object, apY As Object
+    LoadApRosterDictionaries apX, apY
+
+    wsPose.Unprotect
+    wsPose.Cells(3, POSE_COL_DEVICE_TYPE).value = "DeviceType"
+
+    Dim lastRow As Long
+    lastRow = wsPose.Cells(wsPose.rows.Count, 2).End(xlUp).Row
+
+    Dim r As Long
+    For r = 4 To lastRow
+        If LCase$(Trim$(CStr(wsPose.Cells(r, POSE_COL_DEVICE_TYPE).value))) = "ap" Or _
+           UCase$(Trim$(CStr(wsPose.Cells(r, 2).value))) Like "AP#" Then
+            wsPose.Range(wsPose.Cells(r, 1), wsPose.Cells(r, POSE_COL_DEVICE_TYPE)).ClearContents
+        ElseIf Trim$(CStr(wsPose.Cells(r, 2).value)) <> "" Then
+            wsPose.Cells(r, POSE_COL_DEVICE_TYPE).value = "robot"
+        End If
+    Next r
+
+    lastRow = wsPose.Cells(wsPose.rows.Count, 2).End(xlUp).Row
+    Dim scanner As Variant
+    For Each scanner In apX.Keys
+        lastRow = lastRow + 1
+        wsPose.Range("A4:G4").Copy
+        wsPose.Range("A" & lastRow & ":G" & lastRow).PasteSpecial xlPasteFormats
+        Application.CutCopyMode = False
+
+        wsPose.Cells(lastRow, 1).value = True
+        wsPose.Cells(lastRow, 2).value = CStr(scanner)
+        wsPose.Cells(lastRow, 3).value = CDbl(apX(scanner))
+        wsPose.Cells(lastRow, 4).value = CDbl(apY(scanner))
+        wsPose.Cells(lastRow, 5).ClearContents
+        wsPose.Cells(lastRow, 6).value = "Fixed AP location from config\ap_roster.json"
+        wsPose.Cells(lastRow, POSE_COL_DEVICE_TYPE).value = "ap"
+        wsPose.Range(wsPose.Cells(lastRow, 1), wsPose.Cells(lastRow, POSE_COL_DEVICE_TYPE)).Interior.Color = RGB(221, 235, 247)
+        wsPose.Range(wsPose.Cells(lastRow, 1), wsPose.Cells(lastRow, POSE_COL_DEVICE_TYPE)).Locked = True
+    Next scanner
+
+    For r = 4 To lastRow
+        If LCase$(Trim$(CStr(wsPose.Cells(r, POSE_COL_DEVICE_TYPE).value))) = "robot" Then
+            wsPose.Range(wsPose.Cells(r, 1), wsPose.Cells(r, 5)).Locked = False
+        End If
+    Next r
+
+    wsPose.Columns(POSE_COL_DEVICE_TYPE).AutoFit
+    wsPose.Protect UserInterfaceOnly:=True, AllowFormattingCells:=True, AllowFormattingColumns:=True, AllowFormattingRows:=True
+End Sub
+
+Private Sub ValidateInitialPoseApRoster(wsPose As Worksheet)
+    Dim apX As Object, apY As Object
+    LoadApRosterDictionaries apX, apY
+
+    Dim scanner As Variant
+    Dim r As Long, foundRow As Long, foundCount As Long
+    Dim lastRow As Long
+    lastRow = wsPose.Cells(wsPose.rows.Count, 2).End(xlUp).Row
+
+    For Each scanner In apX.Keys
+        foundCount = 0
+        foundRow = 0
+        For r = 4 To lastRow
+            If StrComp(Trim$(CStr(wsPose.Cells(r, 2).value)), CStr(scanner), vbBinaryCompare) = 0 Then
+                foundCount = foundCount + 1
+                foundRow = r
+            End If
+        Next r
+
+        If foundCount <> 1 Then
+            Err.Raise vbObjectError + 6204, "ValidateInitialPoseApRoster", _
+                      "InitialPoses must contain exactly one row for " & scanner & ". Run InitializeScriptTemplate."
+        End If
+        If LCase$(Trim$(CStr(wsPose.Cells(foundRow, POSE_COL_DEVICE_TYPE).value))) <> "ap" Then
+            Err.Raise vbObjectError + 6205, "ValidateInitialPoseApRoster", _
+                      scanner & " must have DeviceType=ap."
+        End If
+        If Not IsNumeric(wsPose.Cells(foundRow, 3).value) Or Not IsNumeric(wsPose.Cells(foundRow, 4).value) Then
+            Err.Raise vbObjectError + 6206, "ValidateInitialPoseApRoster", _
+                      scanner & " has a nonnumeric location in InitialPoses."
+        End If
+        If Abs(CDbl(wsPose.Cells(foundRow, 3).value) - CDbl(apX(scanner))) > 0.0000001 Or _
+           Abs(CDbl(wsPose.Cells(foundRow, 4).value) - CDbl(apY(scanner))) > 0.0000001 Then
+            Err.Raise vbObjectError + 6207, "ValidateInitialPoseApRoster", _
+                      scanner & " does not match config\ap_roster.json. Run InitializeScriptTemplate."
+        End If
+        If Not IsBlankCellValue(wsPose.Cells(foundRow, 5).value) Then
+            Err.Raise vbObjectError + 6208, "ValidateInitialPoseApRoster", _
+                      scanner & " must not have heading information."
+        End If
+    Next scanner
+End Sub
+
+Private Function ExtractJsonObjectAroundToken(ByVal jsonText As String, ByVal token As String) As String
+    Dim p As Long
+    p = InStr(1, jsonText, token, vbBinaryCompare)
+    If p <= 0 Then Exit Function
+
+    Dim braceStart As Long
+    braceStart = InStrRev(jsonText, "{", p, vbBinaryCompare)
+    If braceStart <= 0 Then Exit Function
+
+    Dim braceEnd As Long
+    braceEnd = InStr(p, jsonText, "}", vbBinaryCompare)
+    If braceEnd <= 0 Then Exit Function
+
+    ExtractJsonObjectAroundToken = Mid$(jsonText, braceStart, braceEnd - braceStart + 1)
+End Function
+
+Private Function CountTextOccurrences(ByVal textBody As String, ByVal token As String) As Long
+    Dim p As Long
+    p = 1
+    Do
+        p = InStr(p, textBody, token, vbBinaryCompare)
+        If p <= 0 Then Exit Do
+        CountTextOccurrences = CountTextOccurrences + 1
+        p = p + Len(token)
+    Loop
+End Function
+
 Private Function DegToRad(ByVal degrees As Double) As Double
     DegToRad = degrees * 3.14159265358979 / 180#
 End Function
@@ -2118,6 +2661,14 @@ Private Function RobotShortLabel(ByVal scanner As String) As String
         Case Else
             RobotShortLabel = "R"
     End Select
+End Function
+
+Private Function ApShortLabel(ByVal scanner As String) As String
+    If UCase$(Left$(Trim$(scanner), 2)) = "AP" Then
+        ApShortLabel = Mid$(Trim$(scanner), 3)
+    Else
+        ApShortLabel = "?"
+    End If
 End Function
 
 Private Function JsonNumber(ByVal d As Double) As String

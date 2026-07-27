@@ -21,7 +21,7 @@ if __package__ in (None, ""):
     from checker.timeline_rules import check_first_move_after_report_location_spacing, check_global_moving_command_spacing
     from checker.movement_rules import check_max_single_mobility_move_distance
     from checker.validation_report import make_report, write_report
-    from checker.vocabulary_rules import check_vocabulary
+    from checker.vocabulary_rules import check_device_targets, check_vocabulary
     from checker.argument_rules import check_command_arguments
     from checker.macro_rules import check_macro_and_bump_rules
     from checker.path_rules import check_planned_path_rules
@@ -31,7 +31,7 @@ else:
     from .timeline_rules import check_first_move_after_report_location_spacing, check_global_moving_command_spacing
     from .movement_rules import check_max_single_mobility_move_distance
     from .validation_report import make_report, write_report
-    from .vocabulary_rules import check_vocabulary
+    from .vocabulary_rules import check_device_targets, check_vocabulary
     from .argument_rules import check_command_arguments
     from .macro_rules import check_macro_and_bump_rules
     from .path_rules import check_planned_path_rules
@@ -93,6 +93,7 @@ def validate_script(
     zone_policy = _load_json(site_dir / "script_authoring" / "config" / "zone_policy.json")
     path_policy = _load_json(site_dir / "script_authoring" / "config" / "path_policy.json")
     safety_policy = _load_json(site_dir / "script_authoring" / "config" / "safety_policy.json")
+    ap_roster = _load_json(site_dir / "script_authoring" / "config" / "ap_roster.json")
 
     rows, issues = load_script_csv(script_csv)
     initial_poses, pose_issues = load_initial_poses_csv(initial_poses_csv)
@@ -100,6 +101,12 @@ def validate_script(
 
     issues.extend(check_vocabulary(rows, policy))
     issues.extend(check_command_arguments(rows, policy))
+    ap_scanners = {
+        str(item.get("scanner", "")).strip()
+        for item in (ap_roster.get("aps", []) or [])
+        if isinstance(item, dict) and str(item.get("scanner", "")).strip()
+    }
+    issues.extend(check_device_targets(rows, set(initial_poses), ap_scanners))
     issues.extend(check_first_mobility_command(rows, policy))
 
     # If the initial-pose file itself is missing or malformed, stop here for

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "site_name": "DemoRoom",
+  "aps": [
+    {
+      "scanner": "AP1",
+      "x_m": 10.0,
+      "y_m": 3.0
+    },
+    {
+      "scanner": "AP2",
+      "x_m": 1.6,
+      "y_m": 9.0
+    },
+    {
+      "scanner": "AP3",
+      "x_m": 3.5,
+      "y_m": 0.5
+    },
+    {
+      "scanner": "AP4",
+      "x_m": 7.5,
+      "y_m": 11.0
+    },
+    {
+      "scanner": "AP5",
+      "x_m": 7.5,
+      "y_m": 4.8
+    },
+    {
+      "scanner": "AP6",
+      "x_m": 6.5,
+      "y_m": 5.5
+    }
+  ]
+}

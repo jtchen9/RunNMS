@@ -3,7 +3,8 @@
   "policy_name": "common_script_policy",
   "allowed_categories": [
     "mobility",
-    "scan"
+    "scan",
+    "ap"
   ],
   "allowed_actions_by_category": {
     "mobility": [
@@ -16,6 +17,13 @@
       "scan.start",
       "scan.stop",
       "scan.once"
+    ],
+    "ap": [
+      "ap.association.get",
+      "ap.sta.disassociate",
+      "ap.txpower.set",
+      "ap.traffic.enable",
+      "ap.traffic.disable"
     ]
   },
   "blocked_actions_by_category": {
@@ -80,6 +88,62 @@
         "numeric_ranges": {}
       },
       "scan.once": {
+        "allowed_keys": [],
+        "required_keys": [],
+        "numeric_ranges": {}
+      }
+    },
+    "ap": {
+      "ap.association.get": {
+        "allowed_keys": [],
+        "required_keys": [],
+        "numeric_ranges": {}
+      },
+      "ap.sta.disassociate": {
+        "allowed_keys": [
+          "sta_mac",
+          "time_period"
+        ],
+        "required_keys": [
+          "sta_mac",
+          "time_period"
+        ],
+        "numeric_ranges": {},
+        "integer_ranges": {
+          "time_period": {
+            "min_exclusive": 0,
+            "max_exclusive": 300
+          }
+        },
+        "string_formats": {
+          "sta_mac": "mac_address"
+        }
+      },
+      "ap.txpower.set": {
+        "allowed_keys": [
+          "txpower",
+          "sta_mac"
+        ],
+        "required_keys": [
+          "txpower"
+        ],
+        "numeric_ranges": {},
+        "integer_ranges": {
+          "txpower": {
+            "min_inclusive": 0,
+            "max_inclusive": 30
+          }
+        },
+        "string_formats": {
+          "sta_mac": "mac_address"
+        }
+      },
+      "ap.traffic.enable": {
+        "allowed_keys": [],
+        "required_keys": [],
+        "numeric_ranges": {}
+      },
+      "ap.traffic.disable": {
         "allowed_keys": [],
         "required_keys": [],
         "numeric_ranges": {}
