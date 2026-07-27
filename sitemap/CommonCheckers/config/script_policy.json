@@ -25,6 +25,67 @@
       "mobility.turn_move_turn.backward"
     ]
   },
+  "argument_rules_by_category": {
+    "mobility": {
+      "mobility.report.location": {
+        "allowed_keys": [],
+        "required_keys": [],
+        "numeric_ranges": {}
+      },
+      "mobility.move": {
+        "allowed_keys": [
+          "x_m",
+          "y_m",
+          "heading_deg"
+        ],
+        "required_keys": [
+          "x_m",
+          "y_m"
+        ],
+        "numeric_ranges": {
+          "x_m": {
+            "min_inclusive": 1.4,
+            "max_exclusive": 10.1
+          },
+          "y_m": {
+            "min_inclusive": 0.3,
+            "max_exclusive": 11.1
+          },
+          "heading_deg": {
+            "min_inclusive": 0.0,
+            "max_exclusive": 360.0
+          }
+        }
+      },
+      "mobility.in2out": {
+        "allowed_keys": [],
+        "required_keys": [],
+        "numeric_ranges": {}
+      },
+      "mobility.out2in": {
+        "allowed_keys": [],
+        "required_keys": [],
+        "numeric_ranges": {}
+      }
+    },
+    "scan": {
+      "scan.start": {
+        "allowed_keys": [],
+        "required_keys": [],
+        "numeric_ranges": {}
+      },
+      "scan.stop": {
+        "allowed_keys": [],
+        "required_keys": [],
+        "numeric_ranges": {}
+      },
+      "scan.once": {
+        "allowed_keys": [],
+        "required_keys": [],
+        "numeric_ranges": {}
+      }
+    }
+  },
   "allowed_scan_actions": [
     "scan.start",
     "scan.stop",

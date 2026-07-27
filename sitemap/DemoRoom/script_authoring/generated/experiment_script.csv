@@ -2,3 +2,4 @@
 "twin-scout-delta",0,"mobility","mobility.report.location","{}"
 "twin-scout-delta",180,"mobility","mobility.in2out","{}"
 "twin-scout-delta",360,"mobility","mobility.report.location","{}"
+"twin-scout-delta",540,"mobility","mobility.move","{""x_m"":9,""y_m"":7}"

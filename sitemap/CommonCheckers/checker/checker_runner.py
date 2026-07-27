@@ -22,6 +22,7 @@ if __package__ in (None, ""):
     from checker.movement_rules import check_max_single_mobility_move_distance
     from checker.validation_report import make_report, write_report
     from checker.vocabulary_rules import check_vocabulary
+    from checker.argument_rules import check_command_arguments
     from checker.macro_rules import check_macro_and_bump_rules
     from checker.path_rules import check_planned_path_rules
 else:
@@ -31,6 +32,7 @@ else:
     from .movement_rules import check_max_single_mobility_move_distance
     from .validation_report import make_report, write_report
     from .vocabulary_rules import check_vocabulary
+    from .argument_rules import check_command_arguments
     from .macro_rules import check_macro_and_bump_rules
     from .path_rules import check_planned_path_rules
 
@@ -97,6 +99,7 @@ def validate_script(
     issues.extend(pose_issues)
 
     issues.extend(check_vocabulary(rows, policy))
+    issues.extend(check_command_arguments(rows, policy))
     issues.extend(check_first_mobility_command(rows, policy))
 
     # If the initial-pose file itself is missing or malformed, stop here for

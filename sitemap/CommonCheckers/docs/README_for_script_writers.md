@@ -35,6 +35,7 @@ No PowerShell command-line arguments are required.
 The checker currently validates:
 
 - command vocabulary
+- arguments for every admitted command
 - blocked low-level mobility actions
 - each participating robot's first mobility command must be `mobility.report.location`
 - intended initial pose table exists for each mobility robot
@@ -64,6 +65,37 @@ mobility.turn_move_turn.backward
 ```
 
 The NMS mobility policy turns semantic movement into the final robot command.
+
+## Command argument rules
+
+These commands use an empty JSON object and accept no argument keys:
+
+```text
+mobility.report.location
+mobility.in2out
+mobility.out2in
+scan.start
+scan.stop
+scan.once
+```
+
+Use:
+
+```json
+{}
+```
+
+`mobility.move` accepts only:
+
+```text
+x_m          required number, 1.4 <= x_m < 10.1
+y_m          required number, 0.3 <= y_m < 11.1
+heading_deg  optional number, 0 <= heading_deg < 360
+```
+
+Numbers must be JSON numbers without quotation marks. Legacy/internal fields
+such as `target_x_m`, `target_y_m`, `dx_m`, and `dy_m` are not admitted in an
+experiment script.
 
 ## Timing rules
 
