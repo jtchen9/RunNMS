@@ -125,5 +125,22 @@ def check_device_targets(
                     "message": f"{row.category} command cannot target AP device {row.scanner}.",
                     "suggestion": "Choose a robot from InitialPoses.",
                 })
+            elif row.category == "scan" and row.scanner not in initial_pose_scanners:
+                issues.append({
+                    "level": "error",
+                    "code": "SCAN_COMMAND_BAD_TARGET",
+                    "row_number": row.row_number,
+                    "scanner": row.scanner,
+                    "category": row.category,
+                    "action": row.action,
+                    "message": (
+                        "scan command target is not a participating robot in "
+                        f"InitialPoses: {row.scanner}."
+                    ),
+                    "suggestion": (
+                        "Choose a robot listed in InitialPoses, or add the "
+                        "participating robot there before checking the script."
+                    ),
+                })
 
     return issues

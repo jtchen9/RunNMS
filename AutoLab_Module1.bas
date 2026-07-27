@@ -25,13 +25,6 @@ Private Const MAP_ROWS As Long = 114
 Private Const MAP_COLS As Long = 114
 Private Const CELL_M As Double = 0.1
 Private Const ROBOT_RADIUS_M As Double = 0.6
-Private Const MOVE_X_MIN_M As Double = 1.4
-Private Const MOVE_X_MAX_EXCLUSIVE_M As Double = 10.1
-Private Const MOVE_Y_MIN_M As Double = 0.3
-Private Const MOVE_Y_MAX_EXCLUSIVE_M As Double = 11.1
-Private Const MOVE_HEADING_MIN_DEG As Double = 0#
-Private Const MOVE_HEADING_MAX_EXCLUSIVE_DEG As Double = 360#
-
 ' CommandSheet columns
 Private Const COL_CMD_ID As Long = 1
 Private Const COL_LINE_TYPE As Long = 2
@@ -84,14 +77,6 @@ Public Sub RefreshMapAtSelectedCommandRow()
         Exit Sub
     End If
 
-    Dim invalidMoveRow As Long
-    Dim validationMessage As String
-    If Not ValidateMobilityMovesForMap(wsCmd, selectedCmdRowID, selectedValueRow, invalidMoveRow, validationMessage) Then
-        MsgBox "Map refresh stopped at CommandSheet row " & invalidMoveRow & "." & vbCrLf & _
-               validationMessage, vbExclamation
-        Exit Sub
-    End If
-
     Application.ScreenUpdating = False
 
     RestoreMapFromStatic
@@ -102,58 +87,6 @@ Public Sub RefreshMapAtSelectedCommandRow()
 
     MsgBox "Map refreshed at CmdRowID " & selectedCmdRowID & ".", vbInformation
 End Sub
-
-Private Function ValidateMobilityMovesForMap( _
-    wsCmd As Worksheet, _
-    ByVal selectedCmdRowID As Long, _
-    ByVal selectedValueRow As Long, _
-    ByRef invalidMoveRow As Long, _
-    ByRef validationMessage As String) As Boolean
-
-    Dim lastRow As Long
-    lastRow = wsCmd.Cells(wsCmd.rows.Count, COL_CMD_ID).End(xlUp).Row
-
-    Dim r As Long
-    Dim cmdID As Long
-    Dim action As String
-    Dim shouldValidate As Boolean
-    Dim xM As Double, yM As Double
-    Dim hasHeading As Boolean, headingDeg As Double
-    Dim issueCode As String, issueMessage As String, issueSuggestion As String
-
-    For r = FIRST_DATA_ROW To lastRow
-        shouldValidate = False
-
-        If LCase$(Trim$(CStr(wsCmd.Cells(r, COL_LINE_TYPE).value))) = "value" Then
-            If r = selectedValueRow Then
-                shouldValidate = True
-            ElseIf IsTruthy(wsCmd.Cells(r, COL_ENABLED).value) And IsNumeric(wsCmd.Cells(r, COL_CMD_ID).value) Then
-                cmdID = CLng(wsCmd.Cells(r, COL_CMD_ID).value)
-                shouldValidate = (cmdID > 0 And cmdID < selectedCmdRowID)
-            End If
-        End If
-
-        If shouldValidate Then
-            action = Trim$(CStr(wsCmd.Cells(r, COL_ACTION).value))
-            If action = "" Then
-                action = Trim$(CStr(wsCmd.Cells(r, COL_COMMAND_ID).value))
-            End If
-
-            If action = "mobility.move" Then
-                If Not ValidateMobilityMoveRow(wsCmd, r, xM, yM, hasHeading, headingDeg, _
-                                               issueCode, issueMessage, issueSuggestion) Then
-                    SetMobilityMoveValidationError wsCmd, r, issueCode, issueMessage, issueSuggestion
-                    invalidMoveRow = r
-                    validationMessage = issueMessage
-                    ValidateMobilityMovesForMap = False
-                    Exit Function
-                End If
-            End If
-        End If
-    Next r
-
-    ValidateMobilityMovesForMap = True
-End Function
 
 Public Sub ClearMapToStatic()
     Application.ScreenUpdating = False
@@ -689,24 +622,6 @@ Private Function BuildArgsJsonForRow(wsCmd As Worksheet, ByVal r As Long) As Boo
     commandId = Trim$(CStr(wsCmd.Cells(r, COL_COMMAND_ID).value))
     ClearFeedback wsCmd, r
 
-    If commandId = "" Then
-        wsCmd.Cells(r, COL_STATUS).value = "ERROR"
-        wsCmd.Cells(r, COL_ISSUE_CODE).value = "UNKNOWN_ACTION"
-        wsCmd.Cells(r, COL_MESSAGE).value = "CommandID is blank."
-        wsCmd.Cells(r, COL_SUGGESTION).value = "Choose a CommandID from the dropdown list."
-        BuildArgsJsonForRow = False
-        Exit Function
-    End If
-
-    If Not IsSupportedCommandId(commandId) Then
-        wsCmd.Cells(r, COL_STATUS).value = "ERROR"
-        wsCmd.Cells(r, COL_ISSUE_CODE).value = "UNKNOWN_ACTION"
-        wsCmd.Cells(r, COL_MESSAGE).value = "Unsupported CommandID for current robot-script template: " & commandId
-        wsCmd.Cells(r, COL_SUGGESTION).value = "Choose a supported command from the dropdown list."
-        BuildArgsJsonForRow = False
-        Exit Function
-    End If
-
     ' CommandID is the public editable field. Keep backend fields synchronized.
     category = CategoryForCommandId(commandId)
     action = commandId
@@ -720,7 +635,7 @@ Private Function BuildArgsJsonForRow(wsCmd As Worksheet, ByVal r As Long) As Boo
              "scan.start", "scan.stop", "scan.once", _
              "ap.association.get", "ap.traffic.enable", "ap.traffic.disable"
             wsCmd.Cells(r, COL_ARGS_JSON).value = "{}"
-            wsCmd.Cells(r, COL_STATUS).value = "OK"
+            wsCmd.Cells(r, COL_STATUS).value = "NOT CHECKED"
             BuildArgsJsonForRow = True
 
         Case "mobility.move"
@@ -733,259 +648,85 @@ Private Function BuildArgsJsonForRow(wsCmd As Worksheet, ByVal r As Long) As Boo
             BuildArgsJsonForRow = BuildApTxpowerSetArgs(wsCmd, r)
 
         Case Else
-            wsCmd.Cells(r, COL_STATUS).value = "ERROR"
-            wsCmd.Cells(r, COL_ISSUE_CODE).value = "UNKNOWN_ACTION"
-            wsCmd.Cells(r, COL_MESSAGE).value = "Unsupported action for current robot-script template: " & action
-            wsCmd.Cells(r, COL_SUGGESTION).value = "Choose a supported command from the dropdown list."
-            BuildArgsJsonForRow = False
+            ' The command dropdown normally prevents this case. If workbook
+            ' content is pasted or edited outside that GUI restriction, still
+            ' construct exportable CSV and let CommonCheckers report it.
+            wsCmd.Cells(r, COL_ARGS_JSON).value = "{}"
+            wsCmd.Cells(r, COL_STATUS).value = "NOT CHECKED"
+            BuildArgsJsonForRow = True
     End Select
 End Function
 
 Private Function BuildApStaDisassociateArgs(wsCmd As Worksheet, ByVal r As Long) As Boolean
-    Dim staMac As String
-    Dim periodVal As Variant
-    staMac = Trim$(CStr(wsCmd.Cells(r, COL_PARAM1).value))
-    periodVal = wsCmd.Cells(r, COL_PARAM2).value
+    Dim args As String
+    args = "{"
+    AppendJsonFieldFromCell args, "sta_mac", wsCmd.Cells(r, COL_PARAM1).value
+    AppendJsonFieldFromCell args, "time_period", wsCmd.Cells(r, COL_PARAM2).value
+    args = args & "}"
 
-    If Not IsMacAddress(staMac) Then
-        SetCommandValidationError wsCmd, r, "COMMAND_ARG_BAD_FORMAT", _
-            "ap.sta.disassociate sta_mac must be a six-octet colon-separated MAC address.", _
-            "Use a MAC address such as aa:bb:cc:dd:ee:ff."
-        Exit Function
-    End If
-
-    If Not IsIntegerCellValue(periodVal) Then
-        SetCommandValidationError wsCmd, r, "COMMAND_ARG_BAD_TYPE", _
-            "ap.sta.disassociate time_period must be a required integer.", _
-            "Enter an integer from 1 through 299 seconds."
-        Exit Function
-    End If
-
-    Dim periodSec As Long
-    periodSec = CLng(periodVal)
-    If periodSec <= 0 Or periodSec >= 300 Then
-        SetCommandValidationError wsCmd, r, "COMMAND_ARG_OUT_OF_RANGE", _
-            "ap.sta.disassociate time_period must be in the range (0, 300).", _
-            "Enter an integer from 1 through 299 seconds."
-        Exit Function
-    End If
-
-    wsCmd.Cells(r, COL_ARGS_JSON).value = _
-        "{""sta_mac"":""" & LCase$(staMac) & """,""time_period"":" & CStr(periodSec) & "}"
-    wsCmd.Cells(r, COL_STATUS).value = "OK"
+    wsCmd.Cells(r, COL_ARGS_JSON).value = args
+    wsCmd.Cells(r, COL_STATUS).value = "NOT CHECKED"
     BuildApStaDisassociateArgs = True
 End Function
 
 Private Function BuildApTxpowerSetArgs(wsCmd As Worksheet, ByVal r As Long) As Boolean
-    Dim powerVal As Variant
-    Dim staMac As String
-    powerVal = wsCmd.Cells(r, COL_PARAM1).value
-    staMac = Trim$(CStr(wsCmd.Cells(r, COL_PARAM2).value))
-
-    If Not IsIntegerCellValue(powerVal) Then
-        SetCommandValidationError wsCmd, r, "COMMAND_ARG_BAD_TYPE", _
-            "ap.txpower.set txpower must be a required integer.", _
-            "Enter an integer from 0 through 30 dBm."
-        Exit Function
-    End If
-
-    Dim txpower As Long
-    txpower = CLng(powerVal)
-    If txpower < 0 Or txpower > 30 Then
-        SetCommandValidationError wsCmd, r, "COMMAND_ARG_OUT_OF_RANGE", _
-            "ap.txpower.set txpower must be in the range [0, 30].", _
-            "Enter an integer from 0 through 30 dBm."
-        Exit Function
-    End If
-
-    If staMac <> "" And Not IsMacAddress(staMac) Then
-        SetCommandValidationError wsCmd, r, "COMMAND_ARG_BAD_FORMAT", _
-            "ap.txpower.set sta_mac must be blank or a six-octet colon-separated MAC address.", _
-            "Clear sta_mac for overall AP power, or use aa:bb:cc:dd:ee:ff."
-        Exit Function
-    End If
-
     Dim args As String
-    args = "{""txpower"":" & CStr(txpower)
-    If staMac <> "" Then args = args & ",""sta_mac"":""" & LCase$(staMac) & """"
+    args = "{"
+    AppendJsonFieldFromCell args, "txpower", wsCmd.Cells(r, COL_PARAM1).value
+    AppendJsonFieldFromCell args, "sta_mac", wsCmd.Cells(r, COL_PARAM2).value
     args = args & "}"
 
     wsCmd.Cells(r, COL_ARGS_JSON).value = args
-    wsCmd.Cells(r, COL_STATUS).value = "OK"
+    wsCmd.Cells(r, COL_STATUS).value = "NOT CHECKED"
     BuildApTxpowerSetArgs = True
 End Function
 
-Private Sub SetCommandValidationError( _
-    wsCmd As Worksheet, _
-    ByVal r As Long, _
-    ByVal issueCode As String, _
-    ByVal issueMessage As String, _
-    ByVal issueSuggestion As String)
-
-    wsCmd.Cells(r, COL_ARGS_JSON).ClearContents
-    wsCmd.Cells(r, COL_STATUS).value = "ERROR"
-    wsCmd.Cells(r, COL_ISSUE_CODE).value = issueCode
-    wsCmd.Cells(r, COL_MESSAGE).value = issueMessage
-    wsCmd.Cells(r, COL_SUGGESTION).value = issueSuggestion
-End Sub
-
-Private Function IsIntegerCellValue(ByVal v As Variant) As Boolean
-    If IsError(v) Then Exit Function
-    If IsBlankCellValue(v) Then Exit Function
-    If Not IsNumeric(v) Then Exit Function
-    If CDbl(v) <> Fix(CDbl(v)) Then Exit Function
-    IsIntegerCellValue = True
-End Function
-
-Private Function IsMacAddress(ByVal textValue As String) As Boolean
-    Dim re As Object
-    Set re = CreateObject("VBScript.RegExp")
-    re.Pattern = "^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
-    re.Global = False
-    IsMacAddress = re.Test(Trim$(textValue))
-End Function
-
 Private Function BuildMobilityMoveArgs(wsCmd As Worksheet, ByVal r As Long) As Boolean
-    Dim xM As Double, yM As Double
-    Dim hasHeading As Boolean, headingDeg As Double
-    Dim issueCode As String, issueMessage As String, issueSuggestion As String
-
-    If Not ValidateMobilityMoveRow(wsCmd, r, xM, yM, hasHeading, headingDeg, _
-                                   issueCode, issueMessage, issueSuggestion) Then
-        SetMobilityMoveValidationError wsCmd, r, issueCode, issueMessage, issueSuggestion
-        BuildMobilityMoveArgs = False
-        Exit Function
-    End If
-
     Dim args As String
-    args = "{""x_m"":" & JsonNumber(xM) & ",""y_m"":" & JsonNumber(yM)
-
-    If hasHeading Then
-        args = args & ",""heading_deg"":" & JsonNumber(headingDeg)
-    End If
-
+    args = "{"
+    AppendJsonFieldFromCell args, "x_m", wsCmd.Cells(r, COL_PARAM1).value
+    AppendJsonFieldFromCell args, "y_m", wsCmd.Cells(r, COL_PARAM2).value
+    AppendJsonFieldFromCell args, "heading_deg", wsCmd.Cells(r, COL_PARAM3).value
     args = args & "}"
 
     wsCmd.Cells(r, COL_ARGS_JSON).value = args
-    wsCmd.Cells(r, COL_STATUS).value = "OK"
+    wsCmd.Cells(r, COL_STATUS).value = "NOT CHECKED"
     BuildMobilityMoveArgs = True
 End Function
 
-Private Function ValidateMobilityMoveRow( _
-    wsCmd As Worksheet, _
-    ByVal r As Long, _
-    ByRef xM As Double, _
-    ByRef yM As Double, _
-    ByRef hasHeading As Boolean, _
-    ByRef headingDeg As Double, _
-    ByRef issueCode As String, _
-    ByRef issueMessage As String, _
-    ByRef issueSuggestion As String) As Boolean
+Private Sub AppendJsonFieldFromCell(ByRef args As String, ByVal fieldName As String, ByVal cellValue As Variant)
+    If Not IsError(cellValue) Then
+        If IsBlankCellValue(cellValue) Then Exit Sub
+    End If
+    If Len(args) > 1 Then args = args & ","
+    args = args & JsonString(fieldName) & ":" & JsonValueFromCell(cellValue)
+End Sub
 
-    Dim xVal As Variant, yVal As Variant, hVal As Variant
-    xVal = wsCmd.Cells(r, COL_PARAM1).value
-    yVal = wsCmd.Cells(r, COL_PARAM2).value
-    hVal = wsCmd.Cells(r, COL_PARAM3).value
-
-    If IsError(xVal) Then
-        issueCode = "COMMAND_ARG_BAD_TYPE"
-        issueMessage = "mobility.move x_m contains an Excel error."
-        issueSuggestion = "Enter x_m as a number in the range [1.4, 10.1)."
+Private Function JsonValueFromCell(ByVal cellValue As Variant) As String
+    If IsError(cellValue) Then
+        JsonValueFromCell = JsonString("#EXCEL_ERROR")
         Exit Function
     End If
 
-    If IsBlankCellValue(xVal) Then
-        issueCode = "COMMAND_ARGS_MISSING_REQUIRED"
-        issueMessage = "mobility.move requires x_m. The x_m cell is blank."
-        issueSuggestion = "Enter x_m in the range [1.4, 10.1)."
-        Exit Function
-    End If
-
-    If Not IsNumeric(xVal) Then
-        issueCode = "COMMAND_ARG_BAD_TYPE"
-        issueMessage = "mobility.move x_m must be numeric."
-        issueSuggestion = "Enter x_m as a number in the range [1.4, 10.1)."
-        Exit Function
-    End If
-
-    xM = CDbl(xVal)
-    If xM < MOVE_X_MIN_M Or xM >= MOVE_X_MAX_EXCLUSIVE_M Then
-        issueCode = "COMMAND_ARG_OUT_OF_RANGE"
-        issueMessage = "mobility.move x_m is outside the allowed range [1.4, 10.1)."
-        issueSuggestion = "Enter x_m greater than or equal to 1.4 and less than 10.1."
-        Exit Function
-    End If
-
-    If IsError(yVal) Then
-        issueCode = "COMMAND_ARG_BAD_TYPE"
-        issueMessage = "mobility.move y_m contains an Excel error."
-        issueSuggestion = "Enter y_m as a number in the range [0.3, 11.1)."
-        Exit Function
-    End If
-
-    If IsBlankCellValue(yVal) Then
-        issueCode = "COMMAND_ARGS_MISSING_REQUIRED"
-        issueMessage = "mobility.move requires y_m. The y_m cell is blank."
-        issueSuggestion = "Enter y_m in the range [0.3, 11.1)."
-        Exit Function
-    End If
-
-    If Not IsNumeric(yVal) Then
-        issueCode = "COMMAND_ARG_BAD_TYPE"
-        issueMessage = "mobility.move y_m must be numeric."
-        issueSuggestion = "Enter y_m as a number in the range [0.3, 11.1)."
-        Exit Function
-    End If
-
-    yM = CDbl(yVal)
-    If yM < MOVE_Y_MIN_M Or yM >= MOVE_Y_MAX_EXCLUSIVE_M Then
-        issueCode = "COMMAND_ARG_OUT_OF_RANGE"
-        issueMessage = "mobility.move y_m is outside the allowed range [0.3, 11.1)."
-        issueSuggestion = "Enter y_m greater than or equal to 0.3 and less than 11.1."
-        Exit Function
-    End If
-
-    If IsError(hVal) Then
-        issueCode = "COMMAND_ARG_BAD_TYPE"
-        issueMessage = "mobility.move heading_deg contains an Excel error."
-        issueSuggestion = "Clear heading_deg or enter a number in the range [0, 360)."
-        Exit Function
-    End If
-
-    hasHeading = Not IsBlankCellValue(hVal)
-    If hasHeading Then
-        If Not IsNumeric(hVal) Then
-            issueCode = "COMMAND_ARG_BAD_TYPE"
-            issueMessage = "mobility.move heading_deg must be blank or numeric."
-            issueSuggestion = "Clear heading_deg or enter a number in the range [0, 360)."
-            Exit Function
-        End If
-
-        headingDeg = CDbl(hVal)
-        If headingDeg < MOVE_HEADING_MIN_DEG Or headingDeg >= MOVE_HEADING_MAX_EXCLUSIVE_DEG Then
-            issueCode = "COMMAND_ARG_OUT_OF_RANGE"
-            issueMessage = "mobility.move heading_deg is outside the allowed range [0, 360)."
-            issueSuggestion = "Clear heading_deg or enter a value greater than or equal to 0 and less than 360."
-            Exit Function
-        End If
-    End If
-
-    ValidateMobilityMoveRow = True
+    Select Case VarType(cellValue)
+        Case vbByte, vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal
+            JsonValueFromCell = JsonNumber(CDbl(cellValue))
+        Case vbBoolean
+            JsonValueFromCell = IIf(CBool(cellValue), "true", "false")
+        Case Else
+            JsonValueFromCell = JsonString(CStr(cellValue))
+    End Select
 End Function
 
-Private Sub SetMobilityMoveValidationError( _
-    wsCmd As Worksheet, _
-    ByVal r As Long, _
-    ByVal issueCode As String, _
-    ByVal issueMessage As String, _
-    ByVal issueSuggestion As String)
-
-    wsCmd.Cells(r, COL_ARGS_JSON).ClearContents
-    wsCmd.Cells(r, COL_STATUS).value = "ERROR"
-    wsCmd.Cells(r, COL_ISSUE_CODE).value = issueCode
-    wsCmd.Cells(r, COL_MESSAGE).value = issueMessage
-    wsCmd.Cells(r, COL_SUGGESTION).value = issueSuggestion
-End Sub
+Private Function JsonString(ByVal textValue As String) As String
+    Dim escaped As String
+    escaped = Replace(textValue, "\", "\\")
+    escaped = Replace(escaped, """", Chr$(92) & Chr$(34))
+    escaped = Replace(escaped, vbCr, "\r")
+    escaped = Replace(escaped, vbLf, "\n")
+    escaped = Replace(escaped, vbTab, "\t")
+    JsonString = """" & escaped & """"
+End Function
 
 Public Sub ExportScriptCsv()
     Dim wsCmd As Worksheet
@@ -2063,15 +1804,6 @@ Private Sub ApplyCommandLayoutToValueRow(wsCmd As Worksheet, ByVal valueRow As L
         Exit Sub
     End If
 
-    If Not IsSupportedCommandId(commandId) Then
-        wsCmd.Cells(valueRow, COL_STATUS).value = "ERROR"
-        wsCmd.Cells(valueRow, COL_ISSUE_CODE).value = "UNKNOWN_ACTION"
-        wsCmd.Cells(valueRow, COL_MESSAGE).value = "Unsupported CommandID for current robot-script template: " & commandId
-        wsCmd.Cells(valueRow, COL_SUGGESTION).value = "Choose a CommandID from the dropdown list."
-        wsCmd.Cells(valueRow, COL_COMMAND_ID).Interior.Color = RGB(252, 228, 214)
-        Exit Sub
-    End If
-
     wsCmd.Cells(valueRow, COL_COMMAND_ID).Interior.Color = RGB(255, 255, 255)
     wsCmd.Cells(valueRow, COL_CATEGORY).value = CategoryForCommandId(commandId)
     wsCmd.Cells(valueRow, COL_ACTION).value = commandId
@@ -2210,18 +1942,6 @@ Private Sub UnlockParamCell(ByVal cell As Range)
     cell.Interior.Color = RGB(255, 255, 255)
     cell.Font.Color = RGB(0, 0, 0)
 End Sub
-
-Private Function IsSupportedCommandId(ByVal commandId As String) As Boolean
-    Select Case Trim$(commandId)
-        Case "mobility.report.location", "mobility.move", "mobility.in2out", "mobility.out2in", _
-             "scan.start", "scan.stop", "scan.once", _
-             "ap.association.get", "ap.sta.disassociate", "ap.txpower.set", _
-             "ap.traffic.enable", "ap.traffic.disable"
-            IsSupportedCommandId = True
-        Case Else
-            IsSupportedCommandId = False
-    End Select
-End Function
 
 Private Function CategoryForCommandId(ByVal commandId As String) As String
     Dim s As String
@@ -2687,7 +2407,3 @@ Private Sub ClearFeedback(wsCmd As Worksheet, ByVal r As Long)
     wsCmd.Cells(r, COL_MESSAGE).ClearContents
     wsCmd.Cells(r, COL_SUGGESTION).ClearContents
 End Sub
-
-
-
-

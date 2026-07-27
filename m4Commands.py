@@ -1,9 +1,12 @@
 from typing import Optional, List, Dict, Any
 from datetime import timedelta
+from pathlib import Path
 import json
 import csv
 import io
 import copy
+import sys
+import tempfile
 
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, Form
 from pydantic import BaseModel, Field
@@ -909,35 +912,6 @@ def _register_experiment_status(
 
 
 
-def _is_mobility_csv_row(row: Dict[str, Any]) -> bool:
-    return (row.get("category") or "").strip().lower() == "mobility"
-
-
-def _validate_experiment_mobility_action(action: str) -> None:
-    action_n = str(action or "").strip()
-
-    blocked = set(getattr(config, "MOBILITY_SCRIPT_BLOCKED_ACTIONS", set()))
-    if action_n in blocked:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"{action_n} is not allowed in experiment CSV scripts. "
-                "Use mobility.move or site-level mobility macros; final robot "
-                "orientation is controlled by the NMS mobility policy."
-            ),
-        )
-
-    allowed = set(getattr(config, "MOBILITY_SCRIPT_ALLOWED_ACTIONS", set()))
-    if allowed and action_n not in allowed:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"unsupported mobility action in experiment CSV: {action_n}. "
-                f"Allowed mobility actions: {sorted(allowed)}"
-            ),
-        )
-
-
 def _analyze_csv_rows_for_experiment(
     rows: List[Dict[str, Any]],
     *,
@@ -953,8 +927,15 @@ def _analyze_csv_rows_for_experiment(
     - enqueue commands
     - write experiment registry records
 
-    It validates rows, builds accepted enqueue items, computes end_at from accepted
-    rows only, and enforces the mobility first-row precondition.
+    Public-facing CSV validation has already passed through
+    CommonCheckers.validate_script() before this function is called. This
+    registration-only pass:
+    - checks each target against the live NMS whitelist
+    - builds enqueue items from the already-validated rows
+    - computes end_at from accepted rows
+
+    It deliberately contains no command vocabulary, argument, timeline, or
+    mobility-initialization rules.
     """
     accepted_items: List[Dict[str, Any]] = []
     skipped_not_whitelisted = 0
@@ -962,40 +943,21 @@ def _analyze_csv_rows_for_experiment(
     last_execute_at = t0_dt
 
     accepted_scanners = set()
-    scanner_first: Dict[str, Dict[str, Any]] = {}
     mobility_scanners = set()
 
     for row in rows:
         scanner = (row.get("scanner") or "").strip()
-        if not scanner:
-            bad_rows += 1
-            continue
 
         if not config.r.hexists(config.KEY_WHITELIST_SCANNER_META, scanner):
             skipped_not_whitelisted += 1
             continue
 
-        try:
-            offset = int((row.get("t_offset_sec") or "0").strip())
-        except Exception:
-            bad_rows += 1
-            continue
-
+        offset = int((row.get("t_offset_sec") or "0").strip())
         category = (row.get("category") or "scan").strip() or "scan"
         action = (row.get("action") or "").strip()
-        if not action:
-            bad_rows += 1
-            continue
 
         args_s = (row.get("args_json") or "").strip()
-        if args_s:
-            try:
-                args = json.loads(args_s)
-            except Exception:
-                bad_rows += 1
-                continue
-        else:
-            args = {}
+        args = json.loads(args_s) if args_s else {}
 
         execute_at_dt = t0_dt + timedelta(seconds=offset)
         execute_at = execute_at_dt.strftime(config.TIME_FMT)
@@ -1016,26 +978,7 @@ def _analyze_csv_rows_for_experiment(
             last_execute_at = execute_at_dt
 
         if category.strip().lower() == "mobility":
-            _validate_experiment_mobility_action(action)
             mobility_scanners.add(scanner)
-            old = scanner_first.get(scanner)
-            if old is None or offset < int(old.get("offset", 0)):
-                scanner_first[scanner] = {"offset": offset, "action": action}
-
-    bad_first = {
-        scanner: info
-        for scanner, info in scanner_first.items()
-        if info.get("action") != "mobility.report.location"
-    }
-    if bad_first:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Mobility CSV script must start each scanner with "
-                "mobility.report.location at the earliest mobility offset. "
-                f"Bad first rows: {bad_first}"
-            ),
-        )
 
     if not accepted_items:
         raise HTTPException(
@@ -1047,13 +990,13 @@ def _analyze_csv_rows_for_experiment(
         )
 
     preflight = {
-        "mobility_preflight": "ok" if mobility_scanners else "skipped",
+        "public_validation": "passed_before_registration_analysis",
+        "live_whitelist": "ok",
         "scanners": sorted(accepted_scanners),
         "mobility_scanners": sorted(mobility_scanners),
         "detail": (
-            "validated mobility first-row precondition; no Redis mutation performed"
-            if mobility_scanners
-            else "no mobility rows"
+            "built registration items from shared-validator-approved rows; "
+            "all accepted targets are present in the live NMS whitelist"
         ),
     }
 
@@ -1968,6 +1911,64 @@ def cmd_delete_experiment() -> Dict[str, Any]:
     }
 
 
+def _run_public_script_validation(
+    *,
+    script_csv_bytes: bytes,
+    initial_poses_csv_bytes: bytes,
+    common_dir: Optional[Path] = None,
+    site_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """
+    Run the same public CommonCheckers entry point used by the XLSM helper.
+
+    This adapter contains no validation rules. It only materializes the two
+    uploaded files temporarily and calls checker.checker_runner.validate_script.
+    """
+    nms_root = Path(__file__).resolve().parent
+    common_dir = (
+        Path(common_dir)
+        if common_dir is not None
+        else nms_root / "sitemap" / "CommonCheckers"
+    )
+    site_dir = (
+        Path(site_dir)
+        if site_dir is not None
+        else nms_root / "sitemap" / _nms_lab_id()
+    )
+
+    if not common_dir.is_dir():
+        raise FileNotFoundError(f"CommonCheckers directory not found: {common_dir}")
+    if not site_dir.is_dir():
+        raise FileNotFoundError(f"site directory not found: {site_dir}")
+
+    common_dir_text = str(common_dir.resolve())
+    if common_dir_text not in sys.path:
+        sys.path.insert(0, common_dir_text)
+
+    from checker.checker_runner import validate_script # type: ignore
+
+    with tempfile.TemporaryDirectory(prefix="autolab_registration_preflight_") as temp_dir:
+        temp_path = Path(temp_dir)
+        script_csv_path = temp_path / "experiment_script.csv"
+        initial_poses_csv_path = temp_path / "initial_poses.csv"
+        script_csv_path.write_bytes(script_csv_bytes)
+        initial_poses_csv_path.write_bytes(initial_poses_csv_bytes)
+
+        report = validate_script(
+            script_csv=script_csv_path,
+            initial_poses_csv=initial_poses_csv_path,
+            site_dir=site_dir,
+            common_dir=common_dir,
+        )
+
+    if not isinstance(report, dict):
+        raise TypeError(
+            "CommonCheckers validate_script() returned "
+            f"{type(report).__name__}, not dict"
+        )
+    return report
+
+
 @router.post("/cmd/_load_csv_file", tags=["4 Commands (Polling)"])
 async def cmd_load_csv_file(
     t0: str = Form(..., description=f"Absolute local time, format: {config.TIME_FMT}"),
@@ -1986,6 +1987,14 @@ async def cmd_load_csv_file(
     csv_file: UploadFile = File(
         ...,
         description="Upload a CSV file with columns: scanner,t_offset_sec,category,action,args_json",
+    ),
+    initial_poses_file: UploadFile = File(
+        ...,
+        description=(
+            "Upload initial_poses.csv with columns: scanner,intended_x_m,"
+            "intended_y_m,intended_heading_deg,position_tolerance_m,"
+            "heading_tolerance_deg"
+        ),
     ),
 ) -> Dict[str, Any]:
     """
@@ -2044,14 +2053,16 @@ async def cmd_load_csv_file(
           config.KEY_EXPERIMENT_REGISTRY = "nms:experiment:registry"
 
     Safe mutation order:
-        1. parse t0 and require it to be in the future
-        2. parse/decode CSV
-        3. dry-analyze accepted rows and compute end_at
-        4. reject if command_count == 0
-        5. check single-experiment registration gate
-        6. reset lab mobility state
-        7. enqueue accepted commands
-        8. write registry record
+        1. read both uploaded CSV files
+        2. run the shared public CommonCheckers validate_script()
+        3. stop with HTTP 422 and no mutation if public validation fails
+        4. parse t0 and require it to be in the future
+        5. dry-analyze accepted rows and compute end_at
+        6. reject if command_count == 0
+        7. check single-experiment registration gate
+        8. reset lab mobility state
+        9. enqueue accepted commands
+       10. write registry record
 
     Registry fields written by this endpoint:
         experiment_id
@@ -2066,16 +2077,6 @@ async def cmd_load_csv_file(
         state
         time_format
     """
-    try:
-        t0_dt = utility.parse_local_dt(t0)
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid t0; expected like '{utility.local_ts()}' (format {config.TIME_FMT})"
-        )
-
-    t0_preflight = _require_experiment_t0_future(t0_dt)
-
     original_filename = (csv_file.filename or "").strip()
     filename_lower = original_filename.lower()
 
@@ -2086,10 +2087,58 @@ async def cmd_load_csv_file(
     if not experiment_id:
         raise HTTPException(status_code=400, detail="CSV filename must provide a non-empty experiment_id")
 
+    initial_poses_filename = (initial_poses_file.filename or "").strip()
+    if not initial_poses_filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail="Uploaded initial poses file must be a .csv file",
+        )
+
     try:
         raw_bytes = await csv_file.read()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to read uploaded CSV file: {e}")
+
+    try:
+        initial_poses_raw_bytes = await initial_poses_file.read()
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to read uploaded initial poses CSV file: {e}",
+        )
+
+    try:
+        public_validation = _run_public_script_validation(
+            script_csv_bytes=raw_bytes,
+            initial_poses_csv_bytes=initial_poses_raw_bytes,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "public_validator_error",
+                "message": f"{type(e).__name__}: {e}",
+            },
+        )
+
+    if not public_validation.get("ok"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "public_validation_failed",
+                "public_validation": public_validation,
+            },
+        )
+
+    try:
+        t0_dt = utility.parse_local_dt(t0)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid t0; expected like '{utility.local_ts()}' (format {config.TIME_FMT})"
+        )
+
+    t0_preflight = _require_experiment_t0_future(t0_dt)
 
     # Try UTF-8 first, then UTF-8 with BOM, then a common Windows fallback.
     text = None
@@ -2105,13 +2154,8 @@ async def cmd_load_csv_file(
 
     f = io.StringIO(text)
     reader = csv.DictReader(f)
-    required_cols = {"scanner", "t_offset_sec", "category", "action", "args_json"}
-    if not required_cols.issubset(set(reader.fieldnames or [])):
-        raise HTTPException(
-            status_code=400,
-            detail=f"CSV must have columns: {sorted(list(required_cols))}"
-        )
-
+    # Column structure and row contents have already passed the shared public
+    # validator. This second read only constructs registration/enqueue items.
     rows = list(reader)
 
     analysis = _analyze_csv_rows_for_experiment(
@@ -2172,6 +2216,7 @@ async def cmd_load_csv_file(
         "added": added,
         "skipped_not_whitelisted": skipped_not_whitelisted,
         "bad_rows": bad_rows,
+        "public_validation": public_validation,
         "preflight": preflight,
         "experiment": exp,
     }

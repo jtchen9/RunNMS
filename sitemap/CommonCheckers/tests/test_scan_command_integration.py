@@ -51,7 +51,8 @@ class ScanCommandIntegrationTests(unittest.TestCase):
             )
             poses_path.write_text(
                 "scanner,intended_x_m,intended_y_m,intended_heading_deg,"
-                "position_tolerance_m,heading_tolerance_deg\n",
+                "position_tolerance_m,heading_tolerance_deg\n"
+                "twin-scout-delta,3.9,4.4,270,0.2,10\n",
                 encoding="utf-8",
             )
 
@@ -66,6 +67,68 @@ class ScanCommandIntegrationTests(unittest.TestCase):
         self.assertEqual(report["error_count"], 0)
         self.assertEqual(report["warning_count"], 0)
         self.assertEqual(report["issues"], [])
+
+    def test_checker_runner_rejects_scan_target_not_in_initial_poses(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            script_path = temp_path / "experiment_script.csv"
+            poses_path = temp_path / "initial_poses.csv"
+
+            script_path.write_text(
+                "scanner,t_offset_sec,category,action,args_json\n"
+                'unknown-robot,0,scan,scan.once,"{}"\n',
+                encoding="utf-8",
+            )
+            poses_path.write_text(
+                "scanner,intended_x_m,intended_y_m,intended_heading_deg,"
+                "position_tolerance_m,heading_tolerance_deg\n"
+                "twin-scout-delta,3.9,4.4,270,0.2,10\n",
+                encoding="utf-8",
+            )
+
+            report = validate_script(
+                script_csv=script_path,
+                initial_poses_csv=poses_path,
+                common_dir=COMMON_DIR,
+                site_dir=SITE_DIR,
+            )
+
+        self.assertFalse(report["ok"])
+        self.assertIn(
+            "SCAN_COMMAND_BAD_TARGET",
+            [str(issue.get("code")) for issue in report["issues"]],
+        )
+
+    def test_checker_runner_rejects_unknown_scan_action(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            script_path = temp_path / "experiment_script.csv"
+            poses_path = temp_path / "initial_poses.csv"
+
+            script_path.write_text(
+                "scanner,t_offset_sec,category,action,args_json\n"
+                'twin-scout-delta,0,scan,scan.invalid,"{}"\n',
+                encoding="utf-8",
+            )
+            poses_path.write_text(
+                "scanner,intended_x_m,intended_y_m,intended_heading_deg,"
+                "position_tolerance_m,heading_tolerance_deg\n"
+                "twin-scout-delta,3.9,4.4,270,0.2,10\n",
+                encoding="utf-8",
+            )
+
+            report = validate_script(
+                script_csv=script_path,
+                initial_poses_csv=poses_path,
+                common_dir=COMMON_DIR,
+                site_dir=SITE_DIR,
+            )
+
+        self.assertFalse(report["ok"])
+        self.assertIn(
+            "UNKNOWN_ACTION",
+            [str(issue.get("code")) for issue in report["issues"]],
+        )
 
     def test_scan_rows_do_not_enter_mobility_rules(self) -> None:
         scanner = "twin-scout-delta"
@@ -129,6 +192,35 @@ class ScanCommandIntegrationTests(unittest.TestCase):
             ),
             [],
         )
+
+    def test_missing_mobility_pose_points_to_first_affected_command(self) -> None:
+        scanner = "twin-scout-delta"
+        rows = [
+            ScriptRow(
+                2,
+                scanner,
+                60,
+                "mobility",
+                "mobility.move",
+                {"x_m": 4.0, "y_m": 4.0},
+            ),
+            ScriptRow(
+                3,
+                scanner,
+                0,
+                "mobility",
+                "mobility.report.location",
+                {},
+            ),
+        ]
+
+        issues = check_initial_poses_exist(rows, {})
+
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0]["code"], "MISSING_INITIAL_POSE")
+        self.assertEqual(issues[0]["row_number"], 3)
+        self.assertEqual(issues[0]["scanner"], scanner)
+        self.assertEqual(issues[0]["action"], "mobility.report.location")
 
 
 if __name__ == "__main__":

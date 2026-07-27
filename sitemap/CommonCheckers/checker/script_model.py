@@ -28,10 +28,12 @@ def _parse_args_json(raw:str, row_number:int):
 def load_script_csv(path:str|Path):
     path=Path(path); rows=[]; issues=[]
     with path.open('r',encoding='utf-8-sig',newline='') as f:
-        reader=csv.DictReader(f); required={"scanner","t_offset_sec","category","action"}
+        reader=csv.DictReader(f); required={"scanner","t_offset_sec","category","action","args_json"}
         missing=sorted(required-set(reader.fieldnames or []))
-        if missing: return [], [{"level":"error","code":"SCRIPT_CSV_MISSING_COLUMNS","row_number":0,"message":f"script CSV missing required columns: {missing}","suggestion":"Use columns: scanner,t_offset_sec,category,action,args_json."}]
+        if missing: return [], [{"level":"error","code":"SCRIPT_CSV_MISSING_COLUMNS","row_number":0,"message":f"script CSV missing required columns: {missing}","suggestion":"Use columns: scanner,t_offset_sec,category,action,args_json.","missing_columns":missing}]
+        source_row_count=0
         for i,raw in enumerate(reader,start=2):
+            source_row_count+=1
             scanner=_cell(raw,'scanner'); category=_cell(raw,'category','scan').lower(); action=_cell(raw,'action')
             try: off=int(_cell(raw,'t_offset_sec','0'))
             except Exception:
@@ -40,6 +42,8 @@ def load_script_csv(path:str|Path):
             if not scanner: issues.append({"level":"error","code":"MISSING_SCANNER","row_number":i,"message":"scanner is required.","suggestion":"Select a robot name."}); continue
             if not action: issues.append({"level":"error","code":"MISSING_ACTION","row_number":i,"message":"action is required.","suggestion":"Choose an allowed command."}); continue
             rows.append(ScriptRow(i,scanner,off,category,action,args))
+        if source_row_count==0:
+            issues.append({"level":"error","code":"EMPTY_SCRIPT","row_number":0,"message":"script CSV contains a header but no command rows.","suggestion":"Add at least one enabled command before running preflight."})
     return rows, issues
 
 def load_initial_poses_csv(path:str|Path):

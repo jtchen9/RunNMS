@@ -17,4 +17,26 @@ def check_first_mobility_command(rows:List[ScriptRow], policy:Dict[str,Any]):
     return issues
 
 def check_initial_poses_exist(rows:List[ScriptRow], initial_poses:Dict[str,InitialPose]):
-    return [{"level":"error","code":"MISSING_INITIAL_POSE","row_number":0,"scanner":s,"message":f"missing intended initial pose for mobility robot {s}.","suggestion":"Add this robot to initial_poses.csv."} for s in sorted(mobility_scanners(rows)) if s not in initial_poses]
+    first_missing_by_scanner: Dict[str, ScriptRow] = {}
+    for row in rows:
+        if row.category != "mobility" or row.scanner in initial_poses:
+            continue
+        old = first_missing_by_scanner.get(row.scanner)
+        if old is None or row.t_offset_sec < old.t_offset_sec:
+            first_missing_by_scanner[row.scanner] = row
+
+    return [
+        {
+            "level": "error",
+            "code": "MISSING_INITIAL_POSE",
+            "row_number": row.row_number,
+            "scanner": scanner,
+            "category": row.category,
+            "action": row.action,
+            "message": (
+                f"missing intended initial pose for mobility robot {scanner}."
+            ),
+            "suggestion": "Add this robot to initial_poses.csv.",
+        }
+        for scanner, row in sorted(first_missing_by_scanner.items())
+    ]
