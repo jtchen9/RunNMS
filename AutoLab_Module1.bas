@@ -18,6 +18,7 @@ Private Const SHEET_INITIAL_EXPORT As String = "InitialPosesExportPreview"
 Private Const SHEET_PREFLIGHT_CONFIG As String = "PreflightConfig"
 Private Const SHEET_PREFLIGHT_STATUS As String = "PreflightStatus"
 Private Const SHEET_VALIDATION_REPORT As String = "ValidationReport"
+Private Const SHEET_COMMAND_CATALOG As String = "CommandCatalog"
 
 Private Const MAP_TOP As Long = 4
 Private Const MAP_LEFT As Long = 3
@@ -52,7 +53,13 @@ Private Const POSE_COL_DEVICE_TYPE As Long = 7
 Private Const FIRST_DATA_ROW As Long = 4
 
 Private Const COMMAND_GUI_MAX_ROW As Long = 200
-Private Const CMD_LIST_CSV As String = "mobility.report.location,mobility.move,mobility.in2out,mobility.out2in,scan.start,scan.stop,scan.once,ap.association.get,ap.sta.disassociate,ap.txpower.set,ap.traffic.enable,ap.traffic.disable"
+Private Const COMMAND_DROPDOWN_NAME As String = "AutoLabCommandList"
+Private Const CATALOG_COL_COMMAND_ID As Long = 1
+Private Const CATALOG_COL_TARGET_TYPE As Long = 2
+Private Const CATALOG_COL_CATEGORY As Long = 3
+Private Const CATALOG_COL_ACTION As Long = 4
+Private Const CATALOG_COL_ENABLED As Long = 7
+Private Const CATALOG_COL_DROPDOWN_HELPER As Long = 11
 
 ' ============================================================
 ' Phase-3 map macros
@@ -624,13 +631,13 @@ Private Function BuildArgsJsonForRow(wsCmd As Worksheet, ByVal r As Long) As Boo
 
     ' CommandID is the public editable field. Keep backend fields synchronized.
     category = CategoryForCommandId(commandId)
-    action = commandId
+    action = ActionForCommandId(commandId)
     wsCmd.Cells(r, COL_CATEGORY).value = category
     wsCmd.Cells(r, COL_ACTION).value = action
 
     ApplyCommandLayoutToValueRow wsCmd, r
 
-    Select Case action
+    Select Case commandId
         Case "mobility.report.location", "mobility.in2out", "mobility.out2in", _
              "scan.start", "scan.stop", "scan.once", _
              "ap.association.get", "ap.traffic.enable", "ap.traffic.disable"
@@ -1738,6 +1745,9 @@ Private Function ResolveChangedCommandValueRow(wsCmd As Worksheet, ByVal rowNum 
 End Function
 
 Private Sub ApplyCommandDropdowns(wsCmd As Worksheet)
+    Dim commandListFormula As String
+    commandListFormula = PrepareCommandDropdownName()
+
     Dim r As Long
     For r = FIRST_DATA_ROW To COMMAND_GUI_MAX_ROW
         If LCase$(Trim$(CStr(wsCmd.Cells(r, COL_LINE_TYPE).value))) = "value" Or wsCmd.Cells(r, COL_LINE_TYPE).value = "" Then
@@ -1753,7 +1763,7 @@ Private Sub ApplyCommandDropdowns(wsCmd As Worksheet)
 
             With wsCmd.Cells(r, COL_COMMAND_ID).Validation
                 .Delete
-                .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, Formula1:=CMD_LIST_CSV
+                .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, Formula1:=commandListFormula
                 .IgnoreBlank = False
                 .InCellDropdown = True
                 .ShowError = True
@@ -1766,6 +1776,57 @@ Private Sub ApplyCommandDropdowns(wsCmd As Worksheet)
         End If
     Next r
 End Sub
+
+Private Function PrepareCommandDropdownName() As String
+    Dim wsCatalog As Worksheet
+    Set wsCatalog = ThisWorkbook.Worksheets(SHEET_COMMAND_CATALOG)
+
+    Dim lastCommandRow As Long
+    Dim lastHelperRow As Long
+    lastCommandRow = wsCatalog.Cells(wsCatalog.rows.Count, CATALOG_COL_COMMAND_ID).End(xlUp).Row
+    lastHelperRow = wsCatalog.Cells(wsCatalog.rows.Count, CATALOG_COL_DROPDOWN_HELPER).End(xlUp).Row
+    If lastHelperRow < 2 Then lastHelperRow = 2
+
+    wsCatalog.Range( _
+        wsCatalog.Cells(2, CATALOG_COL_DROPDOWN_HELPER), _
+        wsCatalog.Cells(lastHelperRow, CATALOG_COL_DROPDOWN_HELPER) _
+    ).ClearContents
+    wsCatalog.Cells(1, CATALOG_COL_DROPDOWN_HELPER).value = "dropdown_command_id"
+
+    Dim sourceRow As Long
+    Dim outputRow As Long
+    Dim commandId As String
+    outputRow = 2
+
+    For sourceRow = 2 To lastCommandRow
+        commandId = Trim$(CStr(wsCatalog.Cells(sourceRow, CATALOG_COL_COMMAND_ID).value))
+        If commandId <> "" And _
+           IsEnabledValue(wsCatalog.Cells(sourceRow, CATALOG_COL_ENABLED).value) Then
+            wsCatalog.Cells(outputRow, CATALOG_COL_DROPDOWN_HELPER).value = commandId
+            outputRow = outputRow + 1
+        End If
+    Next sourceRow
+
+    If outputRow = 2 Then
+        ' Keep the named range valid even when the catalog has no enabled rows.
+        wsCatalog.Cells(2, CATALOG_COL_DROPDOWN_HELPER).value = ""
+        outputRow = 3
+    End If
+
+    wsCatalog.Columns(CATALOG_COL_DROPDOWN_HELPER).Hidden = True
+
+    On Error Resume Next
+    ThisWorkbook.Names(COMMAND_DROPDOWN_NAME).Delete
+    On Error GoTo 0
+
+    Dim catalogSheetName As String
+    catalogSheetName = Replace(wsCatalog.Name, "'", "''")
+    ThisWorkbook.Names.Add _
+        Name:=COMMAND_DROPDOWN_NAME, _
+        RefersTo:="='" & catalogSheetName & "'!$K$2:$K$" & CStr(outputRow - 1)
+
+    PrepareCommandDropdownName = "=" & COMMAND_DROPDOWN_NAME
+End Function
 
 Private Sub ApplyCommandSheetBaseProtection(wsCmd As Worksheet)
     wsCmd.Range("A:U").Locked = True
@@ -1806,7 +1867,7 @@ Private Sub ApplyCommandLayoutToValueRow(wsCmd As Worksheet, ByVal valueRow As L
 
     wsCmd.Cells(valueRow, COL_COMMAND_ID).Interior.Color = RGB(255, 255, 255)
     wsCmd.Cells(valueRow, COL_CATEGORY).value = CategoryForCommandId(commandId)
-    wsCmd.Cells(valueRow, COL_ACTION).value = commandId
+    wsCmd.Cells(valueRow, COL_ACTION).value = ActionForCommandId(commandId)
     ApplyScannerDropdownForCommand wsCmd, valueRow, commandId
 
     Select Case commandId
@@ -1850,7 +1911,10 @@ End Sub
 
 Private Sub ApplyScannerDropdownForCommand(wsCmd As Worksheet, ByVal valueRow As Long, ByVal commandId As String)
     Dim listCsv As String
-    If Left$(commandId, 3) = "ap." Then
+    Dim targetType As String
+    targetType = TargetTypeForCommandId(commandId)
+
+    If targetType = "ap" Then
         listCsv = DeviceScannerListCsv("ap")
     Else
         listCsv = DeviceScannerListCsv("robot")
@@ -1875,7 +1939,7 @@ End Sub
 
 Private Function DefaultScannerForCommand(ByVal commandId As String, ByVal listCsv As String) As String
     Dim preferred As String
-    If Left$(commandId, 3) = "ap." Then
+    If TargetTypeForCommandId(commandId) = "ap" Then
         preferred = "AP1"
     Else
         preferred = "twin-scout-alpha"
@@ -1944,18 +2008,68 @@ Private Sub UnlockParamCell(ByVal cell As Range)
 End Sub
 
 Private Function CategoryForCommandId(ByVal commandId As String) As String
-    Dim s As String
-    s = Trim$(commandId)
+    CategoryForCommandId = CommandCatalogText( _
+        commandId, _
+        CATALOG_COL_CATEGORY _
+    )
+End Function
 
-    If Left$(s, 9) = "mobility." Then
-        CategoryForCommandId = "mobility"
-    ElseIf Left$(s, 5) = "scan." Then
-        CategoryForCommandId = "scan"
-    ElseIf Left$(s, 3) = "ap." Then
-        CategoryForCommandId = "ap"
-    Else
-        CategoryForCommandId = ""
+Private Function ActionForCommandId(ByVal commandId As String) As String
+    ActionForCommandId = CommandCatalogText( _
+        commandId, _
+        CATALOG_COL_ACTION _
+    )
+    If ActionForCommandId = "" Then
+        ' Preserve pasted/unknown CommandID text for CommonCheckers.
+        ActionForCommandId = Trim$(commandId)
     End If
+End Function
+
+Private Function TargetTypeForCommandId(ByVal commandId As String) As String
+    TargetTypeForCommandId = LCase$(CommandCatalogText( _
+        commandId, _
+        CATALOG_COL_TARGET_TYPE _
+    ))
+End Function
+
+Private Function CommandCatalogText( _
+    ByVal commandId As String, _
+    ByVal catalogColumn As Long _
+) As String
+    Dim catalogRow As Long
+    catalogRow = FindCommandCatalogRow(commandId)
+    If catalogRow = 0 Then Exit Function
+
+    CommandCatalogText = Trim$(CStr( _
+        ThisWorkbook.Worksheets(SHEET_COMMAND_CATALOG).Cells( _
+            catalogRow, _
+            catalogColumn _
+        ).value _
+    ))
+End Function
+
+Private Function FindCommandCatalogRow(ByVal commandId As String) As Long
+    Dim wsCatalog As Worksheet
+    Set wsCatalog = ThisWorkbook.Worksheets(SHEET_COMMAND_CATALOG)
+
+    Dim wanted As String
+    wanted = Trim$(commandId)
+    If wanted = "" Then Exit Function
+
+    Dim lastRow As Long
+    Dim r As Long
+    lastRow = wsCatalog.Cells(wsCatalog.rows.Count, CATALOG_COL_COMMAND_ID).End(xlUp).Row
+
+    For r = 2 To lastRow
+        If StrComp( _
+            Trim$(CStr(wsCatalog.Cells(r, CATALOG_COL_COMMAND_ID).value)), _
+            wanted, _
+            vbBinaryCompare _
+        ) = 0 Then
+            FindCommandCatalogRow = r
+            Exit Function
+        End If
+    Next r
 End Function
 
 

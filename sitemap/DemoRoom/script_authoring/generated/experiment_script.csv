@@ -1,6 +1,6 @@
 ﻿scanner,t_offset_sec,category,action,args_json
 "twin-scout-alpha",0,"mobility","mobility.report.location","{}"
-"twin-scout-alpha",60,"mobility","mobility.report.location","{}"
-"AP1",360,"ap","ap.txpower.set","{""txpower"":0}"
+"twin-scout-alpha",180,"mobility","mobility.move","{}"
+"twin-scout-alpha",360,"mobility","mobility.report.location","{}"
 "twin-scout-alpha",540,"mobility","mobility.report.location","{}"
 "twin-scout-alpha",720,"mobility","mobility.report.location","{}"
