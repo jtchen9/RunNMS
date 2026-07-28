@@ -25,6 +25,7 @@ if __package__ in (None, ""):
     from checker.argument_rules import check_command_arguments
     from checker.macro_rules import check_macro_and_bump_rules
     from checker.path_rules import check_planned_path_rules
+    from checker.traffic_rules import check_traffic_sessions
 else:
     from .initialization_rules import check_first_mobility_command, check_initial_poses_exist
     from .script_model import load_initial_poses_csv, load_script_csv
@@ -35,6 +36,7 @@ else:
     from .argument_rules import check_command_arguments
     from .macro_rules import check_macro_and_bump_rules
     from .path_rules import check_planned_path_rules
+    from .traffic_rules import check_traffic_sessions
 
 
 def _load_json(path: str | Path) -> Dict[str, Any]:
@@ -107,6 +109,7 @@ def validate_script(
         if isinstance(item, dict) and str(item.get("scanner", "")).strip()
     }
     issues.extend(check_device_targets(rows, set(initial_poses), ap_scanners))
+    issues.extend(check_traffic_sessions(rows, initial_poses))
     issues.extend(check_first_mobility_command(rows, policy))
 
     # If the initial-pose file itself is missing or malformed, stop here for

@@ -8,6 +8,7 @@ from .script_model import ScriptRow
 
 
 _MAC_ADDRESS_RE = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
+_TRAFFIC_SESSION_ID_RE = re.compile(r"^S[A-Za-z0-9_-]{1,9}$")
 
 
 def _row_issue(
@@ -87,6 +88,10 @@ def check_command_arguments(
         numeric_ranges = rule.get("numeric_ranges", {}) or {}
         integer_ranges = rule.get("integer_ranges", {}) or {}
         string_formats = rule.get("string_formats", {}) or {}
+        string_enums = rule.get("string_enums", {}) or {}
+        boolean_fields = set(rule.get("boolean_fields", []) or [])
+        conditional_required = rule.get("conditional_required_keys", {}) or {}
+        conditional_forbidden = rule.get("conditional_forbidden_keys", {}) or {}
 
         actual_keys = set(args.keys())
         unknown_keys = sorted(str(key) for key in actual_keys - allowed_keys)
@@ -286,6 +291,115 @@ def check_command_arguments(
                         field=field_name,
                         actual_value=value,
                         expected_format="xx:xx:xx:xx:xx:xx",
+                    )
+                )
+            elif (
+                format_name == "traffic_session_id"
+                and not _TRAFFIC_SESSION_ID_RE.fullmatch(value.strip())
+            ):
+                issues.append(
+                    _row_issue(
+                        row,
+                        code="COMMAND_ARG_BAD_FORMAT",
+                        message=(
+                            f"{row.action} argument {field_name} must begin with "
+                            "uppercase S, contain 2-10 characters, and use only "
+                            "letters, digits, underscore, or hyphen."
+                        ),
+                        suggestion="Use a short session ID such as S1 or Svoice-1.",
+                        field=field_name,
+                        actual_value=value,
+                        expected_format="^S[A-Za-z0-9_-]{1,9}$",
+                    )
+                )
+
+        for field_name, allowed_values in string_enums.items():
+            if field_name not in args:
+                continue
+            value = args[field_name]
+            if not isinstance(value, str):
+                issues.append(
+                    _row_issue(
+                        row,
+                        code="COMMAND_ARG_BAD_TYPE",
+                        message=f"{row.action} argument {field_name} must be a JSON string.",
+                        suggestion=f"Choose one of: {allowed_values}.",
+                        field=field_name,
+                        actual_value=value,
+                        expected_type="string",
+                    )
+                )
+            elif value not in allowed_values:
+                issues.append(
+                    _row_issue(
+                        row,
+                        code="COMMAND_ARG_BAD_VALUE",
+                        message=(
+                            f"{row.action} argument {field_name}={value!r} is not "
+                            f"one of the allowed values."
+                        ),
+                        suggestion=f"Choose one of: {allowed_values}.",
+                        field=field_name,
+                        actual_value=value,
+                        allowed_values=allowed_values,
+                    )
+                )
+
+        for field_name in boolean_fields:
+            if field_name in args and not isinstance(args[field_name], bool):
+                issues.append(
+                    _row_issue(
+                        row,
+                        code="COMMAND_ARG_BAD_TYPE",
+                        message=f"{row.action} argument {field_name} must be a JSON boolean.",
+                        suggestion=f"Use true or false for {field_name}, without quotes.",
+                        field=field_name,
+                        actual_value=args[field_name],
+                        expected_type="boolean",
+                    )
+                )
+
+        for selector_field, by_value in conditional_required.items():
+            selector_value = args.get(selector_field)
+            required_for_value = set(
+                by_value.get(selector_value, [])
+                if isinstance(selector_value, str)
+                else []
+            )
+            missing_for_value = sorted(required_for_value - actual_keys)
+            if missing_for_value:
+                issues.append(
+                    _row_issue(
+                        row,
+                        code="COMMAND_ARGS_MISSING_REQUIRED",
+                        message=(
+                            f"{row.action} with {selector_field}={selector_value!r} "
+                            f"is missing required keys: {missing_for_value}."
+                        ),
+                        suggestion=f"Provide all required keys: {sorted(required_for_value)}.",
+                        missing_keys=missing_for_value,
+                    )
+                )
+
+        for selector_field, by_value in conditional_forbidden.items():
+            selector_value = args.get(selector_field)
+            forbidden_for_value = set(
+                by_value.get(selector_value, [])
+                if isinstance(selector_value, str)
+                else []
+            )
+            present_forbidden = sorted(forbidden_for_value & actual_keys)
+            if present_forbidden:
+                issues.append(
+                    _row_issue(
+                        row,
+                        code="COMMAND_ARGS_FORBIDDEN_FIELDS",
+                        message=(
+                            f"{row.action} with {selector_field}={selector_value!r} "
+                            f"must not contain: {present_forbidden}."
+                        ),
+                        suggestion="Remove arguments that belong to the other protocol.",
+                        forbidden_keys=present_forbidden,
                     )
                 )
 

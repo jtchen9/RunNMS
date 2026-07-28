@@ -4,7 +4,8 @@
   "allowed_categories": [
     "mobility",
     "scan",
-    "ap"
+    "ap",
+    "traffic"
   ],
   "allowed_actions_by_category": {
     "mobility": [
@@ -24,6 +25,10 @@
       "ap.txpower.set",
       "ap.traffic.enable",
       "ap.traffic.disable"
+    ],
+    "traffic": [
+      "traffic.session.start",
+      "traffic.session.stop"
     ]
   },
   "blocked_actions_by_category": {
@@ -147,6 +152,110 @@
         "allowed_keys": [],
         "required_keys": [],
         "numeric_ranges": {}
+      }
+    },
+    "traffic": {
+      "traffic.session.start": {
+        "allowed_keys": [
+          "session_id",
+          "ac",
+          "protocol",
+          "duration_sec",
+          "report_interval_sec",
+          "reverse",
+          "bitrate",
+          "packet_size",
+          "parallel"
+        ],
+        "required_keys": [
+          "session_id",
+          "ac",
+          "protocol",
+          "duration_sec",
+          "report_interval_sec",
+          "reverse"
+        ],
+        "numeric_ranges": {},
+        "integer_ranges": {
+          "duration_sec": {
+            "min_exclusive": 60,
+            "max_inclusive": 1200
+          },
+          "report_interval_sec": {
+            "min_inclusive": 60,
+            "max_inclusive": 60
+          },
+          "packet_size": {
+            "min_inclusive": 64,
+            "max_inclusive": 1472
+          },
+          "parallel": {
+            "min_inclusive": 1,
+            "max_inclusive": 16
+          }
+        },
+        "string_formats": {
+          "session_id": "traffic_session_id"
+        },
+        "string_enums": {
+          "ac": [
+            "vo",
+            "vi",
+            "be",
+            "bk"
+          ],
+          "protocol": [
+            "tcp",
+            "udp"
+          ],
+          "bitrate": [
+            "100K",
+            "500K",
+            "1M",
+            "5M",
+            "10M",
+            "20M",
+            "50M",
+            "100M"
+          ]
+        },
+        "boolean_fields": [
+          "reverse"
+        ],
+        "conditional_required_keys": {
+          "protocol": {
+            "tcp": [
+              "parallel"
+            ],
+            "udp": [
+              "bitrate",
+              "packet_size"
+            ]
+          }
+        },
+        "conditional_forbidden_keys": {
+          "protocol": {
+            "tcp": [
+              "bitrate",
+              "packet_size"
+            ],
+            "udp": [
+              "parallel"
+            ]
+          }
+        }
+      },
+      "traffic.session.stop": {
+        "allowed_keys": [
+          "session_id"
+        ],
+        "required_keys": [
+          "session_id"
+        ],
+        "numeric_ranges": {},
+        "string_formats": {
+          "session_id": "traffic_session_id"
+        }
       }
     }
   },

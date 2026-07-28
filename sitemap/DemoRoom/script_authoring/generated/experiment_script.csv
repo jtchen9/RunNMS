@@ -1,6 +1,6 @@
 ﻿scanner,t_offset_sec,category,action,args_json
-"twin-scout-alpha",0,"mobility","mobility.report.location","{}"
-"twin-scout-alpha",180,"scan","scan.start","{}"
+"twin-scout-bravo",0,"traffic","traffic.session.start","{""session_id"":""S1"",""ac"":""bk"",""duration_sec"":300,""bitrate"":""100M"",""packet_size"":1200,""reverse"":true,""protocol"":""udp"",""report_interval_sec"":60}"
+"twin-scout-alpha",180,"traffic","traffic.session.start","{""session_id"":""S2"",""ac"":""bk"",""duration_sec"":300,""bitrate"":""100M"",""packet_size"":1200,""reverse"":true,""protocol"":""udp"",""report_interval_sec"":60}"
 "twin-scout-alpha",360,"mobility","mobility.report.location","{}"
 "twin-scout-alpha",540,"mobility","mobility.report.location","{}"
 "twin-scout-alpha",720,"mobility","mobility.report.location","{}"

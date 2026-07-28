@@ -48,6 +48,8 @@ Private Const COL_STATUS As Long = 17
 Private Const COL_ISSUE_CODE As Long = 18
 Private Const COL_MESSAGE As Long = 19
 Private Const COL_SUGGESTION As Long = 20
+Private Const COL_LAYOUT_COMMAND_ID As Long = 21
+Private Const COL_LAYOUT_AC As Long = 22
 Private Const POSE_COL_DEVICE_TYPE As Long = 7
 
 ' First row below the CommandSheet header row. This includes Key/Value command rows.
@@ -1920,7 +1922,9 @@ Private Function PrepareCommandDropdownName() As String
 End Function
 
 Private Sub ApplyCommandSheetBaseProtection(wsCmd As Worksheet)
-    wsCmd.Range("A:U").Locked = True
+    wsCmd.Range("A:V").Locked = True
+    wsCmd.Columns(COL_LAYOUT_COMMAND_ID).Hidden = True
+    wsCmd.Columns(COL_LAYOUT_AC).Hidden = True
 
     Dim r As Long
     For r = FIRST_DATA_ROW To COMMAND_GUI_MAX_ROW
@@ -1941,15 +1945,36 @@ Private Sub ApplyCommandLayoutToValueRow(wsCmd As Worksheet, ByVal valueRow As L
     Dim commandId As String
     commandId = Trim$(CStr(wsCmd.Cells(valueRow, COL_COMMAND_ID).value))
 
+    Dim previousCommandId As String
     Dim previousAction As String
-    previousAction = Trim$(CStr(wsCmd.Cells(valueRow, COL_ACTION).value))
-    If StrComp(previousAction, commandId, vbBinaryCompare) <> 0 Then
+    previousCommandId = Trim$(CStr(wsCmd.Cells( _
+        valueRow, _
+        COL_LAYOUT_COMMAND_ID _
+    ).value))
+    If previousCommandId = "" Then
+        previousAction = Trim$(CStr(wsCmd.Cells( _
+            valueRow, _
+            COL_ACTION _
+        ).value))
+        If StrComp( _
+            previousAction, _
+            ActionForCommandId(commandId), _
+            vbBinaryCompare _
+        ) = 0 Then
+            ' Preserve existing rows when this hidden GUI cache is first added.
+            previousCommandId = commandId
+        End If
+    End If
+
+    If StrComp(previousCommandId, commandId, vbBinaryCompare) <> 0 Then
         wsCmd.Range(wsCmd.Cells(valueRow, COL_PARAM1), wsCmd.Cells(valueRow, COL_PARAM6)).ClearContents
         wsCmd.Cells(valueRow, COL_ARGS_JSON).ClearContents
+        wsCmd.Cells(valueRow, COL_LAYOUT_AC).ClearContents
     End If
 
     ClearParamKeyLabels wsCmd, keyRow
     ClearParamEditStyle wsCmd, valueRow
+    wsCmd.Cells(valueRow, COL_LAYOUT_COMMAND_ID).value = commandId
 
     If commandId = "" Then
         wsCmd.Cells(valueRow, COL_STATUS).value = "NOT CHECKED"
@@ -1962,12 +1987,58 @@ Private Sub ApplyCommandLayoutToValueRow(wsCmd As Worksheet, ByVal valueRow As L
     ApplyScannerDropdownForCommand wsCmd, valueRow, commandId
 
     ApplyParameterCatalogLayout wsCmd, keyRow, valueRow, commandId
+    ApplyDependentCatalogDefaults wsCmd, valueRow, commandId
 
     wsCmd.Cells(valueRow, COL_STATUS).value = IIf(IsEnabledValue(wsCmd.Cells(valueRow, COL_ENABLED).value), "NOT CHECKED", "DISABLED")
     wsCmd.Cells(valueRow, COL_ISSUE_CODE).value = ""
     wsCmd.Cells(valueRow, COL_MESSAGE).value = ""
     wsCmd.Cells(valueRow, COL_SUGGESTION).value = ""
 End Sub
+
+Private Sub ApplyDependentCatalogDefaults( _
+    wsCmd As Worksheet, _
+    ByVal valueRow As Long, _
+    ByVal commandId As String _
+)
+    If commandId <> "traffic.session.start.udp" Then Exit Sub
+
+    Dim currentAc As String
+    Dim previousAc As String
+    Dim currentBitrate As String
+
+    currentAc = LCase$(Trim$(CStr(wsCmd.Cells( _
+        valueRow, _
+        COL_PARAM2 _
+    ).value)))
+    previousAc = LCase$(Trim$(CStr(wsCmd.Cells( _
+        valueRow, _
+        COL_LAYOUT_AC _
+    ).value)))
+    currentBitrate = Trim$(CStr(wsCmd.Cells( _
+        valueRow, _
+        COL_PARAM4 _
+    ).value))
+
+    If previousAc = "" Or _
+       currentBitrate = "" Or _
+       currentBitrate = DefaultTrafficBitrateForAc(previousAc) Then
+        wsCmd.Cells(valueRow, COL_PARAM4).value = _
+            DefaultTrafficBitrateForAc(currentAc)
+    End If
+
+    wsCmd.Cells(valueRow, COL_LAYOUT_AC).value = currentAc
+End Sub
+
+Private Function DefaultTrafficBitrateForAc(ByVal ac As String) As String
+    Select Case LCase$(Trim$(ac))
+        Case "vo"
+            DefaultTrafficBitrateForAc = "100K"
+        Case "vi"
+            DefaultTrafficBitrateForAc = "5M"
+        Case Else
+            DefaultTrafficBitrateForAc = "100M"
+    End Select
+End Function
 
 Private Sub ApplyParameterCatalogLayout( _
     wsCmd As Worksheet, _
