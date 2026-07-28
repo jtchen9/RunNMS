@@ -1,62 +1,16 @@
 {
-  "ok": false,
-  "status": "fail",
+  "ok": true,
+  "status": "pass",
   "site_id": "DemoRoom",
   "site_version": "2026.07.14.1",
   "common_checkers_version": "2026.07.14.1",
   "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\experiment_script.csv",
   "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\initial_poses.csv",
-  "script_hash": "sha256:c7a2d2374a9d1ac6a52227a13295869ec257a1c6e93e212f938fba6157f869ec",
+  "script_hash": "sha256:d003374d3e47ada70e9ba7bc3b3e81669a3077cbd3a04a2340e66c7fe5b08373",
   "initial_poses_hash": "sha256:844537fbd51143ec688e850867efda45c92181626545b9ef5092719e5caf1dfa",
-  "error_count": 4,
+  "error_count": 0,
   "warning_count": 0,
-  "issues": [
-    {
-      "level": "error",
-      "code": "COMMAND_ARGS_MISSING_REQUIRED",
-      "row_number": 3,
-      "scanner": "twin-scout-alpha",
-      "category": "mobility",
-      "action": "mobility.move",
-      "message": "mobility.move is missing required argument keys: ['x_m', 'y_m'].",
-      "suggestion": "Provide all required keys: ['x_m', 'y_m'].",
-      "missing_keys": [
-        "x_m",
-        "y_m"
-      ],
-      "required_keys": [
-        "x_m",
-        "y_m"
-      ]
-    },
-    {
-      "level": "error",
-      "code": "MOVE_ARGS_MISSING_TARGET",
-      "message": "mobility.move requires x_m/y_m, target_x_m/target_y_m, or dx_m/dy_m.",
-      "suggestion": "Add args_json such as {\"x_m\": 2.0, \"y_m\": 4.4}.",
-      "row_number": 3,
-      "scanner": "twin-scout-alpha",
-      "action": "mobility.move"
-    },
-    {
-      "level": "error",
-      "code": "MOVE_ARGS_MISSING_TARGET",
-      "message": "mobility.move requires x_m/y_m, target_x_m/target_y_m, or dx_m/dy_m.",
-      "suggestion": "Add args_json such as {\"x_m\": 2.0, \"y_m\": 4.4}.",
-      "row_number": 3,
-      "scanner": "twin-scout-alpha",
-      "action": "mobility.move"
-    },
-    {
-      "level": "error",
-      "code": "MOVE_ARGS_MISSING_TARGET",
-      "message": "mobility.move requires x_m/y_m, target_x_m/target_y_m, or dx_m/dy_m.",
-      "suggestion": "Add args_json such as {\"x_m\": 2.0, \"y_m\": 4.4}.",
-      "row_number": 3,
-      "scanner": "twin-scout-alpha",
-      "action": "mobility.move"
-    }
-  ],
+  "issues": [],
   "generated_by": "autolab_xlsm_run_checker.py",
-  "generated_at": "2026-07-28T07:53:53"
+  "generated_at": "2026-07-28T08:31:33"
 }

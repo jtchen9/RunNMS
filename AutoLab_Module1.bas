@@ -19,6 +19,7 @@ Private Const SHEET_PREFLIGHT_CONFIG As String = "PreflightConfig"
 Private Const SHEET_PREFLIGHT_STATUS As String = "PreflightStatus"
 Private Const SHEET_VALIDATION_REPORT As String = "ValidationReport"
 Private Const SHEET_COMMAND_CATALOG As String = "CommandCatalog"
+Private Const SHEET_PARAMETER_CATALOG As String = "ParameterCatalog"
 
 Private Const MAP_TOP As Long = 4
 Private Const MAP_LEFT As Long = 3
@@ -58,8 +59,17 @@ Private Const CATALOG_COL_COMMAND_ID As Long = 1
 Private Const CATALOG_COL_TARGET_TYPE As Long = 2
 Private Const CATALOG_COL_CATEGORY As Long = 3
 Private Const CATALOG_COL_ACTION As Long = 4
+Private Const CATALOG_COL_PARAMETER_MODE As Long = 6
 Private Const CATALOG_COL_ENABLED As Long = 7
 Private Const CATALOG_COL_DROPDOWN_HELPER As Long = 11
+Private Const PARAM_CATALOG_COL_COMMAND_ID As Long = 1
+Private Const PARAM_CATALOG_COL_POSITION As Long = 2
+Private Const PARAM_CATALOG_COL_NAME As Long = 3
+Private Const PARAM_CATALOG_COL_JSON_TYPE As Long = 4
+Private Const PARAM_CATALOG_COL_INPUT_MODE As Long = 5
+Private Const PARAM_CATALOG_COL_REQUIRED As Long = 6
+Private Const PARAM_CATALOG_COL_DEFAULT As Long = 7
+Private Const PARAM_CATALOG_COL_ALLOWED_VALUES As Long = 8
 
 ' ============================================================
 ' Phase-3 map macros
@@ -625,6 +635,7 @@ Private Function BuildArgsJsonForRow(wsCmd As Worksheet, ByVal r As Long) As Boo
     Dim commandId As String
     Dim category As String
     Dim action As String
+    Dim parameterMode As String
 
     commandId = Trim$(CStr(wsCmd.Cells(r, COL_COMMAND_ID).value))
     ClearFeedback wsCmd, r
@@ -637,77 +648,157 @@ Private Function BuildArgsJsonForRow(wsCmd As Worksheet, ByVal r As Long) As Boo
 
     ApplyCommandLayoutToValueRow wsCmd, r
 
-    Select Case commandId
-        Case "mobility.report.location", "mobility.in2out", "mobility.out2in", _
-             "scan.start", "scan.stop", "scan.once", _
-             "ap.association.get", "ap.traffic.enable", "ap.traffic.disable"
-            wsCmd.Cells(r, COL_ARGS_JSON).value = "{}"
-            wsCmd.Cells(r, COL_STATUS).value = "NOT CHECKED"
-            BuildArgsJsonForRow = True
-
-        Case "mobility.move"
-            BuildArgsJsonForRow = BuildMobilityMoveArgs(wsCmd, r)
-
-        Case "ap.sta.disassociate"
-            BuildArgsJsonForRow = BuildApStaDisassociateArgs(wsCmd, r)
-
-        Case "ap.txpower.set"
-            BuildArgsJsonForRow = BuildApTxpowerSetArgs(wsCmd, r)
-
-        Case Else
-            ' The command dropdown normally prevents this case. If workbook
-            ' content is pasted or edited outside that GUI restriction, still
-            ' construct exportable CSV and let CommonCheckers report it.
-            wsCmd.Cells(r, COL_ARGS_JSON).value = "{}"
-            wsCmd.Cells(r, COL_STATUS).value = "NOT CHECKED"
-            BuildArgsJsonForRow = True
-    End Select
+    parameterMode = LCase$(ParameterModeForCommandId(commandId))
+    If parameterMode = "catalog" Then
+        BuildArgsJsonForRow = BuildArgsJsonFromParameterCatalog( _
+            wsCmd, _
+            r, _
+            commandId _
+        )
+    Else
+        ' Commands without catalog parameters produce an empty object.
+        ' Unknown pasted commands also remain exportable so CommonCheckers,
+        ' not VBA, decides whether they are valid.
+        wsCmd.Cells(r, COL_ARGS_JSON).value = "{}"
+        wsCmd.Cells(r, COL_STATUS).value = "NOT CHECKED"
+        BuildArgsJsonForRow = True
+    End If
 End Function
 
-Private Function BuildApStaDisassociateArgs(wsCmd As Worksheet, ByVal r As Long) As Boolean
+Private Function BuildArgsJsonFromParameterCatalog( _
+    wsCmd As Worksheet, _
+    ByVal commandRow As Long, _
+    ByVal commandId As String _
+) As Boolean
+    Dim wsCatalog As Worksheet
+    Set wsCatalog = ThisWorkbook.Worksheets(SHEET_PARAMETER_CATALOG)
+
+    Dim lastRow As Long
+    lastRow = wsCatalog.Cells( _
+        wsCatalog.rows.Count, _
+        PARAM_CATALOG_COL_COMMAND_ID _
+    ).End(xlUp).Row
+
     Dim args As String
     args = "{"
-    AppendJsonFieldFromCell args, "sta_mac", wsCmd.Cells(r, COL_PARAM1).value
-    AppendJsonFieldFromCell args, "time_period", wsCmd.Cells(r, COL_PARAM2).value
+
+    Dim catalogRow As Long
+    Dim parameterPosition As Long
+    Dim parameterName As String
+    Dim jsonType As String
+    Dim inputMode As String
+    Dim parameterValue As Variant
+
+    For catalogRow = 2 To lastRow
+        If StrComp( _
+            Trim$(CStr(wsCatalog.Cells( _
+                catalogRow, _
+                PARAM_CATALOG_COL_COMMAND_ID _
+            ).value)), _
+            Trim$(commandId), _
+            vbBinaryCompare _
+        ) = 0 Then
+            parameterName = Trim$(CStr(wsCatalog.Cells( _
+                catalogRow, _
+                PARAM_CATALOG_COL_NAME _
+            ).value))
+            jsonType = LCase$(Trim$(CStr(wsCatalog.Cells( _
+                catalogRow, _
+                PARAM_CATALOG_COL_JSON_TYPE _
+            ).value)))
+            inputMode = LCase$(Trim$(CStr(wsCatalog.Cells( _
+                catalogRow, _
+                PARAM_CATALOG_COL_INPUT_MODE _
+            ).value)))
+
+            If parameterName <> "" Then
+                If inputMode = "fixed" Then
+                    parameterValue = wsCatalog.Cells( _
+                        catalogRow, _
+                        PARAM_CATALOG_COL_DEFAULT _
+                    ).value
+                    AppendJsonFieldFromCatalog _
+                        args, _
+                        parameterName, _
+                        jsonType, _
+                        parameterValue
+                ElseIf inputMode = "editable" Then
+                    If IsNumeric(wsCatalog.Cells( _
+                        catalogRow, _
+                        PARAM_CATALOG_COL_POSITION _
+                    ).value) Then
+                        parameterPosition = CLng(wsCatalog.Cells( _
+                            catalogRow, _
+                            PARAM_CATALOG_COL_POSITION _
+                        ).value)
+                        If parameterPosition >= 1 And parameterPosition <= 6 Then
+                            parameterValue = wsCmd.Cells( _
+                                commandRow, _
+                                COL_PARAM1 + parameterPosition - 1 _
+                            ).value
+                            AppendJsonFieldFromCatalog _
+                                args, _
+                                parameterName, _
+                                jsonType, _
+                                parameterValue
+                        End If
+                    End If
+                End If
+            End If
+        End If
+    Next catalogRow
+
     args = args & "}"
 
-    wsCmd.Cells(r, COL_ARGS_JSON).value = args
-    wsCmd.Cells(r, COL_STATUS).value = "NOT CHECKED"
-    BuildApStaDisassociateArgs = True
+    wsCmd.Cells(commandRow, COL_ARGS_JSON).value = args
+    wsCmd.Cells(commandRow, COL_STATUS).value = "NOT CHECKED"
+    BuildArgsJsonFromParameterCatalog = True
 End Function
 
-Private Function BuildApTxpowerSetArgs(wsCmd As Worksheet, ByVal r As Long) As Boolean
-    Dim args As String
-    args = "{"
-    AppendJsonFieldFromCell args, "txpower", wsCmd.Cells(r, COL_PARAM1).value
-    AppendJsonFieldFromCell args, "sta_mac", wsCmd.Cells(r, COL_PARAM2).value
-    args = args & "}"
-
-    wsCmd.Cells(r, COL_ARGS_JSON).value = args
-    wsCmd.Cells(r, COL_STATUS).value = "NOT CHECKED"
-    BuildApTxpowerSetArgs = True
-End Function
-
-Private Function BuildMobilityMoveArgs(wsCmd As Worksheet, ByVal r As Long) As Boolean
-    Dim args As String
-    args = "{"
-    AppendJsonFieldFromCell args, "x_m", wsCmd.Cells(r, COL_PARAM1).value
-    AppendJsonFieldFromCell args, "y_m", wsCmd.Cells(r, COL_PARAM2).value
-    AppendJsonFieldFromCell args, "heading_deg", wsCmd.Cells(r, COL_PARAM3).value
-    args = args & "}"
-
-    wsCmd.Cells(r, COL_ARGS_JSON).value = args
-    wsCmd.Cells(r, COL_STATUS).value = "NOT CHECKED"
-    BuildMobilityMoveArgs = True
-End Function
-
-Private Sub AppendJsonFieldFromCell(ByRef args As String, ByVal fieldName As String, ByVal cellValue As Variant)
+Private Sub AppendJsonFieldFromCatalog( _
+    ByRef args As String, _
+    ByVal fieldName As String, _
+    ByVal jsonType As String, _
+    ByVal cellValue As Variant _
+)
     If Not IsError(cellValue) Then
         If IsBlankCellValue(cellValue) Then Exit Sub
     End If
     If Len(args) > 1 Then args = args & ","
-    args = args & JsonString(fieldName) & ":" & JsonValueFromCell(cellValue)
+    args = args & JsonString(fieldName) & ":" & _
+        JsonValueFromCatalog(cellValue, jsonType)
 End Sub
+
+Private Function JsonValueFromCatalog( _
+    ByVal cellValue As Variant, _
+    ByVal jsonType As String _
+) As String
+    If IsError(cellValue) Then
+        JsonValueFromCatalog = JsonValueFromCell(cellValue)
+        Exit Function
+    End If
+
+    If LCase$(Trim$(jsonType)) = "boolean" Then
+        If VarType(cellValue) = vbBoolean Then
+            JsonValueFromCatalog = IIf(CBool(cellValue), "true", "false")
+            Exit Function
+        End If
+
+        Dim booleanText As String
+        booleanText = UCase$(Trim$(CStr(cellValue)))
+        If booleanText = "TRUE" Then
+            JsonValueFromCatalog = "true"
+            Exit Function
+        ElseIf booleanText = "FALSE" Then
+            JsonValueFromCatalog = "false"
+            Exit Function
+        End If
+    End If
+
+    ' Do not validate the declared JSON type here. Invalid text remains a
+    ' JSON string so the shared Python validator can report the type error.
+    JsonValueFromCatalog = JsonValueFromCell(cellValue)
+End Function
 
 Private Function JsonValueFromCell(ByVal cellValue As Variant) As String
     If IsError(cellValue) Then
@@ -1870,43 +1961,143 @@ Private Sub ApplyCommandLayoutToValueRow(wsCmd As Worksheet, ByVal valueRow As L
     wsCmd.Cells(valueRow, COL_ACTION).value = ActionForCommandId(commandId)
     ApplyScannerDropdownForCommand wsCmd, valueRow, commandId
 
-    Select Case commandId
-        Case "mobility.move"
-            wsCmd.Cells(keyRow, COL_PARAM1).value = "x_m"
-            wsCmd.Cells(keyRow, COL_PARAM2).value = "y_m"
-            wsCmd.Cells(keyRow, COL_PARAM3).value = "heading_deg"
-            UnlockParamCell wsCmd.Cells(valueRow, COL_PARAM1)
-            UnlockParamCell wsCmd.Cells(valueRow, COL_PARAM2)
-            UnlockParamCell wsCmd.Cells(valueRow, COL_PARAM3)
-            wsCmd.Cells(valueRow, COL_PARAM3).Interior.Color = RGB(255, 242, 204)
-
-        Case "mobility.report.location", "mobility.in2out", "mobility.out2in", _
-             "scan.start", "scan.stop", "scan.once", _
-             "ap.association.get", "ap.traffic.enable", "ap.traffic.disable"
-            ' These commands use fixed args_json = {} and no editable params in Phase-10a.
-            wsCmd.Range(wsCmd.Cells(valueRow, COL_PARAM1), wsCmd.Cells(valueRow, COL_PARAM6)).ClearContents
-
-        Case "ap.sta.disassociate"
-            wsCmd.Cells(keyRow, COL_PARAM1).value = "sta_mac"
-            wsCmd.Cells(keyRow, COL_PARAM2).value = "time_period"
-            UnlockParamCell wsCmd.Cells(valueRow, COL_PARAM1)
-            UnlockParamCell wsCmd.Cells(valueRow, COL_PARAM2)
-            If IsBlankCellValue(wsCmd.Cells(valueRow, COL_PARAM2).value) Then
-                wsCmd.Cells(valueRow, COL_PARAM2).value = 10
-            End If
-
-        Case "ap.txpower.set"
-            wsCmd.Cells(keyRow, COL_PARAM1).value = "txpower"
-            wsCmd.Cells(keyRow, COL_PARAM2).value = "sta_mac"
-            UnlockParamCell wsCmd.Cells(valueRow, COL_PARAM1)
-            UnlockParamCell wsCmd.Cells(valueRow, COL_PARAM2)
-            wsCmd.Cells(valueRow, COL_PARAM2).Interior.Color = RGB(255, 242, 204)
-    End Select
+    ApplyParameterCatalogLayout wsCmd, keyRow, valueRow, commandId
 
     wsCmd.Cells(valueRow, COL_STATUS).value = IIf(IsEnabledValue(wsCmd.Cells(valueRow, COL_ENABLED).value), "NOT CHECKED", "DISABLED")
     wsCmd.Cells(valueRow, COL_ISSUE_CODE).value = ""
     wsCmd.Cells(valueRow, COL_MESSAGE).value = ""
     wsCmd.Cells(valueRow, COL_SUGGESTION).value = ""
+End Sub
+
+Private Sub ApplyParameterCatalogLayout( _
+    wsCmd As Worksheet, _
+    ByVal keyRow As Long, _
+    ByVal valueRow As Long, _
+    ByVal commandId As String _
+)
+    Dim wsCatalog As Worksheet
+    Set wsCatalog = ThisWorkbook.Worksheets(SHEET_PARAMETER_CATALOG)
+
+    Dim lastRow As Long
+    lastRow = wsCatalog.Cells( _
+        wsCatalog.rows.Count, _
+        PARAM_CATALOG_COL_COMMAND_ID _
+    ).End(xlUp).Row
+
+    Dim catalogRow As Long
+    Dim parameterPosition As Long
+    Dim parameterColumn As Long
+    Dim parameterName As String
+    Dim inputMode As String
+    Dim allowedValues As String
+    Dim defaultValue As Variant
+    Dim usedPosition(1 To 6) As Boolean
+
+    For catalogRow = 2 To lastRow
+        If StrComp( _
+            Trim$(CStr(wsCatalog.Cells( _
+                catalogRow, _
+                PARAM_CATALOG_COL_COMMAND_ID _
+            ).value)), _
+            Trim$(commandId), _
+            vbBinaryCompare _
+        ) = 0 Then
+            If IsNumeric(wsCatalog.Cells( _
+                catalogRow, _
+                PARAM_CATALOG_COL_POSITION _
+            ).value) Then
+                parameterPosition = CLng(wsCatalog.Cells( _
+                    catalogRow, _
+                    PARAM_CATALOG_COL_POSITION _
+                ).value)
+
+                If parameterPosition >= 1 And parameterPosition <= 6 Then
+                    usedPosition(parameterPosition) = True
+                    parameterColumn = COL_PARAM1 + parameterPosition - 1
+                    parameterName = Trim$(CStr(wsCatalog.Cells( _
+                        catalogRow, _
+                        PARAM_CATALOG_COL_NAME _
+                    ).value))
+                    inputMode = LCase$(Trim$(CStr(wsCatalog.Cells( _
+                        catalogRow, _
+                        PARAM_CATALOG_COL_INPUT_MODE _
+                    ).value)))
+
+                    wsCmd.Cells(keyRow, parameterColumn).value = parameterName
+
+                    If inputMode = "editable" Then
+                        UnlockParamCell wsCmd.Cells( _
+                            valueRow, _
+                            parameterColumn _
+                        )
+
+                        If Not IsEnabledValue(wsCatalog.Cells( _
+                            catalogRow, _
+                            PARAM_CATALOG_COL_REQUIRED _
+                        ).value) Then
+                            wsCmd.Cells( _
+                                valueRow, _
+                                parameterColumn _
+                            ).Interior.Color = RGB(255, 242, 204)
+                        End If
+
+                        defaultValue = wsCatalog.Cells( _
+                            catalogRow, _
+                            PARAM_CATALOG_COL_DEFAULT _
+                        ).value
+                        If IsBlankCellValue(wsCmd.Cells( _
+                            valueRow, _
+                            parameterColumn _
+                        ).value) And _
+                           Not IsBlankCellValue(defaultValue) Then
+                            wsCmd.Cells( _
+                                valueRow, _
+                                parameterColumn _
+                            ).value = defaultValue
+                        End If
+
+                        allowedValues = Trim$(CStr(wsCatalog.Cells( _
+                            catalogRow, _
+                            PARAM_CATALOG_COL_ALLOWED_VALUES _
+                        ).value))
+                        If allowedValues <> "" Then
+                            ApplyParameterListDropdown _
+                                wsCmd.Cells(valueRow, parameterColumn), _
+                                allowedValues
+                        End If
+                    End If
+                End If
+            End If
+        End If
+    Next catalogRow
+
+    For parameterPosition = 1 To 6
+        If Not usedPosition(parameterPosition) Then
+            wsCmd.Cells( _
+                valueRow, _
+                COL_PARAM1 + parameterPosition - 1 _
+            ).ClearContents
+        End If
+    Next parameterPosition
+End Sub
+
+Private Sub ApplyParameterListDropdown( _
+    ByVal targetCell As Range, _
+    ByVal allowedValues As String _
+)
+    With targetCell.Validation
+        .Delete
+        .Add _
+            Type:=xlValidateList, _
+            AlertStyle:=xlValidAlertStop, _
+            Operator:=xlBetween, _
+            Formula1:=allowedValues
+        .IgnoreBlank = True
+        .InCellDropdown = True
+        .ShowError = True
+        .ErrorTitle = "Invalid parameter choice"
+        .ErrorMessage = "Choose a value from the parameter dropdown list."
+    End With
 End Sub
 
 Private Sub ApplyScannerDropdownForCommand(wsCmd As Worksheet, ByVal valueRow As Long, ByVal commandId As String)
@@ -1993,6 +2184,14 @@ Private Sub ClearParamKeyLabels(wsCmd As Worksheet, ByVal keyRow As Long)
 End Sub
 
 Private Sub ClearParamEditStyle(wsCmd As Worksheet, ByVal valueRow As Long)
+    Dim parameterCell As Range
+    For Each parameterCell In wsCmd.Range( _
+        wsCmd.Cells(valueRow, COL_PARAM1), _
+        wsCmd.Cells(valueRow, COL_PARAM6) _
+    ).Cells
+        parameterCell.Validation.Delete
+    Next parameterCell
+
     With wsCmd.Range(wsCmd.Cells(valueRow, COL_PARAM1), wsCmd.Cells(valueRow, COL_PARAM6))
         .Locked = True
         .Interior.Color = RGB(242, 242, 242)
@@ -2023,6 +2222,13 @@ Private Function ActionForCommandId(ByVal commandId As String) As String
         ' Preserve pasted/unknown CommandID text for CommonCheckers.
         ActionForCommandId = Trim$(commandId)
     End If
+End Function
+
+Private Function ParameterModeForCommandId(ByVal commandId As String) As String
+    ParameterModeForCommandId = CommandCatalogText( _
+        commandId, _
+        CATALOG_COL_PARAMETER_MODE _
+    )
 End Function
 
 Private Function TargetTypeForCommandId(ByVal commandId As String) As String

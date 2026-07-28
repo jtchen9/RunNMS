@@ -1,2 +1,1 @@
 ﻿cmd_row_id,row_number,status,level,issue_code,message,suggestion,scanner,action,other_scanner,distance_m
-2,3,ERROR,error,COMMAND_ARGS_MISSING_REQUIRED | MOVE_ARGS_MISSING_TARGET,"mobility.move is missing required argument keys: ['x_m', 'y_m']. | mobility.move requires x_m/y_m, target_x_m/target_y_m, or dx_m/dy_m.","Provide all required keys: ['x_m', 'y_m']. | Add args_json such as {""x_m"": 2.0, ""y_m"": 4.4}.",twin-scout-alpha,mobility.move,,
