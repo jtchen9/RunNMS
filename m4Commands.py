@@ -2142,7 +2142,7 @@ async def cmd_load_csv_file(
 
     # Try UTF-8 first, then UTF-8 with BOM, then a common Windows fallback.
     text = None
-    for enc in ("utf-8", "utf-8-sig", "cp950"):
+    for enc in ("utf-8-sig", "utf-8", "cp950"):
         try:
             text = raw_bytes.decode(enc)
             break

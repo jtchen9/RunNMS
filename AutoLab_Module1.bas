@@ -1195,13 +1195,20 @@ Public Sub RunCommonCheckers()
     Dim reportJson As String
     Dim stdoutPath As String
     Dim feedbackCsv As String
+    Dim packageError As String
 
     pythonExe = Trim$(CStr(wsConfig.Range("B4").value))
     nmsRoot = Trim$(CStr(wsConfig.Range("B5").value))
     helperScript = Trim$(CStr(wsConfig.Range("B6").value))
 
     If pythonExe = "" Then pythonExe = "python"
-    If nmsRoot = "" Then nmsRoot = "D:\Data\_Action\_RunNMS"
+    If nmsRoot = "" Then
+        If Not ConfigurePreflightForPackage(nmsRoot, packageError) Then
+            MsgBox "Preflight package root is not configured:" & vbCrLf & packageError & vbCrLf & vbCrLf & _
+                   "Run InitializeScriptTemplate and try again.", vbExclamation
+            Exit Sub
+        End If
+    End If
     If helperScript = "" Then helperScript = JoinPath(ThisWorkbook.path, "autolab_xlsm_run_checker.py")
 
     siteDir = JoinPath(JoinPath(nmsRoot, "sitemap"), "DemoRoom")
@@ -1215,7 +1222,7 @@ Public Sub RunCommonCheckers()
 
     If Not FileExists(helperScript) Then
         MsgBox "Python helper script not found:" & vbCrLf & helperScript & vbCrLf & vbCrLf & _
-               "Put autolab_xlsm_run_checker.py in the same folder as this workbook, or update PreflightConfig B4.", vbExclamation
+               "Put autolab_xlsm_run_checker.py in the same folder as this workbook, or update PreflightConfig B6.", vbExclamation
         Exit Sub
     End If
 
@@ -1369,6 +1376,90 @@ End Function
 Private Function FileExists(ByVal path As String) As Boolean
     FileExists = (Dir(path, vbNormal) <> "")
 End Function
+
+Private Function FolderExists(ByVal folderPath As String) As Boolean
+    Dim fso As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    FolderExists = fso.FolderExists(folderPath)
+End Function
+
+Private Function ParentFolderPath(ByVal folderPath As String) As String
+    Dim fso As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    ParentFolderPath = fso.GetParentFolderName(folderPath)
+End Function
+
+Private Function ResolvePackageRootFromWorkbook(ByRef packageRoot As String, _
+                                                ByRef errorMessage As String) As Boolean
+    Dim workbookFolder As String
+    Dim siteFolder As String
+    Dim sitemapFolder As String
+    Dim commonFolder As String
+    Dim helperScript As String
+
+    workbookFolder = ThisWorkbook.path
+    If workbookFolder = "" Then
+        errorMessage = "Save the workbook before initializing it."
+        Exit Function
+    End If
+
+    siteFolder = ParentFolderPath(workbookFolder)
+    sitemapFolder = ParentFolderPath(siteFolder)
+    packageRoot = ParentFolderPath(sitemapFolder)
+
+    If packageRoot = "" Then
+        errorMessage = "The package root could not be derived from the workbook path."
+        Exit Function
+    End If
+
+    commonFolder = JoinPath(JoinPath(packageRoot, "sitemap"), "CommonCheckers")
+    helperScript = JoinPath(workbookFolder, "autolab_xlsm_run_checker.py")
+
+    If Not FolderExists(commonFolder) Then
+        errorMessage = "Required folder not found: " & commonFolder
+        Exit Function
+    End If
+    If Not FolderExists(JoinPath(JoinPath(packageRoot, "sitemap"), "DemoRoom")) Then
+        errorMessage = "Required folder not found: " & _
+                       JoinPath(JoinPath(packageRoot, "sitemap"), "DemoRoom")
+        Exit Function
+    End If
+    If Not FileExists(helperScript) Then
+        errorMessage = "Required Python bridge not found: " & helperScript
+        Exit Function
+    End If
+
+    ResolvePackageRootFromWorkbook = True
+End Function
+
+Private Function ConfigurePreflightForPackage(ByRef packageRoot As String, _
+                                              ByRef errorMessage As String) As Boolean
+    Dim wsConfig As Worksheet
+
+    If Not ResolvePackageRootFromWorkbook(packageRoot, errorMessage) Then Exit Function
+
+    Set wsConfig = ThisWorkbook.Worksheets(SHEET_PREFLIGHT_CONFIG)
+    wsConfig.Range("A5").value = "Package root"
+    wsConfig.Range("B5").value = packageRoot
+    wsConfig.Range("C5").value = "Folder containing sitemap\CommonCheckers and sitemap\DemoRoom."
+    If Trim$(CStr(wsConfig.Range("B4").value)) = "" Then wsConfig.Range("B4").value = "python"
+    wsConfig.Range("B6").ClearContents
+
+    ConfigurePreflightForPackage = True
+End Function
+
+Private Sub ClearPreflightStatusForInitialization()
+    Dim wsStatus As Worksheet
+    Set wsStatus = GetOrCreateSheet(SHEET_PREFLIGHT_STATUS)
+
+    wsStatus.Cells.ClearContents
+    wsStatus.Range("A1:B1").value = Array("Preflight Status", "")
+    wsStatus.Range("A1:B1").Font.Bold = True
+    WriteStatusRow wsStatus, 3, "Last run", "Not run since template initialization"
+    WriteStatusRow wsStatus, 4, "Result", "NOT RUN"
+    WriteStatusRow wsStatus, 5, "Next step", "Edit the script, then run RunCommonCheckers."
+    FormatStatusSheet wsStatus
+End Sub
 
 Private Sub EnsureFolderExists(ByVal folderPath As String)
     Dim fso As Object
@@ -1683,11 +1774,21 @@ Public Sub InitializeScriptTemplate()
     Dim wsCmd As Worksheet
     Dim wsPose As Worksheet
     Dim initError As String
+    Dim packageRoot As String
     Set wsCmd = ThisWorkbook.Worksheets(SHEET_COMMAND)
     Set wsPose = ThisWorkbook.Worksheets(SHEET_POSES)
 
     If ThisWorkbook.path = "" Then
         MsgBox "Please save the workbook beside the config folder before initialization.", vbExclamation
+        Exit Sub
+    End If
+
+    ' Verify the public-package layout before changing any authoring data.
+    If Not ConfigurePreflightForPackage(packageRoot, initError) Then
+        MsgBox "InitializeScriptTemplate could not configure this package:" & vbCrLf & _
+               initError & vbCrLf & vbCrLf & _
+               "Keep the workbook in sitemap\DemoRoom\script_authoring inside the extracted package.", _
+               vbCritical
         Exit Sub
     End If
 
@@ -1734,10 +1835,13 @@ Public Sub InitializeScriptTemplate()
 
     wsCmd.Protect UserInterfaceOnly:=True, AllowFormattingCells:=True, AllowFormattingColumns:=True, AllowFormattingRows:=True
 
+    ClearPreflightStatusForInitialization
+
     Application.EnableEvents = True
     Application.ScreenUpdating = True
 
     MsgBox "Script template initialized." & vbCrLf & _
+           "PreflightConfig B5 was set to:" & vbCrLf & packageRoot & vbCrLf & _
            "Five mobility.report.location commands were created at minutes 0, 3, 6, 9, and 12." & vbCrLf & _
            "AP1 through AP6 were refreshed from config\ap_roster.json.", vbInformation
     Exit Sub

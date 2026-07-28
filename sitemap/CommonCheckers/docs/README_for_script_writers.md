@@ -1,153 +1,181 @@
-# AutoLab Script Authoring Checker
+# AutoLab DemoRoom remote script-writer guide
 
-This package contains the common offline checker shared by all AutoLab sites.
+This package lets a remote script writer create and preflight an AutoLab
+experiment without access to the private NMS codebase, lab network, robots,
+access points, Redis, or registration API.
 
-## VS Code workflow
+The workbook provides the authoring GUI. Python code in
+`sitemap\CommonCheckers` is the only authority that decides whether the CSV
+files pass public-facing validation. The lab registration API reruns the same
+CommonCheckers code before registering the experiment.
 
-Open:
+## 1. Required environment
+
+- 64-bit Windows 10 or Windows 11
+- Desktop Microsoft Excel with VBA macro support
+- 64-bit CPython 3.12.x (3.12.13 has been tested)
+- NumPy 2.3.5
+- A writable local folder for the extracted package
+
+Excel Online, Google Sheets, and LibreOffice are not supported because the
+template uses VBA. Internet access is needed only to install Python or its
+dependency.
+
+## 2. Verify Python and install the dependency
+
+Open PowerShell in the extracted package root—the folder containing
+`sitemap`—and run:
+
+```powershell
+python --version
+python -m pip install -r .\sitemap\CommonCheckers\requirements.txt
+python -c "import numpy; print(numpy.__version__)"
+```
+
+The last command should print `2.3.5`.
+
+If `python` is not found, install 64-bit Python 3.12 and select the installer
+option that adds Python to `PATH`. Alternatively, put the full path to
+`python.exe` in `PreflightConfig!B4`. B4 must contain one executable name or
+path; do not enter a launcher command such as `py -3.12`.
+
+## 3. Extract and trust the package
+
+1. Obtain the ZIP file and its SHA-256 value from the lab operator.
+2. Optionally verify the ZIP:
+
+   ```powershell
+   Get-FileHash .\AutoLab_DemoRoom_Public_<version>.zip -Algorithm SHA256
+   ```
+
+3. If Windows shows an **Unblock** checkbox in the ZIP file's Properties,
+   select it before extraction.
+4. Extract the entire ZIP. Do not move the workbook out of its package
+   folders.
+5. Open:
+
+   ```text
+   sitemap\DemoRoom\script_authoring\AutoLab_DemoRoom_Template.xlsm
+   ```
+
+6. Select **Enable Editing** and **Enable Content** only if the ZIP came from
+   the expected lab operator and its hash matches.
+
+Corporate policy may block VBA or `WScript.Shell`. Ask the lab operator or IT
+administrator for an approved location or signing policy; do not weaken
+organization-wide security settings.
+
+## 4. Initialize the workbook
+
+Run `InitializeScriptTemplate` before authoring a new script.
+
+Initialization:
+
+- derives the package root from the workbook's own location;
+- verifies `sitemap\CommonCheckers`, `sitemap\DemoRoom`, and the workbook-local
+  Python bridge;
+- writes the package root to `PreflightConfig!B5`;
+- sets B4 to `python` only if B4 is blank;
+- clears B6 so the bridge beside the workbook is used;
+- removes stale paths and results from `PreflightStatus`;
+- reloads the fixed AP roster; and
+- creates five starter `mobility.report.location` commands.
+
+After initialization, check:
+
+| Cell | Expected value |
+|---|---|
+| `PreflightConfig!B4` | `python`, or the full path to `python.exe` |
+| `PreflightConfig!B5` | the extracted package root containing `sitemap` |
+| `PreflightConfig!B6` | blank |
+
+If initialization reports an invalid layout, re-extract the complete ZIP and
+leave the workbook in `sitemap\DemoRoom\script_authoring`. The layout is
+verified before command rows are cleared or rebuilt.
+
+## 5. Create the experiment
+
+1. In `InitialPoses`, enable every participating robot and enter its intended
+   starting pose. AP locations are fixed roster data and should not be edited.
+2. In `CommandSheet`, use dropdowns to choose the target, time, and command.
+3. Run `ApplyCommandGuiRules` when needed to refresh command-specific
+   parameter cells and the device dropdown.
+4. Enter values in the displayed parameter cells.
+5. Run `BuildArgsJson` to construct the JSON arguments.
+6. Run `RefreshMapAtSelectedCommandRow` when the movement map is useful.
+7. Repeat until the complete experiment timeline is represented.
+
+`CommandCatalog` and `ParameterCatalog` document the commands and fields
+exposed by the workbook. Dropdowns and VBA make authoring easier; they do not
+determine validation PASS or FAIL.
+
+## 6. Run the authoritative preflight
+
+Run `RunCommonCheckers`. It exports:
 
 ```text
-sitemap/CommonCheckers/checker/checker_runner.py
+sitemap\DemoRoom\script_authoring\generated\experiment_script.csv
+sitemap\DemoRoom\script_authoring\generated\initial_poses.csv
 ```
 
-At the bottom, edit the paths inside:
-
-```python
-def run_from_vscode() -> Dict[str, Any]:
-```
-
-For example:
-
-```python
-SCRIPT_CSV = Path(r"sitemap\DemoRoom\script_authoring\examples\demo_safe_script.csv")
-INITIAL_POSES_CSV = Path(r"sitemap\DemoRoom\script_authoring\examples\demo_initial_poses.csv")
-SITE_DIR = Path(r"sitemap\DemoRoom")
-COMMON_DIR = Path(r"sitemap\CommonCheckers")
-REPORT_JSON = Path(r"validation_report.json")
-```
-
-Then press the VS Code **Run** button.
-
-No PowerShell command-line arguments are required.
-
-## Current checker scope
-
-The checker currently validates:
-
-- command vocabulary
-- arguments for every admitted command
-- blocked low-level mobility actions
-- each participating robot's first mobility command must be `mobility.report.location`
-- intended initial pose table exists for each mobility robot
-- first movement for each robot must be at least 60 seconds after its `mobility.report.location`
-- no two moving mobility commands may occur within 180 seconds globally, across all robots
-- each script-level `mobility.move` must be no longer than 3.0 m
-- macro/bump guard rules
-- planned static path rules, including workspace bounds, charging/rest zones, restriction_map.npy, and planned robot clearance
-
-## Script-level mobility commands
-
-Script writers should use semantic commands only:
+It also writes:
 
 ```text
-mobility.report.location
-mobility.move
-mobility.in2out
-mobility.out2in
+validation_report.json
+validation_feedback.csv
+checker_stdout.txt
 ```
 
-Do not put low-level robot commands in a script:
+Review `PreflightStatus`, `ValidationReport`, and the feedback in
+`CommandSheet`. Correct the first reported problem and rerun. Repeat until the
+result is `PASS`.
 
-```text
-mobility.turn
-mobility.turn_move_turn.forward
-mobility.turn_move_turn.backward
-```
+Successful JSON construction, dropdown restrictions, and map refreshes are
+not validation. Only CommonCheckers determines public preflight PASS or FAIL.
 
-The NMS mobility policy turns semantic movement into the final robot command.
+## 7. Submission and validation evidence
 
-## Command argument rules
+The two files required for registration are:
 
-These commands use an empty JSON object and accept no argument keys:
+1. `experiment_script.csv`
+2. `initial_poses.csv`
 
-```text
-mobility.report.location
-mobility.in2out
-mobility.out2in
-scan.start
-scan.stop
-scan.once
-```
+Also send the matching `validation_report.json` as recommended preflight
+evidence. A passing report contains `ok: true`, `status: "pass"`, zero errors,
+checker/site versions, and SHA-256 hashes for both CSV files.
 
-Use:
+The report is not a digital signature and is not trusted as authorization.
+The lab operator reruns the same public CommonCheckers code during
+registration. Report hashes bind the report to the CSVs that the writer
+checked and help detect accidental replacement.
 
-```json
-{}
-```
+After PASS:
 
-`mobility.move` accepts only:
+- do not edit either CSV;
+- keep both CSVs and the report together;
+- send them through the lab's approved transfer channel; and
+- if either CSV changes, rerun `RunCommonCheckers` and send the new report.
 
-```text
-x_m          required number, 1.4 <= x_m < 10.1
-y_m          required number, 0.3 <= y_m < 11.1
-heading_deg  optional number, 0 <= heading_deg < 360
-```
+`validation_feedback.csv` and `checker_stdout.txt` are normally unnecessary.
+Include them only when troubleshooting.
 
-Numbers must be JSON numbers without quotation marks. Legacy/internal fields
-such as `target_x_m`, `target_y_m`, `dx_m`, and `dy_m` are not admitted in an
-experiment script.
+## 8. Troubleshooting
 
-## Timing rules
+| Symptom | Action |
+|---|---|
+| `python` is not recognized | Install Python 3.12 or put the full `python.exe` path in B4. |
+| `No module named numpy` | Run the dependency installation command in section 2. |
+| Package root or helper is missing | Re-extract the full ZIP and rerun initialization without moving the workbook. |
+| Macros do not run | Check the ZIP source/hash, Windows Unblock state, Excel Trust Center, and corporate policy. |
+| Checker reports FAIL | Correct the first issue and rerun; later issues may then appear. |
+| Checker runner error | Read `generated\checker_stdout.txt` and send it to the operator if help is needed. |
 
-During bring-up, timing is strict:
+## 9. Integrity and privacy
 
-```text
-first movement after mobility.report.location: at least 60 seconds
-between any two moving mobility commands globally: at least 180 seconds
-```
+The release ZIP SHA-256 supplied by the operator verifies the distributed
+package. `MANIFEST.sha256` and `MANIFEST.json` list packaged files. The
+validation report separately hashes the generated CSV inputs.
 
-The global 180-second rule applies across all robots, not only within one robot's rows.
-
-## Movement distance rule
-
-Each script-level `mobility.move` is limited to 3.0 m.
-
-For a longer route, split the route into multiple shorter `mobility.move` rows and keep at least 180 seconds between movement rows.
-
-
-## Robot safety radius synchronization
-
-DemoRoom robot-to-robot clearance is configured in:
-
-```text
-sitemap/DemoRoom/script_authoring/config/safety_policy.json
-```
-
-The field is:
-
-```json
-"robot_safety_radius_m": 0.60
-```
-
-CommonCheckers uses this value for offline planned robot-to-robot clearance.
-
-Runtime S5 dynamic obstacle checking uses the matching runtime copy in `config.py`:
-
-```python
-MOBILITY_ROBOT_RESTRICT_RADIUS_M = 0.60
-```
-
-For DemoRoom, keep both values synchronized. If one changes, update the other in the same commit.
-
-## Initial pose file reminder
-
-`SCRIPT_CSV` and `INITIAL_POSES_CSV` are two different files.
-
-Use:
-
-```python
-SCRIPT_CSV = SITEMAP_DIR / "DemoRoom" / "script_authoring" / "examples" / "demo_safe_script.csv"
-INITIAL_POSES_CSV = SITEMAP_DIR / "DemoRoom" / "script_authoring" / "examples" / "demo_initial_poses.csv"
-```
-
-Do not point `INITIAL_POSES_CSV` to a command script such as `demo_safe_script.csv` or `demo_invalid_timing.csv`.
+Experiment CSVs contain device names, timing, actions, arguments, and intended
+robot positions. Handle them as lab experiment data and use the approved
+transfer channel.
