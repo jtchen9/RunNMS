@@ -828,6 +828,900 @@ Private Function JsonString(ByVal textValue As String) As String
     JsonString = """" & escaped & """"
 End Function
 
+' ============================================================
+' CSV editor import macros
+'
+' Import is deliberately split into two stages:
+'   1) preserve the selected CSV in its preview worksheet
+'   2) explicitly expand the preview into the editable worksheet
+'
+' These macros do not call CommonCheckers and do not decide validation
+' PASS/FAIL. CommandCatalog and ParameterCatalog are read-only sources.
+' ============================================================
+
+Public Sub ImportCommandCsvToPreview()
+    ImportCsvFileIntoPreview _
+        SHEET_EXPORT, _
+        "Choose command CSV to load into ExportPreview", _
+        Array( _
+            "scanner", _
+            "t_offset_sec", _
+            "category", _
+            "action", _
+            "args_json" _
+        )
+End Sub
+
+Public Sub ImportInitialPosesCsvToPreview()
+    ImportCsvFileIntoPreview _
+        SHEET_INITIAL_EXPORT, _
+        "Choose initial-position CSV to load into InitialPosesExportPreview", _
+        Array( _
+            "scanner", _
+            "intended_x_m", _
+            "intended_y_m", _
+            "intended_heading_deg", _
+            "position_tolerance_m", _
+            "heading_tolerance_deg" _
+        )
+End Sub
+
+Private Sub ImportCsvFileIntoPreview( _
+    ByVal previewSheetName As String, _
+    ByVal dialogTitle As String, _
+    ByVal expectedHeaders As Variant _
+)
+    Dim csvPath As String
+    csvPath = PickCsvInputPath(dialogTitle)
+    If csvPath = "" Then Exit Sub
+
+    On Error GoTo Failed
+
+    Dim csvText As String
+    csvText = ReadTextFileUtf8(csvPath)
+    If Len(csvText) > 0 Then
+        If Left$(csvText, 1) = ChrW(&HFEFF) Then
+            csvText = Mid$(csvText, 2)
+        End If
+    End If
+
+    Dim rows As Collection
+    Set rows = ParseCsvText(csvText)
+    If rows.Count = 0 Then
+        MsgBox "The selected CSV contains no rows. The existing preview was not changed.", vbExclamation
+        Exit Sub
+    End If
+
+    Dim headerProblem As String
+    If Not CsvHeaderMatchesExact(rows, expectedHeaders, headerProblem) Then
+        MsgBox "The selected file is not the expected CSV type." & vbCrLf & _
+               headerProblem & vbCrLf & vbCrLf & _
+               "The existing " & previewSheetName & " worksheet was not changed.", _
+               vbExclamation
+        Exit Sub
+    End If
+
+    Dim wsPreview As Worksheet
+    Set wsPreview = ThisWorkbook.Worksheets(previewSheetName)
+
+    Application.ScreenUpdating = False
+    wsPreview.Cells.ClearContents
+    WriteCsvRowsToSheet wsPreview, rows
+    Application.ScreenUpdating = True
+
+    MsgBox "CSV loaded into " & previewSheetName & "." & vbCrLf & _
+           "Source: " & csvPath & vbCrLf & _
+           "Rows including header: " & rows.Count & vbCrLf & vbCrLf & _
+           "Review the preview before expanding it into the editable worksheet.", _
+           vbInformation
+    Exit Sub
+
+Failed:
+    Application.ScreenUpdating = True
+    MsgBox "CSV import stopped:" & vbCrLf & Err.Description, vbCritical
+End Sub
+
+Private Function PickCsvInputPath(ByVal dialogTitle As String) As String
+    With Application.FileDialog(3) ' msoFileDialogFilePicker
+        .Title = dialogTitle
+        .AllowMultiSelect = False
+        .Filters.Clear
+        .Filters.Add "CSV files", "*.csv"
+        .Filters.Add "All files", "*.*"
+
+        If .Show <> -1 Then Exit Function
+        PickCsvInputPath = .SelectedItems(1)
+    End With
+End Function
+
+Private Function CsvHeaderMatchesExact( _
+    ByVal rows As Collection, _
+    ByVal expectedHeaders As Variant, _
+    ByRef problemDetail As String _
+) As Boolean
+    If rows.Count = 0 Then
+        problemDetail = "The file contains no header row."
+        Exit Function
+    End If
+
+    Dim actualHeaders As Variant
+    actualHeaders = rows(1)
+
+    Dim expectedCount As Long
+    Dim actualCount As Long
+    expectedCount = UBound(expectedHeaders) - LBound(expectedHeaders) + 1
+    actualCount = UBound(actualHeaders) - LBound(actualHeaders) + 1
+
+    If actualCount <> expectedCount Then
+        problemDetail = _
+            "Expected " & expectedCount & " header columns but found " & actualCount & "." & _
+            vbCrLf & "Expected: " & JoinStringArray(expectedHeaders, ",")
+        Exit Function
+    End If
+
+    Dim i As Long
+    Dim actualName As String
+    Dim expectedName As String
+    For i = 0 To expectedCount - 1
+        actualName = Trim$(CStr(actualHeaders(LBound(actualHeaders) + i)))
+        expectedName = CStr(expectedHeaders(LBound(expectedHeaders) + i))
+
+        If StrComp(actualName, expectedName, vbBinaryCompare) <> 0 Then
+            problemDetail = _
+                "Header column " & (i + 1) & " is '" & actualName & _
+                "'; expected '" & expectedName & "'." & _
+                vbCrLf & "Expected: " & JoinStringArray(expectedHeaders, ",")
+            Exit Function
+        End If
+    Next i
+
+    CsvHeaderMatchesExact = True
+End Function
+
+Private Function JoinStringArray( _
+    ByVal values As Variant, _
+    ByVal delimiter As String _
+) As String
+    Dim i As Long
+    For i = LBound(values) To UBound(values)
+        If JoinStringArray <> "" Then
+            JoinStringArray = JoinStringArray & delimiter
+        End If
+        JoinStringArray = JoinStringArray & CStr(values(i))
+    Next i
+End Function
+
+Public Sub ExpandCommandPreviewToCommandSheet()
+    Dim wsPreview As Worksheet
+    Dim wsCmd As Worksheet
+    Set wsPreview = ThisWorkbook.Worksheets(SHEET_EXPORT)
+    Set wsCmd = ThisWorkbook.Worksheets(SHEET_COMMAND)
+
+    Dim rows As Collection
+    Set rows = SheetUsedRangeToRows(wsPreview)
+    If rows.Count = 0 Then
+        MsgBox "ExportPreview is empty. Import a command CSV first.", vbExclamation
+        Exit Sub
+    End If
+
+    Dim scannerCol As Long
+    Dim offsetCol As Long
+    Dim actionCol As Long
+    Dim argsCol As Long
+    scannerCol = FindCsvHeaderColumn(rows, "scanner")
+    offsetCol = FindCsvHeaderColumn(rows, "t_offset_sec")
+    actionCol = FindCsvHeaderColumn(rows, "action")
+    argsCol = FindCsvHeaderColumn(rows, "args_json")
+
+    If scannerCol < 0 Or offsetCol < 0 Or actionCol < 0 Or argsCol < 0 Then
+        MsgBox "ExportPreview must contain scanner, t_offset_sec, action, and args_json columns." & _
+               vbCrLf & "CommandSheet was not changed.", vbExclamation
+        Exit Sub
+    End If
+
+    Dim answer As VbMsgBoxResult
+    answer = MsgBox( _
+        "This will replace the editable command rows in CommandSheet." & vbCrLf & _
+        "ExportPreview and both catalog worksheets will not be changed." & vbCrLf & vbCrLf & _
+        "Continue?", _
+        vbQuestion + vbYesNo + vbDefaultButton2 _
+    )
+    If answer <> vbYes Then Exit Sub
+
+    Dim maxCommands As Long
+    maxCommands = (COMMAND_GUI_MAX_ROW - FIRST_DATA_ROW + 1) \ 2
+
+    Dim importedCount As Long
+    Dim commandBlankCount As Long
+    Dim scannerBlankCount As Long
+    Dim timeBlankCount As Long
+    Dim argsNotExpandedCount As Long
+    Dim importError As String
+    Dim commandBackup As Variant
+    commandBackup = wsCmd.Range( _
+        wsCmd.Cells(FIRST_DATA_ROW, COL_CMD_ID), _
+        wsCmd.Cells(COMMAND_GUI_MAX_ROW, COL_LAYOUT_AC) _
+    ).value
+
+    On Error GoTo Failed
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    wsCmd.Unprotect
+
+    wsCmd.Range( _
+        wsCmd.Cells(FIRST_DATA_ROW, COL_CMD_ID), _
+        wsCmd.Cells(COMMAND_GUI_MAX_ROW, COL_LAYOUT_AC) _
+    ).ClearContents
+
+    Dim sourceRow As Long
+    Dim keyRow As Long
+    Dim valueRow As Long
+    Dim fields As Variant
+    Dim importedAction As String
+    Dim commandId As String
+    Dim importedScanner As String
+    Dim argsJson As String
+    Dim tOffsetText As String
+    Dim tOffsetSec As Long
+
+    For sourceRow = 2 To rows.Count
+        If importedCount >= maxCommands Then Exit For
+
+        fields = rows(sourceRow)
+        If CsvArrayRowIsEmpty(fields) Then GoTo NextCommandRow
+
+        importedCount = importedCount + 1
+        keyRow = FIRST_DATA_ROW + ((importedCount - 1) * 2)
+        valueRow = keyRow + 1
+
+        wsCmd.Cells(keyRow, COL_CMD_ID).value = importedCount
+        wsCmd.Cells(keyRow, COL_LINE_TYPE).value = "Key"
+        wsCmd.Cells(valueRow, COL_CMD_ID).value = importedCount
+        wsCmd.Cells(valueRow, COL_LINE_TYPE).value = "Value"
+        wsCmd.Cells(valueRow, COL_ENABLED).value = True
+        wsCmd.Cells(valueRow, COL_STATUS).value = "NOT CHECKED"
+
+        importedAction = Trim$(CsvArrayField(fields, actionCol))
+        commandId = CommandIdForImportedAction(importedAction)
+
+        If commandId <> "" Then
+            wsCmd.Cells(valueRow, COL_COMMAND_ID).value = commandId
+        Else
+            wsCmd.Cells(valueRow, COL_COMMAND_ID).ClearContents
+            wsCmd.Cells(valueRow, COL_CATEGORY).ClearContents
+            wsCmd.Cells(valueRow, COL_ACTION).ClearContents
+            wsCmd.Cells(valueRow, COL_SCANNER).ClearContents
+            commandBlankCount = commandBlankCount + 1
+        End If
+
+        tOffsetText = Trim$(CsvArrayField(fields, offsetCol))
+        If TryParseNonnegativeWholeSeconds(tOffsetText, tOffsetSec) Then
+            wsCmd.Cells(valueRow, COL_MINUTE).value = tOffsetSec \ 60
+            wsCmd.Cells(valueRow, COL_SECOND).value = tOffsetSec Mod 60
+        Else
+            wsCmd.Cells(valueRow, COL_MINUTE).ClearContents
+            wsCmd.Cells(valueRow, COL_SECOND).ClearContents
+            If tOffsetText <> "" Then timeBlankCount = timeBlankCount + 1
+        End If
+
+        argsJson = CsvArrayField(fields, argsCol)
+        wsCmd.Cells(valueRow, COL_ARGS_JSON).value = argsJson
+
+NextCommandRow:
+    Next sourceRow
+
+    ' Apply protection only after Key/Value rows exist. Otherwise blank Key
+    ' rows would incorrectly receive editable dropdown behavior.
+    ApplyCommandDropdowns wsCmd
+    ApplyCommandSheetBaseProtection wsCmd
+
+    ' Second pass: construct the catalog-controlled GUI, then copy only values
+    ' admitted by the applicable dropdowns and expand known JSON parameters.
+    Dim expandedCount As Long
+    For sourceRow = 2 To rows.Count
+        If expandedCount >= importedCount Then Exit For
+
+        fields = rows(sourceRow)
+        If CsvArrayRowIsEmpty(fields) Then GoTo NextExpansionRow
+
+        expandedCount = expandedCount + 1
+        valueRow = FIRST_DATA_ROW + ((expandedCount - 1) * 2) + 1
+        commandId = Trim$(CStr(wsCmd.Cells(valueRow, COL_COMMAND_ID).value))
+        argsJson = CsvArrayField(fields, argsCol)
+
+        ApplyCommandLayoutToValueRow wsCmd, valueRow
+
+        importedScanner = Trim$(CsvArrayField(fields, scannerCol))
+        If commandId <> "" And ScannerAllowedForCommand(importedScanner, commandId) Then
+            wsCmd.Cells(valueRow, COL_SCANNER).value = importedScanner
+        Else
+            wsCmd.Cells(valueRow, COL_SCANNER).ClearContents
+            If commandId = "" Then
+                On Error Resume Next
+                wsCmd.Cells(valueRow, COL_SCANNER).Validation.Delete
+                On Error GoTo Failed
+            End If
+            If importedScanner <> "" Then scannerBlankCount = scannerBlankCount + 1
+        End If
+
+        wsCmd.Cells(valueRow, COL_ARGS_JSON).value = argsJson
+        If commandId <> "" Then
+            If Not ExpandImportedArgsForCommandRow( _
+                wsCmd, _
+                valueRow, _
+                commandId, _
+                argsJson _
+            ) Then
+                argsNotExpandedCount = argsNotExpandedCount + 1
+            End If
+            ' Parameter expansion must not normalize or rewrite the source JSON.
+            wsCmd.Cells(valueRow, COL_ARGS_JSON).value = argsJson
+        ElseIf Trim$(argsJson) <> "" Then
+            argsNotExpandedCount = argsNotExpandedCount + 1
+        End If
+
+NextExpansionRow:
+    Next sourceRow
+
+    wsCmd.Protect UserInterfaceOnly:=True, AllowFormattingCells:=True, AllowFormattingColumns:=True, AllowFormattingRows:=True
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+
+    Dim omittedCount As Long
+    omittedCount = CountNonemptyCsvDataRows(rows) - importedCount
+    If omittedCount < 0 Then omittedCount = 0
+
+    MsgBox "Command preview expansion finished." & vbCrLf & _
+           "Rows copied: " & importedCount & vbCrLf & _
+           "Unknown commands left blank: " & commandBlankCount & vbCrLf & _
+           "Disallowed scanners left blank: " & scannerBlankCount & vbCrLf & _
+           "Unusable time values left blank: " & timeBlankCount & vbCrLf & _
+           "Args JSON rows not expanded: " & argsNotExpandedCount & _
+           IIf(omittedCount > 0, vbCrLf & "Rows beyond sheet capacity not copied: " & omittedCount, "") & _
+           vbCrLf & vbCrLf & _
+           "No CommonCheckers validation was run.", _
+           IIf(commandBlankCount + scannerBlankCount + timeBlankCount + argsNotExpandedCount + omittedCount > 0, _
+               vbExclamation, vbInformation)
+    Sheets("CommandSheet").Select
+    Exit Sub
+
+Failed:
+    importError = Err.Description
+    On Error Resume Next
+    wsCmd.Range( _
+        wsCmd.Cells(FIRST_DATA_ROW, COL_CMD_ID), _
+        wsCmd.Cells(COMMAND_GUI_MAX_ROW, COL_LAYOUT_AC) _
+    ).value = commandBackup
+    wsCmd.Protect UserInterfaceOnly:=True, AllowFormattingCells:=True, AllowFormattingColumns:=True, AllowFormattingRows:=True
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+    On Error GoTo 0
+    MsgBox "Command preview expansion stopped:" & vbCrLf & importError, vbCritical
+End Sub
+
+Public Sub ExpandInitialPosesPreviewToInitialPoses()
+    Dim wsPreview As Worksheet
+    Dim wsPose As Worksheet
+    Set wsPreview = ThisWorkbook.Worksheets(SHEET_INITIAL_EXPORT)
+    Set wsPose = ThisWorkbook.Worksheets(SHEET_POSES)
+
+    Dim rows As Collection
+    Set rows = SheetUsedRangeToRows(wsPreview)
+    If rows.Count = 0 Then
+        MsgBox "InitialPosesExportPreview is empty. Import an initial-position CSV first.", vbExclamation
+        Exit Sub
+    End If
+
+    Dim scannerCol As Long
+    Dim xCol As Long
+    Dim yCol As Long
+    Dim headingCol As Long
+    scannerCol = FindCsvHeaderColumn(rows, "scanner")
+    xCol = FindCsvHeaderColumn(rows, "intended_x_m")
+    yCol = FindCsvHeaderColumn(rows, "intended_y_m")
+    headingCol = FindCsvHeaderColumn(rows, "intended_heading_deg")
+
+    If scannerCol < 0 Or xCol < 0 Or yCol < 0 Or headingCol < 0 Then
+        MsgBox "InitialPosesExportPreview must contain scanner, intended_x_m, intended_y_m, " & _
+               "and intended_heading_deg columns." & vbCrLf & _
+               "InitialPoses was not changed.", vbExclamation
+        Exit Sub
+    End If
+
+    Dim answer As VbMsgBoxResult
+    answer = MsgBox( _
+        "This will update matching robot pose fields in InitialPoses." & vbCrLf & _
+        "Enabled values, robots absent from the preview, and AP rows will remain unchanged." & _
+        vbCrLf & vbCrLf & "Continue?", _
+        vbQuestion + vbYesNo + vbDefaultButton2 _
+    )
+    If answer <> vbYes Then Exit Sub
+
+    Dim updatedCount As Long
+    Dim unknownCount As Long
+    Dim sourceRow As Long
+    Dim poseRow As Long
+    Dim fields As Variant
+    Dim scanner As String
+    Dim poseLastRow As Long
+    Dim poseBackup As Variant
+    Dim poseImportError As String
+    poseLastRow = wsPose.Cells(wsPose.rows.Count, 2).End(xlUp).Row
+    If poseLastRow < 4 Then poseLastRow = 4
+    poseBackup = wsPose.Range(wsPose.Cells(4, 3), wsPose.Cells(poseLastRow, 5)).value
+
+    On Error GoTo Failed
+    Application.ScreenUpdating = False
+
+    For sourceRow = 2 To rows.Count
+        fields = rows(sourceRow)
+        If CsvArrayRowIsEmpty(fields) Then GoTo NextPoseRow
+
+        scanner = Trim$(CsvArrayField(fields, scannerCol))
+        poseRow = FindExistingRobotPoseRow(wsPose, scanner)
+
+        If poseRow > 0 Then
+            ' Enabled (column A), Scanner, Map note, and DeviceType are preserved.
+            WriteImportedScalarToCell wsPose.Cells(poseRow, 3), CsvArrayField(fields, xCol)
+            WriteImportedScalarToCell wsPose.Cells(poseRow, 4), CsvArrayField(fields, yCol)
+            WriteImportedScalarToCell wsPose.Cells(poseRow, 5), CsvArrayField(fields, headingCol)
+            updatedCount = updatedCount + 1
+        ElseIf scanner <> "" Then
+            unknownCount = unknownCount + 1
+        End If
+
+NextPoseRow:
+    Next sourceRow
+
+    Application.ScreenUpdating = True
+    MsgBox "Initial-position preview expansion finished." & vbCrLf & _
+           "Existing robot rows updated: " & updatedCount & vbCrLf & _
+           "Unknown or non-robot scanners ignored: " & unknownCount & vbCrLf & vbCrLf & _
+           "Enabled values and AP rows were not changed." & vbCrLf & _
+           "No CommonCheckers validation was run.", _
+           IIf(unknownCount > 0, vbExclamation, vbInformation)
+    Sheets("InitialPoses").Select
+    Exit Sub
+
+Failed:
+    poseImportError = Err.Description
+    On Error Resume Next
+    wsPose.Range(wsPose.Cells(4, 3), wsPose.Cells(poseLastRow, 5)).value = poseBackup
+    On Error GoTo 0
+    Application.ScreenUpdating = True
+    MsgBox "Initial-position preview expansion stopped:" & vbCrLf & poseImportError, vbCritical
+End Sub
+
+Private Function ExpandImportedArgsForCommandRow( _
+    wsCmd As Worksheet, _
+    ByVal valueRow As Long, _
+    ByVal commandId As String, _
+    ByVal argsJson As String _
+) As Boolean
+    Dim jsonValues As Object
+    If Not TryParseFlatJsonObject(argsJson, jsonValues) Then Exit Function
+
+    Dim wsCatalog As Worksheet
+    Set wsCatalog = ThisWorkbook.Worksheets(SHEET_PARAMETER_CATALOG)
+
+    Dim lastRow As Long
+    lastRow = wsCatalog.Cells( _
+        wsCatalog.rows.Count, _
+        PARAM_CATALOG_COL_COMMAND_ID _
+    ).End(xlUp).Row
+
+    Dim catalogRow As Long
+    Dim parameterPosition As Long
+    Dim parameterName As String
+    Dim inputMode As String
+    Dim allowedValues As String
+    Dim importedValue As Variant
+    Dim targetCell As Range
+
+    For catalogRow = 2 To lastRow
+        If StrComp( _
+            Trim$(CStr(wsCatalog.Cells(catalogRow, PARAM_CATALOG_COL_COMMAND_ID).value)), _
+            commandId, _
+            vbBinaryCompare _
+        ) = 0 Then
+            inputMode = LCase$(Trim$(CStr(wsCatalog.Cells( _
+                catalogRow, _
+                PARAM_CATALOG_COL_INPUT_MODE _
+            ).value)))
+
+            If inputMode = "editable" And _
+               IsNumeric(wsCatalog.Cells(catalogRow, PARAM_CATALOG_COL_POSITION).value) Then
+                parameterPosition = CLng(wsCatalog.Cells( _
+                    catalogRow, _
+                    PARAM_CATALOG_COL_POSITION _
+                ).value)
+
+                If parameterPosition >= 1 And parameterPosition <= 6 Then
+                    parameterName = Trim$(CStr(wsCatalog.Cells( _
+                        catalogRow, _
+                        PARAM_CATALOG_COL_NAME _
+                    ).value))
+
+                    If parameterName <> "" And jsonValues.Exists(parameterName) Then
+                        Set targetCell = wsCmd.Cells( _
+                            valueRow, _
+                            COL_PARAM1 + parameterPosition - 1 _
+                        )
+                        importedValue = jsonValues(parameterName)
+                        allowedValues = Trim$(CStr(wsCatalog.Cells( _
+                            catalogRow, _
+                            PARAM_CATALOG_COL_ALLOWED_VALUES _
+                        ).value))
+
+                        If allowedValues <> "" And _
+                           Not CsvListContainsText(allowedValues, CStr(importedValue)) Then
+                            targetCell.ClearContents
+                        ElseIf IsEmpty(importedValue) Then
+                            targetCell.ClearContents
+                        Else
+                            targetCell.value = importedValue
+                        End If
+                    End If
+                End If
+            End If
+        End If
+    Next catalogRow
+
+    If commandId = "traffic.session.start.udp" Then
+        wsCmd.Cells(valueRow, COL_LAYOUT_AC).value = _
+            LCase$(Trim$(CStr(wsCmd.Cells(valueRow, COL_PARAM2).value)))
+    End If
+
+    ExpandImportedArgsForCommandRow = True
+End Function
+
+Private Function TryParseFlatJsonObject( _
+    ByVal jsonText As String, _
+    ByRef values As Object _
+) As Boolean
+    Set values = CreateObject("Scripting.Dictionary")
+    values.CompareMode = vbBinaryCompare
+
+    Dim p As Long
+    p = 1
+    SkipJsonWhitespace jsonText, p
+
+    If p > Len(jsonText) Or Mid$(jsonText, p, 1) <> "{" Then Exit Function
+    p = p + 1
+    SkipJsonWhitespace jsonText, p
+
+    If p <= Len(jsonText) And Mid$(jsonText, p, 1) = "}" Then
+        p = p + 1
+        SkipJsonWhitespace jsonText, p
+        TryParseFlatJsonObject = (p > Len(jsonText))
+        Exit Function
+    End If
+
+    Do
+        Dim key As String
+        Dim itemValue As Variant
+        If Not ParseJsonStringAt(jsonText, p, key) Then Exit Function
+
+        SkipJsonWhitespace jsonText, p
+        If p > Len(jsonText) Or Mid$(jsonText, p, 1) <> ":" Then Exit Function
+        p = p + 1
+        SkipJsonWhitespace jsonText, p
+
+        If Not ParseFlatJsonValueAt(jsonText, p, itemValue) Then Exit Function
+        values(key) = itemValue
+
+        SkipJsonWhitespace jsonText, p
+        If p > Len(jsonText) Then Exit Function
+
+        Select Case Mid$(jsonText, p, 1)
+            Case ","
+                p = p + 1
+                SkipJsonWhitespace jsonText, p
+            Case "}"
+                p = p + 1
+                SkipJsonWhitespace jsonText, p
+                TryParseFlatJsonObject = (p > Len(jsonText))
+                Exit Function
+            Case Else
+                Exit Function
+        End Select
+    Loop
+End Function
+
+Private Function ParseFlatJsonValueAt( _
+    ByVal jsonText As String, _
+    ByRef p As Long, _
+    ByRef outValue As Variant _
+) As Boolean
+    If p > Len(jsonText) Then Exit Function
+
+    If Mid$(jsonText, p, 1) = """" Then
+        Dim stringValue As String
+        If Not ParseJsonStringAt(jsonText, p, stringValue) Then Exit Function
+        outValue = stringValue
+        ParseFlatJsonValueAt = True
+        Exit Function
+    End If
+
+    Dim startPos As Long
+    Dim token As String
+    Dim ch As String
+    startPos = p
+
+    Do While p <= Len(jsonText)
+        ch = Mid$(jsonText, p, 1)
+        If ch = "," Or ch = "}" Or ch = " " Or ch = vbTab Or ch = vbCr Or ch = vbLf Then Exit Do
+        p = p + 1
+    Loop
+
+    token = Mid$(jsonText, startPos, p - startPos)
+    Select Case LCase$(token)
+        Case "true"
+            outValue = True
+        Case "false"
+            outValue = False
+        Case "null"
+            outValue = Empty
+        Case Else
+            If token = "" Or Not IsNumeric(token) Then Exit Function
+            outValue = CDbl(token)
+    End Select
+
+    ParseFlatJsonValueAt = True
+End Function
+
+Private Function ParseJsonStringAt( _
+    ByVal jsonText As String, _
+    ByRef p As Long, _
+    ByRef outText As String _
+) As Boolean
+    If p > Len(jsonText) Or Mid$(jsonText, p, 1) <> """" Then Exit Function
+    p = p + 1
+
+    Dim result As String
+    Dim ch As String
+    Dim esc As String
+    Dim hexText As String
+
+    Do While p <= Len(jsonText)
+        ch = Mid$(jsonText, p, 1)
+        p = p + 1
+
+        If ch = """" Then
+            outText = result
+            ParseJsonStringAt = True
+            Exit Function
+        ElseIf ch = "\" Then
+            If p > Len(jsonText) Then Exit Function
+            esc = Mid$(jsonText, p, 1)
+            p = p + 1
+
+            Select Case esc
+                Case """", "\", "/": result = result & esc
+                Case "b": result = result & Chr$(8)
+                Case "f": result = result & Chr$(12)
+                Case "n": result = result & vbLf
+                Case "r": result = result & vbCr
+                Case "t": result = result & vbTab
+                Case "u"
+                    If p + 3 > Len(jsonText) Then Exit Function
+                    hexText = Mid$(jsonText, p, 4)
+                    If Not IsFourHexDigits(hexText) Then Exit Function
+                    result = result & ChrW(CLng("&H" & hexText))
+                    p = p + 4
+                Case Else
+                    Exit Function
+            End Select
+        Else
+            result = result & ch
+        End If
+    Loop
+End Function
+
+Private Function IsFourHexDigits(ByVal textValue As String) As Boolean
+    If Len(textValue) <> 4 Then Exit Function
+
+    Dim i As Long
+    Dim ch As String
+    For i = 1 To 4
+        ch = UCase$(Mid$(textValue, i, 1))
+        If InStr(1, "0123456789ABCDEF", ch, vbBinaryCompare) = 0 Then Exit Function
+    Next i
+    IsFourHexDigits = True
+End Function
+
+Private Sub SkipJsonWhitespace(ByVal jsonText As String, ByRef p As Long)
+    Dim ch As String
+    Do While p <= Len(jsonText)
+        ch = Mid$(jsonText, p, 1)
+        If ch <> " " And ch <> vbTab And ch <> vbCr And ch <> vbLf Then Exit Do
+        p = p + 1
+    Loop
+End Sub
+
+Private Function SheetUsedRangeToRows(ByVal ws As Worksheet) As Collection
+    Dim rows As New Collection
+    If Application.WorksheetFunction.CountA(ws.Cells) = 0 Then
+        Set SheetUsedRangeToRows = rows
+        Exit Function
+    End If
+
+    Dim lastCell As Range
+    Dim lastRow As Long
+    Dim lastCol As Long
+    Set lastCell = ws.Cells.Find(What:="*", After:=ws.Cells(1, 1), _
+                                 LookIn:=xlFormulas, LookAt:=xlPart, _
+                                 SearchOrder:=xlByRows, SearchDirection:=xlPrevious)
+    lastRow = lastCell.Row
+    Set lastCell = ws.Cells.Find(What:="*", After:=ws.Cells(1, 1), _
+                                 LookIn:=xlFormulas, LookAt:=xlPart, _
+                                 SearchOrder:=xlByColumns, SearchDirection:=xlPrevious)
+    lastCol = lastCell.Column
+
+    Dim r As Long
+    Dim c As Long
+    Dim fields() As String
+    For r = 1 To lastRow
+        ReDim fields(0 To lastCol - 1)
+        For c = 1 To lastCol
+            fields(c - 1) = CStr(ws.Cells(r, c).value)
+        Next c
+        rows.Add fields
+    Next r
+
+    Set SheetUsedRangeToRows = rows
+End Function
+
+Private Function FindCsvHeaderColumn( _
+    ByVal rows As Collection, _
+    ByVal headerName As String _
+) As Long
+    FindCsvHeaderColumn = -1
+    If rows.Count = 0 Then Exit Function
+
+    Dim headers As Variant
+    headers = rows(1)
+
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        If StrComp(Trim$(CStr(headers(i))), headerName, vbTextCompare) = 0 Then
+            FindCsvHeaderColumn = i
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Function CsvArrayField(ByVal fields As Variant, ByVal fieldIndex As Long) As String
+    If fieldIndex < LBound(fields) Or fieldIndex > UBound(fields) Then Exit Function
+    CsvArrayField = CStr(fields(fieldIndex))
+End Function
+
+Private Function CsvArrayRowIsEmpty(ByVal fields As Variant) As Boolean
+    Dim i As Long
+    For i = LBound(fields) To UBound(fields)
+        If Trim$(CStr(fields(i))) <> "" Then Exit Function
+    Next i
+    CsvArrayRowIsEmpty = True
+End Function
+
+Private Function CountNonemptyCsvDataRows(ByVal rows As Collection) As Long
+    Dim r As Long
+    For r = 2 To rows.Count
+        If Not CsvArrayRowIsEmpty(rows(r)) Then
+            CountNonemptyCsvDataRows = CountNonemptyCsvDataRows + 1
+        End If
+    Next r
+End Function
+
+Private Function CommandIdForImportedAction(ByVal importedAction As String) As String
+    Dim wsCatalog As Worksheet
+    Set wsCatalog = ThisWorkbook.Worksheets(SHEET_COMMAND_CATALOG)
+
+    Dim lastRow As Long
+    Dim r As Long
+    lastRow = wsCatalog.Cells(wsCatalog.rows.Count, CATALOG_COL_COMMAND_ID).End(xlUp).Row
+
+    For r = 2 To lastRow
+        If IsEnabledValue(wsCatalog.Cells(r, CATALOG_COL_ENABLED).value) And _
+           StrComp( _
+               Trim$(CStr(wsCatalog.Cells(r, CATALOG_COL_ACTION).value)), _
+               importedAction, _
+               vbBinaryCompare _
+           ) = 0 Then
+            CommandIdForImportedAction = Trim$(CStr(wsCatalog.Cells( _
+                r, _
+                CATALOG_COL_COMMAND_ID _
+            ).value))
+            Exit Function
+        End If
+    Next r
+End Function
+
+Private Function ScannerAllowedForCommand( _
+    ByVal scanner As String, _
+    ByVal commandId As String _
+) As Boolean
+    If scanner = "" Then Exit Function
+
+    Dim targetType As String
+    targetType = TargetTypeForCommandId(commandId)
+
+    If targetType = "nms" Then
+        ScannerAllowedForCommand = (StrComp(scanner, "NMS", vbBinaryCompare) = 0)
+    ElseIf targetType = "ap" Then
+        ScannerAllowedForCommand = CsvListContains(DeviceScannerListCsv("ap"), scanner)
+    Else
+        ScannerAllowedForCommand = CsvListContains(DeviceScannerListCsv("robot"), scanner)
+    End If
+End Function
+
+Private Function TryParseNonnegativeWholeSeconds( _
+    ByVal textValue As String, _
+    ByRef outSeconds As Long _
+) As Boolean
+    If textValue = "" Or Not IsNumeric(textValue) Then Exit Function
+
+    Dim numericValue As Double
+    numericValue = CDbl(textValue)
+    If numericValue < 0 Or numericValue > 2147483647# Then Exit Function
+    If numericValue <> Fix(numericValue) Then Exit Function
+
+    outSeconds = CLng(numericValue)
+    TryParseNonnegativeWholeSeconds = True
+End Function
+
+Private Function FindExistingRobotPoseRow( _
+    ByVal wsPose As Worksheet, _
+    ByVal scanner As String _
+) As Long
+    If scanner = "" Then Exit Function
+
+    Dim lastRow As Long
+    Dim r As Long
+    Dim rowType As String
+    lastRow = wsPose.Cells(wsPose.rows.Count, 2).End(xlUp).Row
+
+    For r = 4 To lastRow
+        rowType = LCase$(Trim$(CStr(wsPose.Cells(r, POSE_COL_DEVICE_TYPE).value)))
+        If rowType = "" Then rowType = "robot"
+
+        If rowType = "robot" And _
+           StrComp(Trim$(CStr(wsPose.Cells(r, 2).value)), scanner, vbBinaryCompare) = 0 Then
+            FindExistingRobotPoseRow = r
+            Exit Function
+        End If
+    Next r
+End Function
+
+Private Sub WriteImportedScalarToCell( _
+    ByVal targetCell As Range, _
+    ByVal textValue As String _
+)
+    If textValue = "" Then
+        targetCell.ClearContents
+    ElseIf IsNumeric(textValue) Then
+        targetCell.value = CDbl(textValue)
+    Else
+        targetCell.value = textValue
+    End If
+End Sub
+
+Private Function CsvListContainsText( _
+    ByVal listCsv As String, _
+    ByVal candidate As String _
+) As Boolean
+    Dim items As Variant
+    Dim item As Variant
+    items = Split(listCsv, ",")
+
+    For Each item In items
+        If StrComp(Trim$(CStr(item)), Trim$(candidate), vbTextCompare) = 0 Then
+            CsvListContainsText = True
+            Exit Function
+        End If
+    Next item
+End Function
+
 Public Sub ExportScriptCsv()
     Dim wsCmd As Worksheet
     Dim wsExport As Worksheet
@@ -1955,7 +2849,7 @@ Private Sub ApplyCommandDropdowns(wsCmd As Worksheet)
                 .InCellDropdown = True
                 .ShowError = True
                 .ErrorTitle = "Invalid Enabled value"
-                .ErrorMessage = "Choose TRUE or FALSE from the dropdown list."
+                .errorMessage = "Choose TRUE or FALSE from the dropdown list."
             End With
 
             With wsCmd.Cells(r, COL_COMMAND_ID).Validation
@@ -1965,7 +2859,7 @@ Private Sub ApplyCommandDropdowns(wsCmd As Worksheet)
                 .InCellDropdown = True
                 .ShowError = True
                 .ErrorTitle = "Invalid CommandID"
-                .ErrorMessage = "Choose a CommandID from the dropdown list. Manual values outside the supported command list are not allowed."
+                .errorMessage = "Choose a CommandID from the dropdown list. Manual values outside the supported command list are not allowed."
                 .ShowInput = True
                 .InputTitle = "CommandID"
                 .InputMessage = "Choose one of the supported public robot script commands."
@@ -2271,7 +3165,7 @@ Private Sub ApplyParameterListDropdown( _
         .InCellDropdown = True
         .ShowError = True
         .ErrorTitle = "Invalid parameter choice"
-        .ErrorMessage = "Choose a value from the parameter dropdown list."
+        .errorMessage = "Choose a value from the parameter dropdown list."
     End With
 End Sub
 
@@ -2294,7 +3188,7 @@ Private Sub ApplyScannerDropdownForCommand(wsCmd As Worksheet, ByVal valueRow As
             .InCellDropdown = True
             .ShowError = True
             .ErrorTitle = "Invalid device"
-            .ErrorMessage = "Choose a device of the correct type for this command."
+            .errorMessage = "Choose a device of the correct type for this command."
         End If
     End With
 
@@ -2902,3 +3796,5 @@ Private Sub ClearFeedback(wsCmd As Worksheet, ByVal r As Long)
     wsCmd.Cells(r, COL_MESSAGE).ClearContents
     wsCmd.Cells(r, COL_SUGGESTION).ClearContents
 End Sub
+
+
