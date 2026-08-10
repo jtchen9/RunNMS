@@ -28,17 +28,22 @@ from robot_location_helper import (
 )
 
 from m8mobility_command_model import _angle_diff_deg, _build_command_from_true_to_target, _circular_mean_deg
-from m8mobility_state_store import ( 
-    _reset_correction_counter, key_state, key_time, key_pose, _set_state, _load_stop, _save_stop, _is_anchor_fresh, 
-    _load_report_json, _save_policy_time, _save_pending_sequence, _clear_pending_sequence, 
-    _load_pending_sequence, _save_last_issued_command, _save_outgoing_command_preview, 
-    _clear_outgoing_command_preview, _inc_correction_counter, 
-    _get_correction_counter, _update_10s_report, _load_true, _load_planned, _save_planned, _is_loc_ok   
-) 
-from m8mobility_pose import ( 
-    _apply_mobility_command_to_pose, _pose_error 
-) 
-from m8mobility_map import _is_path_clear, _is_path_clear_debug 
+from m8mobility_state_store import (
+    _reset_correction_counter, key_state, key_time, key_pose, _set_state, _load_stop, _save_stop, _is_anchor_fresh,
+    _load_report_json, _save_policy_time, _save_pending_sequence, _clear_pending_sequence,
+    _load_pending_sequence, _save_last_issued_command, _save_outgoing_command_preview,
+    _clear_outgoing_command_preview, _inc_correction_counter,
+    _get_correction_counter, _update_10s_report, _load_true, _load_planned, _save_planned, _is_loc_ok
+)
+from m8mobility_pose import (
+    _apply_mobility_command_to_pose, _pose_error
+)
+from m8mobility_map import _is_path_clear, _is_path_clear_debug
+from m8mobility_trace import (
+    append_trace_event,
+    endpoint_comparison,
+    new_trace_id,
+)
 
 
 def _ensure_common_checkers_on_path() -> None:
@@ -61,9 +66,9 @@ from checker.static_safety_core import (  # type: ignore # noqa: E402
     macro_start_pose_issues,
     point_inside_axis_aligned_rect,
 )
-from m8mobility_command_model import ( 
-    _normalize_mobility_command, 
-    _build_turn_only_command, _build_turn_move_turn_forward_command, 
+from m8mobility_command_model import (
+    _normalize_mobility_command,
+    _build_turn_only_command, _build_turn_move_turn_forward_command,
     _propagate_true_by_last_command, _should_propagate_true
 )
 
@@ -138,6 +143,281 @@ _RARE_LOCATION_LOGGER = RareCaseLogger(
 def _get_state(scanner: str) -> str:
     s = utility._hget(key_state(scanner), "state", S0_IDLE)
     return s if s in VALID_STATES else S0_IDLE
+
+
+def _trace_active_id(scanner: str) -> str:
+    try:
+        return str(
+            utility._hget(key_state(scanner), "active_command_trace_id", "")
+            or ""
+        )
+    except Exception:
+        return ""
+
+
+def _trace_active_snapshot(scanner: str) -> Dict[str, Any]:
+    try:
+        raw = utility._hget(
+            key_state(scanner),
+            "active_command_trace_snapshot_json",
+            "",
+        )
+        value = json.loads(raw) if str(raw or "").strip() else {}
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def _trace_save_active(
+    scanner: str,
+    *,
+    trace_id: str,
+    snapshot: Dict[str, Any],
+) -> None:
+    try:
+        utility._hset_many(
+            key_state(scanner),
+            {
+                "active_command_trace_id": trace_id,
+                "active_command_trace_snapshot_json": snapshot,
+                "active_command_trace_updated_at": utility.local_ts(),
+            },
+        )
+    except Exception:
+        pass
+
+
+def _trace_begin_direct_command(
+    scanner: str,
+    *,
+    action: str,
+    args: Dict[str, Any],
+    source: str,
+) -> str:
+    """Start correlation for a command issued outside S5/S6; never affects flow."""
+    try:
+        return _trace_begin_direct_command_impl(
+            scanner,
+            action=action,
+            args=args,
+            source=source,
+        )
+    except Exception:
+        return ""
+
+
+def _trace_begin_direct_command_impl(
+    scanner: str,
+    *,
+    action: str,
+    args: Dict[str, Any],
+    source: str,
+) -> str:
+    trace_id = new_trace_id(scanner)
+    snapshot = {
+        "command_kind": "direct_or_recovery",
+        "source": source,
+        "action": action,
+        "args": args or {},
+        "start_pose": _load_true(scanner),
+    }
+    _trace_save_active(
+        scanner,
+        trace_id=trace_id,
+        snapshot=snapshot,
+    )
+    append_trace_event(
+        event="direct_command_prepared",
+        scanner=scanner,
+        trace_id=trace_id,
+        data=snapshot,
+    )
+    return trace_id
+
+
+def _trace_followup_decision(
+    scanner: str,
+    *,
+    true_loc: Dict[str, Any],
+    planned_loc: Dict[str, Any],
+    error: Dict[str, Any],
+    correction_count: int,
+    decision: Dict[str, Any],
+    outcome: str,
+    detail: str,
+) -> None:
+    """Log one S5 disposition for the command whose report S3 just solved."""
+    try:
+        _trace_followup_decision_impl(
+            scanner,
+            true_loc=true_loc,
+            planned_loc=planned_loc,
+            error=error,
+            correction_count=correction_count,
+            decision=decision,
+            outcome=outcome,
+            detail=detail,
+        )
+    except Exception:
+        pass
+
+
+def _trace_followup_decision_impl(
+    scanner: str,
+    *,
+    true_loc: Dict[str, Any],
+    planned_loc: Dict[str, Any],
+    error: Dict[str, Any],
+    correction_count: int,
+    decision: Dict[str, Any],
+    outcome: str,
+    detail: str,
+) -> None:
+    trace_id = _trace_active_id(scanner)
+    snapshot = _trace_active_snapshot(scanner)
+    start_pose = snapshot.get("start_pose") or {}
+    expected_pose = snapshot.get("simulated_endpoint") or {}
+    issued_args = snapshot.get("args") or {}
+    comparison = endpoint_comparison(
+        start_pose=start_pose,
+        expected_pose=expected_pose,
+        actual_pose=true_loc,
+        commanded_distance_m=float(issued_args.get("distance_m", 0.0) or 0.0),
+    )
+    append_trace_event(
+        event="s5_followup_decision",
+        scanner=scanner,
+        trace_id=trace_id,
+        data={
+            "correction_attempt_count": correction_count,
+            "planned_pose": planned_loc,
+            "solved_true_pose": true_loc,
+            "pose_error_to_planned": error,
+            "followup_decision": decision,
+            "outcome": outcome,
+            "detail": detail,
+            "comparison": comparison,
+            "command_snapshot": snapshot,
+        },
+    )
+
+
+def _trace_location_summary(loc: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        return _trace_location_summary_impl(loc)
+    except Exception as exc:
+        return {"trace_summary_error": f"{type(exc).__name__}: {exc}"[:300]}
+
+
+def _trace_location_summary_impl(loc: Dict[str, Any]) -> Dict[str, Any]:
+    confidence = loc.get("confidence") or {}
+    diagnostics = loc.get("diagnostics") or {}
+    active = loc.get("active_components") or {}
+    pass1 = loc.get("pass1") or {}
+    return {
+        "location_ok": bool(loc.get("location_ok")),
+        "source": str(loc.get("source") or ""),
+        "detail": str(loc.get("detail") or ""),
+        "x_m": loc.get("x_m"),
+        "y_m": loc.get("y_m"),
+        "heading_deg": loc.get("heading_deg"),
+        "pass1_pose": {
+            "x_m": pass1.get("x_m"),
+            "y_m": pass1.get("y_m"),
+            "heading_deg": pass1.get("heading_deg"),
+        },
+        "confidence_level": str(confidence.get("level") or ""),
+        "confidence_warning_codes": list(confidence.get("warning_codes") or []),
+        "tags_observed": list(loc.get("tags_observed") or []),
+        "tags_layer1_usable": list(loc.get("tags_layer1_usable") or []),
+        "tags_used": list(loc.get("tags_used") or []),
+        "active_components": {
+            "distance": active.get("distance"),
+            "angle": active.get("angle"),
+            "yaw": active.get("yaw"),
+        },
+        "pass1_to_final_shift_m": diagnostics.get("pass1_to_final_shift_m"),
+        "pass1_to_final_heading_shift_deg": diagnostics.get(
+            "pass1_to_final_heading_shift_deg"
+        ),
+        "final_normalized_rms": diagnostics.get("final_normalized_rms"),
+        "rare_case_reasons": list(loc.get("rare_case_reasons") or []),
+    }
+
+
+def _trace_record_s5_command(
+    scanner: str,
+    *,
+    true_loc: Dict[str, Any],
+    planned_loc: Dict[str, Any],
+    motion_target: Dict[str, Any],
+    action: str,
+    args: Dict[str, Any],
+    simulated_endpoint: Dict[str, Any],
+    correction_detail: Dict[str, Any],
+    path_summary: Dict[str, Any],
+) -> str:
+    try:
+        return _trace_record_s5_command_impl(
+            scanner,
+            true_loc=true_loc,
+            planned_loc=planned_loc,
+            motion_target=motion_target,
+            action=action,
+            args=args,
+            simulated_endpoint=simulated_endpoint,
+            correction_detail=correction_detail,
+            path_summary=path_summary,
+        )
+    except Exception:
+        return ""
+
+
+def _trace_record_s5_command_impl(
+    scanner: str,
+    *,
+    true_loc: Dict[str, Any],
+    planned_loc: Dict[str, Any],
+    motion_target: Dict[str, Any],
+    action: str,
+    args: Dict[str, Any],
+    simulated_endpoint: Dict[str, Any],
+    correction_detail: Dict[str, Any],
+    path_summary: Dict[str, Any],
+) -> str:
+    trace_id = new_trace_id(scanner)
+    planned_error = _pose_error(simulated_endpoint, planned_loc)
+    snapshot = {
+        "command_kind": "s5_movement",
+        "start_pose": true_loc,
+        "planned_pose": planned_loc,
+        "motion_target": motion_target,
+        "action": action,
+        "args": args,
+        "simulated_endpoint": simulated_endpoint,
+        "simulated_endpoint_to_planned_error": planned_error,
+        "initial_script_execution": correction_detail.get(
+            "initial_script_execution"
+        ),
+        "correction_attempt_count": correction_detail.get(
+            "correction_attempt_count"
+        ),
+        "travel_heading_deg": correction_detail.get("travel_heading_deg"),
+        "preferred_heading_deg": motion_target.get("heading_deg"),
+        "path_summary": path_summary,
+    }
+    _trace_save_active(
+        scanner,
+        trace_id=trace_id,
+        snapshot=snapshot,
+    )
+    append_trace_event(
+        event="s5_command_computed",
+        scanner=scanner,
+        trace_id=trace_id,
+        data=snapshot,
+    )
+    return trace_id
 
 
 def _log_location_rare_case_noexcept(
@@ -595,6 +875,13 @@ def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> 
             _clear_s0_command_arg_overrides(scanner)
             _reset_correction_counter(scanner)
 
+            _trace_begin_direct_command(
+                scanner,
+                action=action,
+                args=args,
+                source="location_precondition",
+            )
+
             _save_outgoing_command_preview(
                 scanner,
                 action=action,
@@ -645,11 +932,11 @@ def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> 
         # ---------------------------------------------------------
         _set_state(scanner, S5_COMPUTING_CORRECTION, f"script accepted: {action}")
         return run_state_machine(scanner)
-    
+
     except Exception as e:
         _set_state(scanner, S7_STOPPED, f"s0 stop: {e}")
         return s7stopped(scanner)
-    
+
 def _s0_init_planned(scanner: str) -> Dict[str, Any]:
     planned = _load_planned(scanner)
     if _is_loc_ok(planned):
@@ -942,7 +1229,7 @@ def s2evaluating_policy(scanner: str) -> Dict[str, Any]:
 
     # ---------------------------------------------------------
     # Special entry: busy retry timer fired
-    # ---------------------------------------------------------    
+    # ---------------------------------------------------------
     if entry_reason == "busy_retry_timer":
         _clear_s2_entry_reason(scanner)
 
@@ -990,6 +1277,17 @@ def s2evaluating_policy(scanner: str) -> Dict[str, Any]:
             action=last_action,
             args=last_args,
             source="retry_busy",
+        )
+
+        append_trace_event(
+            event="command_reissued",
+            scanner=scanner,
+            trace_id=_trace_active_id(scanner),
+            data={
+                "source": "retry_busy",
+                "action": last_action,
+                "args": last_args,
+            },
         )
 
         _save_last_issued_command(
@@ -1579,6 +1877,13 @@ def _s3_dump_location_helper_data(
 def s3solving_true_location(scanner: str) -> Dict[str, Any]:
     loc = _s3_solve_true_location(scanner)
 
+    append_trace_event(
+        event="s3_pose_solved",
+        scanner=scanner,
+        trace_id=_trace_active_id(scanner),
+        data=_trace_location_summary(loc),
+    )
+
     # Passive boundary capture: exact output returned by the current
     # location solver into the existing S3 orchestration.
     _s3_dump_location_helper_data(
@@ -1699,6 +2004,16 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
     ):
         propagated = _propagate_true_by_last_command(scanner)
         if _is_loc_ok(propagated):
+            append_trace_event(
+                event="s3_pose_propagated",
+                scanner=scanner,
+                trace_id=_trace_active_id(scanner),
+                data={
+                    "source": "last_issued_command",
+                    "propagated_pose": propagated,
+                    "solver_failure": _trace_location_summary(loc),
+                },
+            )
             utility._hset_many(
                 key_state(scanner),
                 {
@@ -2237,6 +2552,13 @@ def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
         action = "mobility.report.location"
         args: Dict[str, Any] = {}
 
+        _trace_begin_direct_command(
+            scanner,
+            action=action,
+            args=args,
+            source="location_recovery_report",
+        )
+
         _save_outgoing_command_preview(
             scanner,
             action=action,
@@ -2291,6 +2613,13 @@ def _s4_handle_location_retry(scanner: str) -> Dict[str, Any]:
                 "location_precondition_visibility_turn"
                 if context == "precondition"
                 else "location_recovery_visibility_turn"
+            )
+
+            _trace_begin_direct_command(
+                scanner,
+                action=action,
+                args=args,
+                source=source,
             )
 
             _save_outgoing_command_preview(
@@ -2540,13 +2869,25 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
             _clear_pending_sequence(scanner)
             _clear_outgoing_command_preview(scanner)
 
+            no_go_detail = (
+                "follow-up correction NO_GO: "
+                f"{decision.get('reason_code', '')}"
+            )
+            _trace_followup_decision(
+                scanner,
+                true_loc=true_loc,
+                planned_loc=planned_loc,
+                error=err,
+                correction_count=correction_count,
+                decision=decision,
+                outcome="accepted_without_correction",
+                detail=no_go_detail,
+            )
+
             return {
                 "status": "ok",
                 "transition_to": S0_IDLE,
-                "detail": (
-                    "follow-up correction NO_GO: "
-                    f"{decision.get('reason_code', '')}"
-                ),
+                "detail": no_go_detail,
                 "error": err,
                 "pending_sequence": [],
                 "correction_detail": {
@@ -2571,13 +2912,24 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         )
 
         if correction_count == 0 and dpos > first_correction_max_m:
+            stop_detail = (
+                "first correction too large: "
+                f"dpos={dpos:.3f}m > "
+                f"{first_correction_max_m:.3f}m"
+            )
+            _trace_followup_decision(
+                scanner,
+                true_loc=true_loc,
+                planned_loc=planned_loc,
+                error=err,
+                correction_count=correction_count,
+                decision=decision,
+                outcome="stopped_before_first_correction",
+                detail=stop_detail,
+            )
             return _s5_stop_experiment(
                 scanner,
-                detail=(
-                    "first correction too large: "
-                    f"dpos={dpos:.3f}m > "
-                    f"{first_correction_max_m:.3f}m"
-                ),
+                detail=stop_detail,
                 error={
                     **err,
                     "correction_attempt_count": correction_count,
@@ -2608,13 +2960,24 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         )
 
         if dpos > post_fail_thresh_m:
+            stop_detail = (
+                "post-correction residual too large: "
+                f"dpos={dpos:.3f}m > "
+                f"{post_fail_thresh_m:.3f}m"
+            )
+            _trace_followup_decision(
+                scanner,
+                true_loc=true_loc,
+                planned_loc=planned_loc,
+                error=err,
+                correction_count=correction_count,
+                decision=decision,
+                outcome="stopped_after_correction",
+                detail=stop_detail,
+            )
             return _s5_stop_experiment(
                 scanner,
-                detail=(
-                    "post-correction residual too large: "
-                    f"dpos={dpos:.3f}m > "
-                    f"{post_fail_thresh_m:.3f}m"
-                ),
+                detail=stop_detail,
                 error={
                     **err,
                     "correction_attempt_count": correction_count,
@@ -2626,14 +2989,26 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         _clear_outgoing_command_preview(scanner)
         _clear_s0_command_arg_overrides(scanner)
 
+        accepted_detail = (
+            "post-correction residual accepted: "
+            f"dpos={dpos:.3f}m <= "
+            f"{post_fail_thresh_m:.3f}m"
+        )
+        _trace_followup_decision(
+            scanner,
+            true_loc=true_loc,
+            planned_loc=planned_loc,
+            error=err,
+            correction_count=correction_count,
+            decision=decision,
+            outcome="accepted_after_correction",
+            detail=accepted_detail,
+        )
+
         return {
             "status": "ok",
             "transition_to": S0_IDLE,
-            "detail": (
-                "post-correction residual accepted: "
-                f"dpos={dpos:.3f}m <= "
-                f"{post_fail_thresh_m:.3f}m"
-            ),
+            "detail": accepted_detail,
             "error": {
                 **err,
                 "correction_attempt_count": correction_count,
@@ -2740,16 +3115,23 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         ) > 1e-9
     )
 
+    simulated_target: Dict[str, Any] = {}
+    path_summary: Dict[str, Any] = {
+        "checked": False,
+        "path_ok": None,
+        "blocked_count": None,
+    }
+
     if needs_path_check:
         tx = float(true_loc["x_m"])
         ty = float(true_loc["y_m"])
 
-        simulated_target = (
-            _apply_mobility_command_to_pose(
-                true_loc,
-                action,
-                args,
-            )
+        # This is the pre-existing safety calculation and intentionally keeps
+        # its original failure behavior.
+        simulated_target = _apply_mobility_command_to_pose(
+            true_loc,
+            action,
+            args,
         )
 
         px = float(simulated_target["x_m"])
@@ -2780,7 +3162,28 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
                 bump_guard_zones=_load_runtime_bump_guard_zones(),
             )
 
+        path_summary = {
+            "checked": True,
+            "path_ok": len(blocked_after_allowance) == 0,
+            "blocked_count": len(blocked_after_allowance),
+            "start": path_debug.get("start", {}),
+            "target": path_debug.get("target", {}),
+            "static_blocked_count": path_debug.get("static_blocked_count"),
+            "dynamic_blocked_count": path_debug.get("dynamic_blocked_count"),
+        }
+
         if blocked_after_allowance:
+            if not initial_script_execution:
+                _trace_followup_decision(
+                    scanner,
+                    true_loc=true_loc,
+                    planned_loc=planned_loc,
+                    error=err,
+                    correction_count=correction_count,
+                    decision=decision,
+                    outcome="stopped_path_unsafe",
+                    detail="path unsafe in s5",
+                )
             return _s5_stop_experiment(
                 scanner,
                 detail=(
@@ -2805,6 +3208,40 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
                 },
                 correction_detail=correction_detail,
             )
+
+    if not initial_script_execution:
+        _trace_followup_decision(
+            scanner,
+            true_loc=true_loc,
+            planned_loc=planned_loc,
+            error=err,
+            correction_count=correction_count,
+            decision=decision,
+            outcome="correction_command_computed",
+            detail="follow-up correction accepted for issuance",
+        )
+
+    if not simulated_target:
+        try:
+            simulated_target = _apply_mobility_command_to_pose(
+                true_loc,
+                action,
+                args,
+            )
+        except Exception:
+            simulated_target = {}
+
+    _trace_record_s5_command(
+        scanner,
+        true_loc=true_loc,
+        planned_loc=planned_loc,
+        motion_target=motion_target,
+        action=action,
+        args=args,
+        simulated_endpoint=simulated_target,
+        correction_detail=correction_detail,
+        path_summary=path_summary,
+    )
 
     seq = [
         {
@@ -2962,6 +3399,20 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
         {
             "correction_attempt_count": str(count),
             "last_correction_issued_at": issued_at,
+        },
+    )
+
+    append_trace_event(
+        event="s6_command_issued",
+        scanner=scanner,
+        trace_id=_trace_active_id(scanner),
+        data={
+            "action": action,
+            "args": args,
+            "issued_at": issued_at,
+            "outgoing_command_source": "mobility",
+            "correction_attempt_count_after_issue": count,
+            "remaining_sequence_count": len(rest),
         },
     )
 

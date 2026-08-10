@@ -16,6 +16,7 @@ import utility
 import m1Registry
 import m7Traffic
 import m8mobility
+from m8mobility_trace import append_trace_event
 from m8mobility_state_store import key_report, key_time, key_state, key_pose, _save_stop
 
 router = APIRouter()
@@ -64,6 +65,89 @@ class CmdPollReq(BaseModel):
     boot_id: Optional[str] = None
     status_report: Dict[str, Any] = Field(default_factory=dict)
     mobility_report: Optional[Dict[str, Any]] = None
+
+
+def _trace_compact_mobility_report(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep command/result evidence without duplicating bulky tag observations."""
+    try:
+        return _trace_compact_mobility_report_impl(report)
+    except Exception as exc:
+        return {"trace_summary_error": f"{type(exc).__name__}: {exc}"[:300]}
+
+
+def _trace_compact_mobility_report_impl(
+    report: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Implementation isolated so trace extraction can never affect polling."""
+    loc = report.get("last_location_result") or {}
+    if not isinstance(loc, dict):
+        loc = {}
+    apr = loc.get("apriltag") or {}
+    if not isinstance(apr, dict):
+        apr = {}
+    front = loc.get("front") or {}
+    rear = loc.get("rear") or {}
+    tags = apr.get("tags") or []
+    tag_ids = []
+    if isinstance(tags, list):
+        for row in tags:
+            try:
+                tag_ids.append(int(row["id"]))
+            except Exception:
+                continue
+
+    return {
+        "last_command": str(report.get("last_command") or ""),
+        "last_command_args": (
+            report.get("last_command_args")
+            if isinstance(report.get("last_command_args"), dict)
+            else {}
+        ),
+        "last_command_received_ts": report.get("last_command_received_ts"),
+        "last_command_finished_ts": report.get("last_command_finished_ts"),
+        "last_exec_status": str(report.get("last_exec_status") or ""),
+        "last_error_code": str(report.get("last_error_code") or ""),
+        "last_error_detail": str(report.get("last_error_detail") or "")[:300],
+        "location_result_ok": bool(loc.get("ok")),
+        "capture_mode": str(loc.get("capture_mode") or ""),
+        "front_capture_ok": bool(front.get("ok")) if isinstance(front, dict) else False,
+        "rear_capture_ok": bool(rear.get("ok")) if isinstance(rear, dict) else False,
+        "apriltag_ok": bool(apr.get("ok")),
+        "front_tag_count": apr.get("front_count"),
+        "rear_tag_count": apr.get("rear_count"),
+        "unique_tag_count": apr.get("unique_count"),
+        "tag_ids": sorted(set(tag_ids)),
+    }
+
+
+def _trace_active_id_noexcept(scanner: str) -> str:
+    try:
+        return str(
+            utility._hget(
+                key_state(scanner),
+                "active_command_trace_id",
+                "",
+            )
+            or ""
+        )
+    except Exception:
+        return ""
+
+
+def _trace_compact_process_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep the state-machine disposition, not its potentially bulky payload."""
+    try:
+        if not isinstance(result, dict):
+            return {"result_type": type(result).__name__}
+        return {
+            "status": str(result.get("status") or ""),
+            "state": str(result.get("state") or ""),
+            "transition_to": str(result.get("transition_to") or ""),
+            "detail": str(result.get("detail") or "")[:500],
+            "stop_reason": str(result.get("stop_reason") or "")[:500],
+        }
+    except Exception as exc:
+        return {"trace_summary_error": f"{type(exc).__name__}: {exc}"[:300]}
 
 
 # ============================================================
@@ -1682,7 +1766,7 @@ def cmd_poll(
 
     server_now_str = utility.local_ts()
     mobility_report_process_result = {}
-    
+
     try:
         limit = int(req.limit or 20)
     except Exception:
@@ -1755,6 +1839,15 @@ def cmd_poll(
                         },
                     )
                     mobility_report_ok = True
+                    append_trace_event(
+                        event="mobility_report_received",
+                        scanner=scanner,
+                        trace_id=_trace_active_id_noexcept(scanner),
+                        data={
+                            "nms_received_at": server_now_str,
+                            **_trace_compact_mobility_report(final_report),
+                        },
+                    )
                 except Exception:
                     mobility_report_ok = False
 
@@ -1777,6 +1870,18 @@ def cmd_poll(
                     "scanner": scanner,
                     "detail": f"on_report_received exception: {type(e).__name__}: {e}",
                 }
+
+            append_trace_event(
+                event="mobility_report_processed",
+                scanner=scanner,
+                trace_id=_trace_active_id_noexcept(scanner),
+                data={
+                    "nms_processed_at": server_now_str,
+                    "result": _trace_compact_process_result(
+                        mobility_report_process_result
+                    ),
+                },
+            )
 
             try:
                 utility._hset_many(
