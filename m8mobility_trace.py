@@ -32,6 +32,43 @@ def new_trace_id(scanner: str) -> str:
     return f"{safe_scanner}-{uuid.uuid4().hex}"
 
 
+def compact_pose(pose: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep only pose fields needed for command/result comparison."""
+    try:
+        return {
+            "location_ok": bool(pose.get("location_ok")),
+            "x_m": pose.get("x_m"),
+            "y_m": pose.get("y_m"),
+            "heading_deg": pose.get("heading_deg"),
+        }
+    except Exception as exc:
+        return {"trace_summary_error": f"{type(exc).__name__}: {exc}"[:300]}
+
+
+def preferred_heading_comparison(
+    *,
+    preferred_heading_deg: Any,
+    actual_heading_deg: Any,
+) -> Dict[str, Any]:
+    """Compare the LUT heading with the S3 heading without imposing policy."""
+    try:
+        preferred = float(preferred_heading_deg)
+        actual = float(actual_heading_deg)
+        signed_error = (actual - preferred + 180.0) % 360.0 - 180.0
+        return {
+            "comparison_ok": True,
+            "preferred_heading_deg": preferred,
+            "actual_heading_deg": actual,
+            "actual_minus_preferred_deg": signed_error,
+            "absolute_error_deg": abs(signed_error),
+        }
+    except Exception as exc:
+        return {
+            "comparison_ok": False,
+            "detail": f"{type(exc).__name__}: {exc}",
+        }
+
+
 def append_trace_event(
     *,
     event: str,

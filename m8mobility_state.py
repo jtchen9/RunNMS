@@ -41,8 +41,10 @@ from m8mobility_pose import (
 from m8mobility_map import _is_path_clear, _is_path_clear_debug
 from m8mobility_trace import (
     append_trace_event,
+    compact_pose,
     endpoint_comparison,
     new_trace_id,
+    preferred_heading_comparison,
 )
 
 
@@ -219,7 +221,7 @@ def _trace_begin_direct_command_impl(
         "source": source,
         "action": action,
         "args": args or {},
-        "start_pose": _load_true(scanner),
+        "start_pose": compact_pose(_load_true(scanner)),
     }
     _trace_save_active(
         scanner,
@@ -284,19 +286,46 @@ def _trace_followup_decision_impl(
         actual_pose=true_loc,
         commanded_distance_m=float(issued_args.get("distance_m", 0.0) or 0.0),
     )
+    solved_summary = _trace_location_summary(true_loc)
+    preferred_comparison = preferred_heading_comparison(
+        preferred_heading_deg=snapshot.get("preferred_heading_deg"),
+        actual_heading_deg=true_loc.get("heading_deg"),
+    )
+    preferred_comparison.update(
+        {
+            "lut_effective_good_count": snapshot.get(
+                "preferred_direction", {}
+            ).get("effective_good_count"),
+            "actual_observed_tag_count": len(
+                solved_summary.get("tags_observed") or []
+            ),
+            "actual_layer1_usable_tag_count": len(
+                solved_summary.get("tags_layer1_usable") or []
+            ),
+            "actual_used_tag_count": len(
+                solved_summary.get("tags_used") or []
+            ),
+            "actual_tags_observed": solved_summary.get("tags_observed") or [],
+            "actual_tags_layer1_usable": (
+                solved_summary.get("tags_layer1_usable") or []
+            ),
+            "actual_tags_used": solved_summary.get("tags_used") or [],
+        }
+    )
     append_trace_event(
         event="s5_followup_decision",
         scanner=scanner,
         trace_id=trace_id,
         data={
             "correction_attempt_count": correction_count,
-            "planned_pose": planned_loc,
-            "solved_true_pose": true_loc,
+            "planned_pose": compact_pose(planned_loc),
+            "solved_true_pose": solved_summary,
             "pose_error_to_planned": error,
             "followup_decision": decision,
             "outcome": outcome,
             "detail": detail,
             "comparison": comparison,
+            "preferred_heading_evaluation": preferred_comparison,
             "command_snapshot": snapshot,
         },
     )
@@ -387,14 +416,17 @@ def _trace_record_s5_command_impl(
 ) -> str:
     trace_id = new_trace_id(scanner)
     planned_error = _pose_error(simulated_endpoint, planned_loc)
+    preferred_raw = correction_detail.get("preferred_direction") or {}
+    if not isinstance(preferred_raw, dict):
+        preferred_raw = {}
     snapshot = {
         "command_kind": "s5_movement",
-        "start_pose": true_loc,
-        "planned_pose": planned_loc,
-        "motion_target": motion_target,
+        "start_pose": compact_pose(true_loc),
+        "planned_pose": compact_pose(planned_loc),
+        "motion_target": compact_pose(motion_target),
         "action": action,
         "args": args,
-        "simulated_endpoint": simulated_endpoint,
+        "simulated_endpoint": compact_pose(simulated_endpoint),
         "simulated_endpoint_to_planned_error": planned_error,
         "initial_script_execution": correction_detail.get(
             "initial_script_execution"
@@ -404,6 +436,24 @@ def _trace_record_s5_command_impl(
         ),
         "travel_heading_deg": correction_detail.get("travel_heading_deg"),
         "preferred_heading_deg": motion_target.get("heading_deg"),
+        "preferred_direction": {
+            key: preferred_raw.get(key)
+            for key in (
+                "ok",
+                "preferred_heading_deg",
+                "x_m",
+                "y_m",
+                "grid_x_index",
+                "grid_y_index",
+                "grid_x_m",
+                "grid_y_m",
+                "status_code",
+                "score",
+                "effective_good_count",
+                "geometry_span_deg",
+                "table_version",
+            )
+        },
         "path_summary": path_summary,
     }
     _trace_save_active(
@@ -3514,4 +3564,3 @@ def run_state_machine(scanner: str) -> Dict[str, Any]:
 
     _set_state(scanner, S0_IDLE, "invalid state reset")
     return s0idle(scanner)
-

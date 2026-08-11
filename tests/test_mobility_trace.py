@@ -74,6 +74,36 @@ class MobilityTraceTests(unittest.TestCase):
         self.assertFalse(result["comparison_ok"])
         self.assertIn("KeyError", result["detail"])
 
+    def test_compact_pose_drops_solver_internals(self):
+        result = m8mobility_trace.compact_pose(
+            {
+                "location_ok": True,
+                "x_m": 9.0,
+                "y_m": 4.3,
+                "heading_deg": 305.0,
+                "component_audit": [{"large": "payload"}],
+                "confidence": {"level": "HIGH"},
+            }
+        )
+        self.assertEqual(
+            result,
+            {
+                "location_ok": True,
+                "x_m": 9.0,
+                "y_m": 4.3,
+                "heading_deg": 305.0,
+            },
+        )
+
+    def test_preferred_heading_comparison_wraps_at_360(self):
+        result = m8mobility_trace.preferred_heading_comparison(
+            preferred_heading_deg=355.0,
+            actual_heading_deg=2.0,
+        )
+        self.assertTrue(result["comparison_ok"])
+        self.assertAlmostEqual(result["actual_minus_preferred_deg"], 7.0)
+        self.assertAlmostEqual(result["absolute_error_deg"], 7.0)
+
 
 if __name__ == "__main__":
     unittest.main()
