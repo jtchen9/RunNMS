@@ -2915,49 +2915,23 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
             },
         )
 
-        if not bool(decision.get("go")):
-            _clear_pending_sequence(scanner)
-            _clear_outgoing_command_preview(scanner)
-
-            no_go_detail = (
-                "follow-up correction NO_GO: "
-                f"{decision.get('reason_code', '')}"
-            )
-            _trace_followup_decision(
-                scanner,
-                true_loc=true_loc,
-                planned_loc=planned_loc,
-                error=err,
-                correction_count=correction_count,
-                decision=decision,
-                outcome="accepted_without_correction",
-                detail=no_go_detail,
-            )
-
-            return {
-                "status": "ok",
-                "transition_to": S0_IDLE,
-                "detail": no_go_detail,
-                "error": err,
-                "pending_sequence": [],
-                "correction_detail": {
-                    "followup_decision": decision,
-                },
-            }
-
         # -----------------------------------------------------
-        # First-correction size gate.
+        # Absolute precision-tolerance gates.
         #
         # correction_count == 0 means the main/scripted physical command has
         # already executed, and S5 is about to issue the first true correction.
-        # If that correction would be larger than the bring-up safety limit,
-        # stop the experiment instead of commanding a large recovery move.
+        # correction_count >= CORRECTION_ATTEMPT_LIMIT means the single allowed
+        # correction has already executed.
+        #
+        # These gates intentionally run before the confidence-based NO_GO
+        # return. LOW confidence must not allow an error above either absolute
+        # limit to return silently to idle.
         # -----------------------------------------------------
         first_correction_max_m = float(
             getattr(
                 config,
                 "MOBILITY_FIRST_CORRECTION_MAX_M",
-                0.60,
+                0.30,
             )
         )
 
@@ -2988,31 +2962,48 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
                 },
             )
 
-    # ---------------------------------------------------------
-    # Post-correction convergence gate.
-    #
-    # Counter semantics:
-    #   -1 : no command issued yet
-    #    0 : initial modified command issued
-    #   >=1: true correction attempts already issued
-    #
-    # During bring-up, after the allowed correction has already run, the system
-    # must either be close enough or stop the whole experiment. Do not silently
-    # return to idle with a large residual error.
-    # ---------------------------------------------------------
-    if correction_count >= CORRECTION_ATTEMPT_LIMIT:
         post_fail_thresh_m = float(
             getattr(
                 config,
                 "MOBILITY_POST_CORRECTION_FAIL_THRESH_M",
-                0.15,
+                0.30,
             )
         )
 
-        if dpos > post_fail_thresh_m:
-            stop_detail = (
-                "post-correction residual too large: "
-                f"dpos={dpos:.3f}m > "
+        if correction_count >= CORRECTION_ATTEMPT_LIMIT:
+            if dpos > post_fail_thresh_m:
+                stop_detail = (
+                    "post-correction residual too large: "
+                    f"dpos={dpos:.3f}m > "
+                    f"{post_fail_thresh_m:.3f}m"
+                )
+                _trace_followup_decision(
+                    scanner,
+                    true_loc=true_loc,
+                    planned_loc=planned_loc,
+                    error=err,
+                    correction_count=correction_count,
+                    decision=decision,
+                    outcome="stopped_after_correction",
+                    detail=stop_detail,
+                )
+                return _s5_stop_experiment(
+                    scanner,
+                    detail=stop_detail,
+                    error={
+                        **err,
+                        "correction_attempt_count": correction_count,
+                        "post_correction_fail_thresh_m": post_fail_thresh_m,
+                    },
+                )
+
+            _clear_pending_sequence(scanner)
+            _clear_outgoing_command_preview(scanner)
+            _clear_s0_command_arg_overrides(scanner)
+
+            accepted_detail = (
+                "post-correction residual accepted: "
+                f"dpos={dpos:.3f}m <= "
                 f"{post_fail_thresh_m:.3f}m"
             )
             _trace_followup_decision(
@@ -3022,50 +3013,51 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
                 error=err,
                 correction_count=correction_count,
                 decision=decision,
-                outcome="stopped_after_correction",
-                detail=stop_detail,
+                outcome="accepted_after_correction",
+                detail=accepted_detail,
             )
-            return _s5_stop_experiment(
-                scanner,
-                detail=stop_detail,
-                error={
+
+            return {
+                "status": "ok",
+                "transition_to": S0_IDLE,
+                "detail": accepted_detail,
+                "error": {
                     **err,
                     "correction_attempt_count": correction_count,
                     "post_correction_fail_thresh_m": post_fail_thresh_m,
                 },
+                "pending_sequence": [],
+            }
+
+        if not bool(decision.get("go")):
+            _clear_pending_sequence(scanner)
+            _clear_outgoing_command_preview(scanner)
+
+            no_go_detail = (
+                "follow-up correction NO_GO: "
+                f"{decision.get('reason_code', '')}"
+            )
+            _trace_followup_decision(
+                scanner,
+                true_loc=true_loc,
+                planned_loc=planned_loc,
+                error=err,
+                correction_count=correction_count,
+                decision=decision,
+                outcome="accepted_without_correction",
+                detail=no_go_detail,
             )
 
-        _clear_pending_sequence(scanner)
-        _clear_outgoing_command_preview(scanner)
-        _clear_s0_command_arg_overrides(scanner)
-
-        accepted_detail = (
-            "post-correction residual accepted: "
-            f"dpos={dpos:.3f}m <= "
-            f"{post_fail_thresh_m:.3f}m"
-        )
-        _trace_followup_decision(
-            scanner,
-            true_loc=true_loc,
-            planned_loc=planned_loc,
-            error=err,
-            correction_count=correction_count,
-            decision=decision,
-            outcome="accepted_after_correction",
-            detail=accepted_detail,
-        )
-
-        return {
-            "status": "ok",
-            "transition_to": S0_IDLE,
-            "detail": accepted_detail,
-            "error": {
-                **err,
-                "correction_attempt_count": correction_count,
-                "post_correction_fail_thresh_m": post_fail_thresh_m,
-            },
-            "pending_sequence": [],
-        }
+            return {
+                "status": "ok",
+                "transition_to": S0_IDLE,
+                "detail": no_go_detail,
+                "error": err,
+                "pending_sequence": [],
+                "correction_detail": {
+                    "followup_decision": decision,
+                },
+            }
 
     # ---------------------------------------------------------
     # Build a temporary motion target:

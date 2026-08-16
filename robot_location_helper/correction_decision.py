@@ -20,7 +20,7 @@ from typing import Any, Dict
 
 @dataclass(frozen=True)
 class CorrectionDecisionConfig:
-    position_error_go_threshold_m: float = 0.08
+    position_error_go_threshold_m: float = 0.15
 
 
 DEFAULT_CORRECTION_DECISION_CONFIG = (
@@ -39,13 +39,13 @@ def decide_followup_correction(
     """
     Three-gate rule:
 
-      1. dpos <= 8 cm
+      1. dpos <= 15 cm
             -> NO_GO
 
-      2. dpos > 8 cm and confidence LOW
+      2. dpos > 15 cm and confidence LOW
             -> NO_GO
 
-      3. dpos > 8 cm and confidence MEDIUM/HIGH
+      3. dpos > 15 cm and confidence MEDIUM/HIGH
             -> GO
 
     Heading discrepancy is intentionally ignored.
@@ -115,7 +115,7 @@ def decide_followup_correction(
             "decision": "NO_GO",
 
             "reason_code":
-                "POSITION_ERROR_WITHIN_8CM",
+                "POSITION_ERROR_WITHIN_15CM",
 
             "position_error_m": dpos,
             "position_threshold_m": threshold,
@@ -125,7 +125,7 @@ def decide_followup_correction(
 
             "detail": (
                 "follow-up correction not justified: "
-                "position discrepancy is within 8 cm"
+                "position discrepancy is within 15 cm"
             ),
         }
 
@@ -145,7 +145,7 @@ def decide_followup_correction(
 
             "detail": (
                 "follow-up correction blocked: "
-                "position discrepancy exceeds 8 cm "
+                "position discrepancy exceeds 15 cm "
                 "but location confidence is LOW"
             ),
         }
@@ -155,7 +155,7 @@ def decide_followup_correction(
         "decision": "GO",
 
         "reason_code":
-            "POSITION_ERROR_GT_8CM_AND_CONFIDENCE_SUFFICIENT",
+            "POSITION_ERROR_GT_15CM_AND_CONFIDENCE_SUFFICIENT",
 
         "position_error_m": dpos,
         "position_threshold_m": threshold,

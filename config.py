@@ -14,8 +14,8 @@ NMS_NAME = "DemoRoom"
 # with incomplete certificate chain.
 # MUST set WEB_VERIFY_TLS = True before production deployment.
 # ======================
-WEB_BASE: str = "http://localhost:80"
-# WEB_BASE: str = "https://6g-private.com:80"
+# WEB_BASE: str = "http://localhost:80"
+WEB_BASE: str = "https://6g-private.com:80"
 WEB_VERIFY_TLS = False
 
 REDIS_URL: str = "redis://localhost:6379/0"
@@ -221,15 +221,16 @@ MOBILITY_ROBOT_RESTRICT_RADIUS_M = mobility_robot_safety_radius_m()
 # Ignore very small residual position errors. Used by S5.
 MOBILITY_POS_IGNORE_THRESH_M = 0.05
 
-# Strict runtime gate used by S5 before issuing the first correction.
-# If the main/scripted command ends more than this far from the planned target,
-# do not try a large correction; stop the experiment for manual review.
-MOBILITY_FIRST_CORRECTION_MAX_M = 0.60
+# Precision-tolerance gate used by S5 before issuing the first correction.
+# A first result within 0.15 m is accepted without correction. A result between
+# 0.15 m and this limit may receive one correction when location confidence is
+# sufficient. A result above this limit stops the experiment.
+MOBILITY_FIRST_CORRECTION_MAX_M = 0.30
 
-# Strict runtime convergence gate used by S5 during AutoLab bring-up.
-# After a correction command has already been attempted, residual position error
-# above this value means the robot did not converge reliably; stop the experiment.
-MOBILITY_POST_CORRECTION_FAIL_THRESH_M = 0.15
+# Precision-tolerance gate used by S5 after the single allowed correction.
+# A residual at or below this value is accepted; a larger residual stops the
+# experiment. This intentionally matches the first-result hard limit.
+MOBILITY_POST_CORRECTION_FAIL_THRESH_M = 0.30
 
 
 # -------- Site-specific mobility macros --------
