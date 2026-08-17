@@ -57,6 +57,54 @@ def _get_scanner_wifi_ip(scanner: str) -> str:
     return (meta.get("ip") or "").strip()
 
 
+def _get_scanner_wifi_snapshot(scanner: str) -> Dict[str, Any]:
+    """Return the most recent robot Wi-Fi association known to the NMS.
+
+    The snapshot is captured when iperf3 is started and again when it exits.
+    Keeping both observations with the traffic record prevents a later
+    5/6-GHz roam from being mistaken for the band used by an earlier session.
+    """
+    meta = config.r.hgetall(config.key_scanner_meta(scanner)) or {}
+
+    try:
+        wifi = json.loads(meta.get("wifi_status_json") or "{}")
+        if not isinstance(wifi, dict):
+            wifi = {}
+    except Exception:
+        wifi = {}
+
+    freq_raw = wifi.get("freq_mhz")
+    try:
+        freq_mhz = int(freq_raw) if str(freq_raw or "").strip() else None
+    except Exception:
+        freq_mhz = None
+
+    band = str(wifi.get("band") or "").strip().lower()
+    if not band and freq_mhz is not None:
+        if 2400 <= freq_mhz < 2500:
+            band = "2.4g"
+        elif 4900 <= freq_mhz < 5925:
+            band = "5g"
+        elif 5925 <= freq_mhz < 7125:
+            band = "6g"
+
+    snapshot: Dict[str, Any] = {
+        "captured_at": utility.local_ts(),
+        "status_reported_at": str(meta.get("last_status_report") or "").strip(),
+        "scanner": scanner,
+        "traffic_ip": (meta.get("ip") or "").strip(),
+        "connected": bool(wifi.get("connected")),
+        "iface": str(wifi.get("iface") or "").strip(),
+        "iface_mac": str(wifi.get("iface_mac") or "").strip(),
+        "ssid": str(wifi.get("ssid") or "").strip(),
+        "assoc_bssid": str(wifi.get("assoc_bssid") or "").strip(),
+        "freq_mhz": freq_mhz,
+        "channel": wifi.get("channel"),
+        "band": band,
+    }
+    return snapshot
+
+
 def _alloc_port(scanner: str) -> str:
     """
     Allocate from the per-robot FIFO free-port queue.
@@ -104,6 +152,7 @@ def _push_event(
     bitrate: Optional[str] = None,
     packet_size: Optional[int] = None,
     parallel: Optional[int] = None,
+    wifi_start: Optional[Dict[str, Any]] = None,
 ) -> None:
     fields = {
         "scanner": scanner,
@@ -138,6 +187,9 @@ def _push_event(
     if parallel is not None:
         fields["parallel"] = str(int(parallel))
 
+    if wifi_start is not None:
+        fields["wifi_start_json"] = json.dumps(wifi_start, ensure_ascii=False)
+
     # Operational short-lived event stream (consumed by _status_loop)
     config.r.xadd(
         config.KEY_TRAFFIC_EVENT_STREAM,
@@ -168,6 +220,8 @@ def _push_result(
     bitrate: Optional[str] = None,
     packet_size: Optional[int] = None,
     parallel: Optional[int] = None,
+    wifi_start: Optional[Dict[str, Any]] = None,
+    wifi_end: Optional[Dict[str, Any]] = None,
 ) -> None:
     fields = {
         "scanner": scanner,
@@ -198,6 +252,12 @@ def _push_result(
 
     if parallel is not None:
         fields["parallel"] = str(int(parallel))
+
+    if wifi_start is not None:
+        fields["wifi_start_json"] = json.dumps(wifi_start, ensure_ascii=False)
+
+    if wifi_end is not None:
+        fields["wifi_end_json"] = json.dumps(wifi_end, ensure_ascii=False)
 
     config.r.xadd(
         config.KEY_TRAFFIC_RESULT_STREAM,
@@ -543,15 +603,17 @@ def _collect_due_traffic_commands(server_now_str: str):
 def _execute_start_real(scanner: str, args: Dict[str, Any]):
     session_id = str(args.get("session_id") or "").strip()
     if not session_id:
-        return False, "session_id missing"
+        return False, "session_id missing", None
 
     target_ip = _get_scanner_wifi_ip(scanner)
     if not target_ip:
-        return False, "no valid Wi-Fi IP"
+        return False, "no valid Wi-Fi IP", _get_scanner_wifi_snapshot(scanner)
 
     port = _alloc_port(scanner)
     if not port:
-        return False, "no free port"
+        return False, "no free port", _get_scanner_wifi_snapshot(scanner)
+
+    wifi_start = _get_scanner_wifi_snapshot(scanner)
 
     protocol = str(args.get("protocol") or "udp").lower()
     ac = str(args.get("ac") or "").lower()
@@ -600,7 +662,7 @@ def _execute_start_real(scanner: str, args: Dict[str, Any]):
         )
     except Exception as e:
         _release_port(scanner, port)
-        return False, f"start failed: {e}"
+        return False, f"start failed: {e}", wifi_start
 
     # save runtime state (minimal)
     config.r.set(
@@ -608,6 +670,7 @@ def _execute_start_real(scanner: str, args: Dict[str, Any]):
         json.dumps({
             "pid": proc.pid,
             "port": port,
+            "wifi_start": wifi_start,
         }),
     )
     config.r.expire(
@@ -655,6 +718,8 @@ def _execute_start_real(scanner: str, args: Dict[str, Any]):
                     bitrate=bitrate,
                     packet_size=packet_size,
                     parallel=parallel,
+                    wifi_start=wifi_start,
+                    wifi_end=_get_scanner_wifi_snapshot(scanner),
                 )
             finally:
                 _release_port(scanner, port)
@@ -662,7 +727,7 @@ def _execute_start_real(scanner: str, args: Dict[str, Any]):
 
     threading.Thread(target=_watch, daemon=True).start()
 
-    return True, f"started {session_id}"
+    return True, f"started {session_id}", wifi_start
 
 
 def _execute_stop_real(scanner: str, args: Dict[str, Any]):
@@ -754,10 +819,11 @@ def _execute_due_command(xid: str, fields: Dict[str, str]) -> None:
     ok = False
     detail = ""
     duration_sec: Optional[int] = None
+    wifi_start: Optional[Dict[str, Any]] = None
 
     if action == "traffic.session.start":
         duration_sec = _event_duration_sec_from_args(args)
-        ok, detail = _execute_start_real(scanner, args)
+        ok, detail, wifi_start = _execute_start_real(scanner, args)
 
     elif action == "traffic.session.stop":
         ok, detail = _execute_stop_real(scanner, args)
@@ -775,6 +841,7 @@ def _execute_due_command(xid: str, fields: Dict[str, str]) -> None:
         bitrate=bitrate if action == "traffic.session.start" else None,
         packet_size=packet_size if action == "traffic.session.start" else None,
         parallel=parallel if action == "traffic.session.start" else None,
+        wifi_start=wifi_start if action == "traffic.session.start" else None,
     )
 
     try:

@@ -25,6 +25,17 @@ def _optional_int(value: Any) -> Optional[int]:
         return None
 
 
+def _optional_json_dict(value: Any) -> Optional[Dict[str, Any]]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        obj = json.loads(text)
+    except Exception:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
 def _web_headers() -> Dict[str, str]:
     h: Dict[str, str] = {}
     if config.WEB_API_KEY:
@@ -50,6 +61,8 @@ def _collect_iperf3_sessions_for_upload(
         bitrate = str(fields.get("bitrate") or "").strip()
         packet_size = _optional_int(fields.get("packet_size"))
         parallel = _optional_int(fields.get("parallel"))
+        wifi_start = _optional_json_dict(fields.get("wifi_start_json"))
+        wifi_end = _optional_json_dict(fields.get("wifi_end_json"))
 
         reverse_raw = fields.get("reverse", "")
         reverse = None
@@ -93,6 +106,18 @@ def _collect_iperf3_sessions_for_upload(
 
         if parallel is not None:
             item["parallel"] = parallel
+
+        if wifi_start is not None:
+            item["wifi_start"] = wifi_start
+
+        if wifi_end is not None:
+            item["wifi_end"] = wifi_end
+
+        if wifi_start is not None and wifi_end is not None:
+            item["wifi_association_changed"] = any(
+                wifi_start.get(name) != wifi_end.get(name)
+                for name in ("iface", "iface_mac", "ssid", "assoc_bssid", "freq_mhz", "channel", "band")
+            )
 
         item_bytes = utility._json_bytes(item)
         if item_bytes > budget:
@@ -411,6 +436,7 @@ def _collect_traffic_events(limit: int = 200) -> Tuple[List[Dict[str, Any]], Lis
         bitrate = str(fields.get("bitrate") or "").strip()
         packet_size = _optional_int(fields.get("packet_size"))
         parallel = _optional_int(fields.get("parallel"))
+        wifi_start = _optional_json_dict(fields.get("wifi_start_json"))
 
         duration_raw = fields.get("duration_sec", "")
         try:
@@ -452,6 +478,9 @@ def _collect_traffic_events(limit: int = 200) -> Tuple[List[Dict[str, Any]], Lis
 
         if parallel is not None:
             item["parallel"] = parallel
+
+        if wifi_start is not None:
+            item["wifi_start"] = wifi_start
             
         out.append(item)
         ids.append(xid)
