@@ -99,6 +99,11 @@ def _push_event(
     detail: str = "",
     duration_sec: Optional[int] = None,
     reverse: Optional[bool] = None,
+    protocol: Optional[str] = None,
+    ac: Optional[str] = None,
+    bitrate: Optional[str] = None,
+    packet_size: Optional[int] = None,
+    parallel: Optional[int] = None,
 ) -> None:
     fields = {
         "scanner": scanner,
@@ -114,6 +119,24 @@ def _push_event(
 
     if reverse is not None:
         fields["reverse"] = "1" if reverse else "0"
+
+    protocol_s = str(protocol or "").strip().lower()
+    if protocol_s:
+        fields["protocol"] = protocol_s
+
+    ac_s = str(ac or "").strip().lower()
+    if ac_s:
+        fields["ac"] = ac_s
+
+    bitrate_s = str(bitrate or "").strip()
+    if bitrate_s:
+        fields["bitrate"] = bitrate_s
+
+    if packet_size is not None:
+        fields["packet_size"] = str(int(packet_size))
+
+    if parallel is not None:
+        fields["parallel"] = str(int(parallel))
 
     # Operational short-lived event stream (consumed by _status_loop)
     config.r.xadd(
@@ -140,6 +163,11 @@ def _push_result(
     raw: Any,
     detail: str = "",
     reverse: Optional[bool] = None,
+    protocol: Optional[str] = None,
+    ac: Optional[str] = None,
+    bitrate: Optional[str] = None,
+    packet_size: Optional[int] = None,
+    parallel: Optional[int] = None,
 ) -> None:
     fields = {
         "scanner": scanner,
@@ -152,6 +180,24 @@ def _push_result(
 
     if reverse is not None:
         fields["reverse"] = "1" if reverse else "0"
+
+    protocol_s = str(protocol or "").strip().lower()
+    if protocol_s:
+        fields["protocol"] = protocol_s
+
+    ac_s = str(ac or "").strip().lower()
+    if ac_s:
+        fields["ac"] = ac_s
+
+    bitrate_s = str(bitrate or "").strip()
+    if bitrate_s:
+        fields["bitrate"] = bitrate_s
+
+    if packet_size is not None:
+        fields["packet_size"] = str(int(packet_size))
+
+    if parallel is not None:
+        fields["parallel"] = str(int(parallel))
 
     config.r.xadd(
         config.KEY_TRAFFIC_RESULT_STREAM,
@@ -517,6 +563,10 @@ def _execute_start_real(scanner: str, args: Dict[str, Any]):
     duration = int(args.get("duration_sec") or 60)
     interval = int(args.get("report_interval_sec") or 60)
 
+    bitrate: Optional[str] = None
+    packet_size: Optional[int] = None
+    parallel: Optional[int] = None
+
     cmd = [
         IPERF3_BIN,
         "-c", target_ip,
@@ -532,9 +582,9 @@ def _execute_start_real(scanner: str, args: Dict[str, Any]):
 
     if protocol == "udp":
         bitrate = str(args.get("bitrate") or UDP_DEFAULT_BITRATE.get(ac, "1M"))
-        pkt = int(args.get("packet_size") or 1500)
+        packet_size = int(args.get("packet_size") or 1500)
 
-        cmd += ["-u", "-b", bitrate, "-l", str(pkt)]
+        cmd += ["-u", "-b", bitrate, "-l", str(packet_size)]
 
     else:
         parallel = int(args.get("parallel") or 1)
@@ -593,7 +643,19 @@ def _execute_start_real(scanner: str, args: Dict[str, Any]):
             detail = f"watcher exception: {type(e).__name__}: {e}"
         finally:
             try:
-                _push_result(scanner, session_id, status, raw, detail, reverse=reverse)
+                _push_result(
+                    scanner,
+                    session_id,
+                    status,
+                    raw,
+                    detail,
+                    reverse=reverse,
+                    protocol=protocol,
+                    ac=ac,
+                    bitrate=bitrate,
+                    packet_size=packet_size,
+                    parallel=parallel,
+                )
             finally:
                 _release_port(scanner, port)
                 config.r.delete(config.key_traffic_temp_running(scanner, session_id))
@@ -677,6 +739,17 @@ def _execute_due_command(xid: str, fields: Dict[str, str]) -> None:
 
     reverse = _normalize_reverse(args.get("reverse"))
     session_id = str(args.get("session_id") or "").strip()
+    protocol = str(args.get("protocol") or "").strip().lower()
+    ac = str(args.get("ac") or "").strip().lower()
+    bitrate: Optional[str] = None
+    packet_size: Optional[int] = None
+    parallel: Optional[int] = None
+
+    if protocol == "udp":
+        bitrate = str(args.get("bitrate") or UDP_DEFAULT_BITRATE.get(ac, "1M"))
+        packet_size = int(args.get("packet_size") or 1500)
+    elif protocol == "tcp":
+        parallel = int(args.get("parallel") or 1)
 
     ok = False
     detail = ""
@@ -697,6 +770,11 @@ def _execute_due_command(xid: str, fields: Dict[str, str]) -> None:
         detail=detail,
         duration_sec=duration_sec,
         reverse=reverse if action == "traffic.session.start" else None,
+        protocol=protocol if action == "traffic.session.start" else None,
+        ac=ac if action == "traffic.session.start" else None,
+        bitrate=bitrate if action == "traffic.session.start" else None,
+        packet_size=packet_size if action == "traffic.session.start" else None,
+        parallel=parallel if action == "traffic.session.start" else None,
     )
 
     try:
@@ -720,9 +798,24 @@ async def _traffic_loop() -> None:
                         scanner = fields.get("scanner", "")
                         args = json.loads(fields.get("args_json") or "{}")
                         session_id = str(args.get("session_id") or "")
+                        protocol = str(args.get("protocol") or "").strip().lower()
+                        ac = str(args.get("ac") or "").strip().lower()
+                        bitrate = None
+                        packet_size = None
+                        parallel = None
+                        if protocol == "udp":
+                            bitrate = str(args.get("bitrate") or UDP_DEFAULT_BITRATE.get(ac, "1M"))
+                            packet_size = int(args.get("packet_size") or 1500)
+                        elif protocol == "tcp":
+                            parallel = int(args.get("parallel") or 1)
                     except Exception:
                         scanner = ""
                         session_id = ""
+                        protocol = ""
+                        ac = ""
+                        bitrate = None
+                        packet_size = None
+                        parallel = None
 
                     _push_event(
                         scanner=scanner,
@@ -730,6 +823,11 @@ async def _traffic_loop() -> None:
                         action=fields.get("action", ""),
                         status="error",
                         detail=f"loop exception: {type(e).__name__}: {e}",
+                        protocol=protocol or None,
+                        ac=ac or None,
+                        bitrate=bitrate,
+                        packet_size=packet_size,
+                        parallel=parallel,
                     )
 
                     try:

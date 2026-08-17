@@ -17,6 +17,14 @@ router = APIRouter()
 # ==================
 # 5) Northbound (NMS -> Web Server)
 # ==================
+def _optional_int(value: Any) -> Optional[int]:
+    try:
+        text = str(value or "").strip()
+        return int(text) if text else None
+    except Exception:
+        return None
+
+
 def _web_headers() -> Dict[str, str]:
     h: Dict[str, str] = {}
     if config.WEB_API_KEY:
@@ -36,6 +44,12 @@ def _collect_iperf3_sessions_for_upload(
 
     for xid, fields in rows:
         raw_json = fields.get("raw_json", "") or "{}"
+
+        protocol = str(fields.get("protocol") or "").strip().lower()
+        ac = str(fields.get("ac") or "").strip().lower()
+        bitrate = str(fields.get("bitrate") or "").strip()
+        packet_size = _optional_int(fields.get("packet_size"))
+        parallel = _optional_int(fields.get("parallel"))
 
         reverse_raw = fields.get("reverse", "")
         reverse = None
@@ -64,6 +78,21 @@ def _collect_iperf3_sessions_for_upload(
 
         if reverse is not None:
             item["reverse"] = reverse
+
+        if protocol:
+            item["protocol"] = protocol
+
+        if ac:
+            item["ac"] = ac
+
+        if bitrate:
+            item["bitrate"] = bitrate
+
+        if packet_size is not None:
+            item["packet_size"] = packet_size
+
+        if parallel is not None:
+            item["parallel"] = parallel
 
         item_bytes = utility._json_bytes(item)
         if item_bytes > budget:
@@ -377,6 +406,12 @@ def _collect_traffic_events(limit: int = 200) -> Tuple[List[Dict[str, Any]], Lis
     ids: List[str] = []
 
     for xid, fields in rows:
+        protocol = str(fields.get("protocol") or "").strip().lower()
+        ac = str(fields.get("ac") or "").strip().lower()
+        bitrate = str(fields.get("bitrate") or "").strip()
+        packet_size = _optional_int(fields.get("packet_size"))
+        parallel = _optional_int(fields.get("parallel"))
+
         duration_raw = fields.get("duration_sec", "")
         try:
             duration_sec = int(duration_raw) if str(duration_raw).strip() != "" else None
@@ -402,6 +437,21 @@ def _collect_traffic_events(limit: int = 200) -> Tuple[List[Dict[str, Any]], Lis
 
         if reverse is not None:
             item["reverse"] = reverse
+
+        if protocol:
+            item["protocol"] = protocol
+
+        if ac:
+            item["ac"] = ac
+
+        if bitrate:
+            item["bitrate"] = bitrate
+
+        if packet_size is not None:
+            item["packet_size"] = packet_size
+
+        if parallel is not None:
+            item["parallel"] = parallel
             
         out.append(item)
         ids.append(xid)
