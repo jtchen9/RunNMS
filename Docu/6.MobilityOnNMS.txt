@@ -35,32 +35,51 @@ Mobility commands (current version)
     Only the following commands are supported now:
 
 A. mobility.turn_move_turn.forward
-args:
+{
+  "category": "mobility",
+  "action": "mobility.turn_move_turn.forward"
+  "args":
 {
   "distance_m": 1.2,
   "pre_angle": 30,
   "post_angle": -20,
   "move_profile": "bump_crossing" (optional)
+}
 }
 
 B. mobility.turn_move_turn.backward
-args:
+"args":
+{
+  "category": "mobility",
+  "action": "mobility.turn_move_turn.backward"
+  "args":
 {
   "distance_m": 1.2,
   "pre_angle": 30,
   "post_angle": -20,
   "move_profile": "bump_crossing" (optional)
 }
+}
 
 C. mobility.turn
-args:
+"args":
+{
+  "category": "mobility",
+  "action": "mobility.turn"
+  "args":
 {
   "angle_deg": 45
 }
+}
 
 D. mobility.report.location
-args:
+{
+  "category": "mobility",
+  "action": "mobility.report.location"
+  "args":
+"args":
 {}
+}
 
 Design change
     All movement is now normalized into turn → move → turn
