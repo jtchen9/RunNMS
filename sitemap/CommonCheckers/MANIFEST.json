@@ -1,11 +1,12 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-08-19",
+  "generated_at": "2026-08-21",
   "common_checkers_version": "2026.07.14.1",
   "file_hashes": {
     "VERSION.json": "sha256:eb84cb7730b2af1db20eef078f76a776ae59d826129f793890a9f360774b8f45",
     "checker/__init__.py": "sha256:43121429b65178e30bba21014c210c4aa4c3450004510d795776b4d6ed392f8e",
-    "checker/checker_runner.py": "sha256:00529fbd037e874c09017835b75d3f4266c2fddd444beae04f302f86e857cda5",
+    "checker/checker_runner.py": "sha256:09dcd5bfba3ccfdad6a5bfea8cd752805f0a7d4661a97287e901bea5a83832b0",
+    "checker/reserved_location_rules.py": "sha256:081961788b6324428421640a386eaeb6c793158836e5fa8d7c7909492d2c995d",
     "checker/macro_rules.py": "sha256:2ca40df25759a32baf9efd37a6c35471df53473f3e3bec1565675b4197e39b05",
     "checker/path_rules.py": "sha256:33ab2a19cf06b5096a3629a179294f9dab1c7dabf1ea744de01352b588eb5de1",
     "checker/static_safety_core.py": "sha256:871ce5329076792c6dd28055d416abebd5c7d8a2247a6aec976223e24419d2b7",
@@ -15,7 +16,8 @@
     "checker/validation_report.py": "sha256:57ec0b60307e3241756d2ba6bce3d1e33e51652eb889f10b1986171a9fcb4bfc",
     "checker/vocabulary_rules.py": "sha256:c4e4f9fa14c0716d72b726447f1d5de8d531ce0b883fa523df0dc71cbf22a65a",
     "config/script_policy.json": "sha256:5fade5e5818d4f05b101061e780fee21e1467ddc9dbf372d4a738fdd1c215de8",
-    "docs/README_for_script_writers.md": "sha256:44056bcf92d6ba3a9d8534f5af91ee3f0d72e5fe56b22873738918197a8e8b57",
-    "tests/test_ramp_macro_policy.py": "sha256:26aee5ebd3af501fafadd3c6746e286ec70d4015f1a9f0f6601a0b08c1d4ec57"
+    "docs/README_for_script_writers.md": "sha256:e7db32386e751f5e085631afe359e7c2654b2f47c164f90763e7af7d43acae6c",
+    "tests/test_ramp_macro_policy.py": "sha256:a78662de3d2a112ce2da4d6928c03acb580e8d4cddfbdf69b2840eb7eee79b5d",
+    "tests/test_reserved_launch_locations.py": "sha256:8448db72cdc0f9a172742d47724c7296fce20c73482e86476eb44dcbd7f01d21"
   }
 }

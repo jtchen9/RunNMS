@@ -36,6 +36,17 @@ mobility.in2out
 mobility.out2in
 ```
 
+The XLSM source script stages these macros with reserved coordinates:
+
+```text
+IN2OUT, IN2OUT -> (9.06, 4.30) -> mobility.in2out
+OUT2IN, OUT2IN -> (9.06, 6.10) -> mobility.out2in
+```
+
+CommonCheckers requires the matching staging move to be the preceding mobility
+command for the same robot. It resolves the constant before applying all normal
+`mobility.move` safety checks and emits only numeric coordinates for NMS use.
+
 Preflight requires the exact configured launch point. Runtime uses a fresh
 AprilTag pose with independent X/Y tolerances. The initial crossing command
 uses `bump_crossing_up` or `bump_crossing_down`; any post-cross correction is a

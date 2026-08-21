@@ -34,6 +34,8 @@ class RampMacroPolicyTests(unittest.TestCase):
         self.assertEqual((self.out2in["start_x_m"], self.out2in["start_y_m"]), (9.06, 6.1))
         self.assertEqual(self.in2out["move_profile"], "bump_crossing_up")
         self.assertEqual(self.out2in["move_profile"], "bump_crossing_down")
+        self.assertEqual(self.in2out["launch_constant"], "IN2OUT")
+        self.assertEqual(self.out2in["launch_constant"], "OUT2IN")
         self.assertEqual(self.in2out["distance_m"], 2.0)
         self.assertEqual(self.out2in["distance_m"], 2.0)
 

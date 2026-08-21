@@ -20,23 +20,25 @@ if __package__ in (None, ""):
     from checker.script_model import load_initial_poses_csv, load_script_csv
     from checker.timeline_rules import check_first_move_after_report_location_spacing, check_global_moving_command_spacing
     from checker.movement_rules import check_max_single_mobility_move_distance
-    from checker.validation_report import make_report, write_report
+    from checker.validation_report import make_report, sha256_file, write_report
     from checker.vocabulary_rules import check_device_targets, check_vocabulary
     from checker.argument_rules import check_command_arguments
     from checker.macro_rules import check_macro_and_bump_rules
     from checker.path_rules import check_planned_path_rules
     from checker.traffic_rules import check_traffic_sessions
+    from checker.reserved_location_rules import resolve_reserved_launch_locations, write_normalized_script_csv
 else:
     from .initialization_rules import check_first_mobility_command, check_initial_poses_exist
     from .script_model import load_initial_poses_csv, load_script_csv
     from .timeline_rules import check_first_move_after_report_location_spacing, check_global_moving_command_spacing
     from .movement_rules import check_max_single_mobility_move_distance
-    from .validation_report import make_report, write_report
+    from .validation_report import make_report, sha256_file, write_report
     from .vocabulary_rules import check_device_targets, check_vocabulary
     from .argument_rules import check_command_arguments
     from .macro_rules import check_macro_and_bump_rules
     from .path_rules import check_planned_path_rules
     from .traffic_rules import check_traffic_sessions
+    from .reserved_location_rules import resolve_reserved_launch_locations, write_normalized_script_csv
 
 
 def _load_json(path: str | Path) -> Dict[str, Any]:
@@ -81,6 +83,7 @@ def validate_script(
     site_dir: str | Path,
     common_dir: str | Path,
     report_json: Optional[str | Path] = None,
+    normalized_script_csv: Optional[str | Path] = None,
 ) -> Dict[str, Any]:
     script_csv = Path(script_csv)
     initial_poses_csv = Path(initial_poses_csv)
@@ -96,9 +99,15 @@ def validate_script(
     safety_policy = _load_json(site_dir / "script_authoring" / "config" / "safety_policy.json")
     ap_roster = _load_json(site_dir / "script_authoring" / "config" / "ap_roster.json")
 
-    rows, issues = load_script_csv(script_csv)
+    source_rows, issues = load_script_csv(script_csv)
     initial_poses, pose_issues = load_initial_poses_csv(initial_poses_csv)
     issues.extend(pose_issues)
+
+    rows, reserved_issues, resolved_constant_count = resolve_reserved_launch_locations(
+        source_rows,
+        macro_policy,
+    )
+    issues.extend(reserved_issues)
 
     issues.extend(check_vocabulary(rows, policy))
     issues.extend(check_command_arguments(rows, policy))
@@ -135,6 +144,20 @@ def validate_script(
         site_version=site_version,
         common_checkers_version=common_version,
     )
+
+    report["resolved_launch_constant_count"] = resolved_constant_count
+    report["normalized_script_path"] = str(normalized_script_csv or "")
+
+    if normalized_script_csv:
+        normalized_path = Path(normalized_script_csv)
+        if ok:
+            report["source_script_path"] = report["script_path"]
+            report["source_script_hash"] = report["script_hash"]
+            write_normalized_script_csv(normalized_path, rows)
+            report["script_path"] = str(normalized_path)
+            report["script_hash"] = sha256_file(normalized_path)
+        elif normalized_path.resolve() != script_csv.resolve() and normalized_path.exists():
+            normalized_path.unlink()
 
     if report_json:
         write_report(report, report_json)

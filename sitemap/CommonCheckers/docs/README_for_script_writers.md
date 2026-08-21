@@ -109,6 +109,18 @@ verified before command rows are cleared or rebuilt.
 exposed by the workbook. Dropdowns and VBA make authoring easier; they do not
 determine validation PASS or FAIL.
 
+For a ramp crossing, stage the robot with the reserved launch name in both
+`mobility.move` coordinate cells:
+
+- `IN2OUT`, `IN2OUT` immediately before `mobility.in2out`;
+- `OUT2IN`, `OUT2IN` immediately before `mobility.out2in`.
+
+The two commands must apply to the same robot, with no intervening mobility
+command for that robot. Commands for other devices may appear between them.
+CommonCheckers first verifies this sequence, then resolves the name from the
+site `macro_policy.json` and applies every ordinary movement, distance, map,
+furniture, and robot-clearance rule to the numeric staging move.
+
 ## 6. Run the authoritative preflight
 
 Run `RunCommonCheckers`. It exports:
@@ -117,6 +129,11 @@ Run `RunCommonCheckers`. It exports:
 sitemap\DemoRoom\script_authoring\generated\experiment_script.csv
 sitemap\DemoRoom\script_authoring\generated\initial_poses.csv
 ```
+
+The workbook initially writes the symbolic staging values into
+`experiment_script.csv`. On PASS, the Python helper atomically replaces that
+file with the NMS-ready numeric version. On FAIL, the symbolic source remains
+available for correction and must not be submitted.
 
 It also writes:
 

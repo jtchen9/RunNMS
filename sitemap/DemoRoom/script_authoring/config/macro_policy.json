@@ -33,6 +33,7 @@
   },
   "macros": {
     "mobility.in2out": {
+      "launch_constant": "IN2OUT",
       "args_allowed": false,
       "start_x_m": 9.06,
       "start_y_m": 4.3,
@@ -50,6 +51,7 @@
       }
     },
     "mobility.out2in": {
+      "launch_constant": "OUT2IN",
       "args_allowed": false,
       "start_x_m": 9.06,
       "start_y_m": 6.1,

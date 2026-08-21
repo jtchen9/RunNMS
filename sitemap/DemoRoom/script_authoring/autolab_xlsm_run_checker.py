@@ -18,6 +18,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--common_dir", required=True)
     p.add_argument("--report_json", required=True)
     p.add_argument("--feedback_csv", required=False)
+    p.add_argument("--normalized_script_csv", required=False)
     return p.parse_args()
 
 
@@ -162,6 +163,7 @@ def _run_checker(args: argparse.Namespace) -> tuple[int, dict]:
     initial_poses_csv = Path(args.initial_poses_csv)
     site_dir = Path(args.site_dir)
     report_path = Path(args.report_json)
+    normalized_script_path = Path(args.normalized_script_csv) if args.normalized_script_csv else script_csv
 
     for label, path in [
         ("script_csv", script_csv),
@@ -181,6 +183,7 @@ def _run_checker(args: argparse.Namespace) -> tuple[int, dict]:
         site_dir=site_dir,
         common_dir=common_dir,
         report_json=report_path,
+        normalized_script_csv=normalized_script_path,
     )
 
     report = _normalize_report(raw_report)
@@ -207,6 +210,7 @@ def main() -> int:
             print(f"Report written to: {args.report_json}")
             if args.feedback_csv:
                 print(f"Feedback written to: {args.feedback_csv}")
+            print(f"NMS-ready numeric script written to: {report.get('normalized_script_path', args.script_csv)}")
             return 0
 
         print("\nCHECK RESULT: FAIL")
@@ -218,6 +222,13 @@ def main() -> int:
         return 1
 
     except Exception as e:
+        # Never leave a stale previously validated output when a distinct
+        # normalized path was requested and this run fails unexpectedly.
+        if args.normalized_script_csv:
+            try:
+                Path(args.normalized_script_csv).unlink(missing_ok=True)
+            except Exception:
+                pass
         error_report = {
             "ok": False,
             "status": "fail",
