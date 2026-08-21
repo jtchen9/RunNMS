@@ -260,6 +260,7 @@ try {
         "macro_rules.py",
         "movement_rules.py",
         "path_rules.py",
+        "reserved_location_rules.py",
         "script_model.py",
         "static_safety_core.py",
         "timeline_rules.py",
