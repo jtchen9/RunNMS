@@ -255,6 +255,21 @@ def check_planned_path_rules(
             ):
                 issues.append(_with_row_context(issue, row))
 
+            restricted_sample = first_restricted_sample_on_segment(
+                restriction_map,
+                restriction_cfg,
+                float(current["x_m"]),
+                float(current["y_m"]),
+                float(new_pose["x_m"]),
+                float(new_pose["y_m"]),
+            )
+            if restricted_sample is not None:
+                _append_restriction_map_issue(
+                    issues,
+                    row=row,
+                    restricted_sample=restricted_sample,
+                )
+
             planned_by_scanner[row.scanner] = new_pose
             continue
 

@@ -37,14 +37,14 @@ TESTS = [
         "script": SITE_DIR / "script_authoring" / "examples" / "demo_p4_invalid_macro_wrong_start.csv",
         "initial_poses": SITE_DIR / "script_authoring" / "examples" / "demo_initial_poses.csv",
         "expect_ok": False,
-        "expected_error_codes": ["MACRO_START_POSE_MISMATCH"],
+        "expected_error_codes": ["MACRO_START_POSE_NOT_READY"],
     },
     {
         "name": "invalid move crosses bump",
         "script": SITE_DIR / "script_authoring" / "examples" / "demo_p4_invalid_move_crosses_bump.csv",
         "initial_poses": SITE_DIR / "script_authoring" / "examples" / "demo_initial_poses.csv",
         "expect_ok": False,
-        "expected_error_codes": ["MOVE_CROSSES_BUMP_GUARD_ZONE"],
+        "expected_error_codes": ["NORMAL_MOVE_ENTERS_RAMP_ZONE"],
     },
     {
         "name": "valid macro in2out",

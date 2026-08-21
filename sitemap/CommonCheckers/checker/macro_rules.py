@@ -8,7 +8,7 @@ from .static_safety_core import (
     bump_guard_crossing_issues,
     deg_norm_360,
     macro_robot_clearance_issues,
-    macro_segment_from_current_pose,
+    macro_planned_pose,
     macro_start_pose_issues,
 )
 
@@ -25,7 +25,6 @@ def check_macro_and_bump_rules(
     rows: List[ScriptRow],
     initial_poses: Dict[str, InitialPose],
     macro_policy: Dict[str, Any],
-    bump_guard_zones: Dict[str, Any],
     safety_policy: Dict[str, Any] | None = None,
 ) -> List[Dict[str, Any]]:
     """
@@ -81,7 +80,7 @@ def check_macro_and_bump_rules(
             for issue in bump_guard_crossing_issues(
                 start_pose=current,
                 end_pose=new_pose,
-                bump_guard_zones=bump_guard_zones,
+                bump_guard_zones=macro_policy,
             ):
                 issues.append(_with_row_context(issue, row))
 
@@ -111,7 +110,8 @@ def check_macro_and_bump_rules(
                 # within tolerance, or if macro config is invalid.
                 continue
 
-            macro_start_pose, macro_end_pose = macro_segment_from_current_pose(current, cfg)
+            macro_start_pose = current
+            macro_end_pose = macro_planned_pose(cfg)
             other_robot_poses = {
                 scanner: pose
                 for scanner, pose in planned_by_scanner.items()

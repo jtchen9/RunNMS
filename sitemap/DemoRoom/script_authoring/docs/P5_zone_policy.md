@@ -18,21 +18,28 @@ restricted.
 Charging zones are not treated as open walking space. Passing through another
 robot's charging zone remains forbidden by default.
 
-### bump_guard_zone
+### ramp restriction zone
 
-The bump guard zone is defined in:
+The single authoritative ramp geometry and macro policy is defined in:
 
 ```text
-script_authoring/config/bump_guard_zones.json
+script_authoring/config/macro_policy.json
 ```
 
-Normal `mobility.move` paths must not cross this rectangle. Crossing is legal
-only through:
+Normal `mobility.move` paths starting outside must not touch or enter this
+rectangle. A robot already in a landing buffer may leave through any side if
+the endpoint is outside and the segment does not touch the bump core. Crossing
+the core is legal only through:
 
 ```text
 mobility.in2out
 mobility.out2in
 ```
+
+Preflight requires the exact configured launch point. Runtime uses a fresh
+AprilTag pose with independent X/Y tolerances. The initial crossing command
+uses `bump_crossing_up` or `bump_crossing_down`; any post-cross correction is a
+normal mobility command and does not carry a crossing profile.
 
 ## Current rough charging centers
 

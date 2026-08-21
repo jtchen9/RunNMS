@@ -1,24 +1,70 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "site_id": "DemoRoom",
+  "preferred_heading_lut_relative_path": "preferred_direction_lut/preferred_heading_deg.npy",
+  "ramp_geometry": {
+    "real_ramp": {
+      "type": "axis_aligned_rectangle",
+      "x_min_m": 8.76,
+      "x_max_m": 9.36,
+      "y_min_m": 4.5,
+      "y_max_m": 5.9
+    },
+    "restriction_zone": {
+      "type": "axis_aligned_rectangle",
+      "x_min_m": 8.56,
+      "x_max_m": 9.56,
+      "y_min_m": 4.301,
+      "y_max_m": 6.099
+    },
+    "bump_core": {
+      "type": "axis_aligned_rectangle",
+      "x_min_m": 8.56,
+      "x_max_m": 9.56,
+      "y_min_m": 5.2,
+      "y_max_m": 5.4
+    },
+    "ordinary_movement_policy": {
+      "entry_from_outside": "forbidden",
+      "exit_from_landing_buffer": "allowed_any_side",
+      "movement_inside_zone": "forbidden",
+      "bump_core_crossing": "macro_only"
+    }
+  },
   "macros": {
     "mobility.in2out": {
       "args_allowed": false,
-      "start_x_m": 9.0,
-      "start_y_m": 4.35,
-      "start_tolerance_m": 0.2,
+      "start_x_m": 9.06,
+      "start_y_m": 4.3,
+      "preflight_start_mode": "exact",
+      "runtime_tolerance_x_m": 0.15,
+      "runtime_tolerance_y_m": 0.2,
+      "target_mode": "runtime_relative_true_pose",
       "target_heading_deg": 90.0,
       "distance_m": 2.0,
-      "move_profile": "bump_crossing"
+      "move_profile": "bump_crossing_up",
+      "landing_gate": {
+        "axis": "y",
+        "operator": ">",
+        "threshold_m": 6.0
+      }
     },
     "mobility.out2in": {
       "args_allowed": false,
-      "start_x_m": 9.0,
-      "start_y_m": 6.15,
-      "start_tolerance_m": 0.2,
+      "start_x_m": 9.06,
+      "start_y_m": 6.1,
+      "preflight_start_mode": "exact",
+      "runtime_tolerance_x_m": 0.15,
+      "runtime_tolerance_y_m": 0.2,
+      "target_mode": "runtime_relative_true_pose",
       "target_heading_deg": 270.0,
       "distance_m": 2.0,
-      "move_profile": "bump_crossing"
+      "move_profile": "bump_crossing_down",
+      "landing_gate": {
+        "axis": "y",
+        "operator": "<",
+        "threshold_m": 4.4
+      }
     }
   }
 }

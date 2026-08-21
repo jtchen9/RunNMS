@@ -545,6 +545,8 @@ def macro_segment_from_current_pose(current: Pose, macro_cfg: Dict[str, Any]) ->
 def macro_start_pose_issues(
     current: Pose,
     macro_cfg: Dict[str, Any],
+    *,
+    runtime: bool = False,
 ) -> List[Issue]:
     """
     Shared macro-start spatial check.
@@ -554,8 +556,9 @@ def macro_start_pose_issues(
     try:
         start_x = float(macro_cfg["start_x_m"])
         start_y = float(macro_cfg["start_y_m"])
-        tol = float(macro_cfg.get("start_tolerance_m", 0.20))
-        err = math.hypot(float(current["x_m"]) - start_x, float(current["y_m"]) - start_y)
+        dx = float(current["x_m"]) - start_x
+        dy = float(current["y_m"]) - start_y
+        err = math.hypot(dx, dy)
     except Exception as e:
         return [{
             "level": "error",
@@ -564,8 +567,27 @@ def macro_start_pose_issues(
             "suggestion": "Fix macro_policy.json.",
         }]
 
-    if err <= tol:
-        return []
+    if runtime:
+        try:
+            tol_x = float(macro_cfg["runtime_tolerance_x_m"])
+            tol_y = float(macro_cfg["runtime_tolerance_y_m"])
+        except Exception as e:
+            return [{
+                "level": "error",
+                "code": "MACRO_CONFIG_BAD_RUNTIME_TOLERANCE",
+                "message": f"macro config has a bad runtime tolerance: {type(e).__name__}: {e}",
+                "suggestion": "Fix runtime_tolerance_x_m/runtime_tolerance_y_m in macro_policy.json.",
+            }]
+        if abs(dx) <= tol_x and abs(dy) <= tol_y:
+            return []
+        tolerance_detail = f"x_tolerance={tol_x:.3f} m, y_tolerance={tol_y:.3f} m"
+    else:
+        # Script writers must stage the planned pose at the exact configured
+        # launch centre. A tiny epsilon is used only for floating-point parsing.
+        epsilon = 1e-9
+        if abs(dx) <= epsilon and abs(dy) <= epsilon:
+            return []
+        tolerance_detail = "preflight requires the exact configured launch centre"
 
     return [{
         "level": "error",
@@ -573,11 +595,69 @@ def macro_start_pose_issues(
         "message": (
             f"planned/true pose ({float(current['x_m']):.3f}, {float(current['y_m']):.3f}) "
             f"is {err:.3f} m from macro start "
-            f"({start_x:.3f}, {start_y:.3f}); tolerance={tol:.3f} m."
+            f"({start_x:.3f}, {start_y:.3f}); {tolerance_detail}."
         ),
         "suggestion": "Move the robot to the macro start point before this macro.",
         "start_error_m": err,
-        "start_tolerance_m": tol,
+        "start_error_x_m": dx,
+        "start_error_y_m": dy,
+        "runtime_check": bool(runtime),
+    }]
+
+
+def ramp_restriction_movement_issues(
+    start_pose: Pose,
+    end_pose: Pose,
+    macro_policy: Dict[str, Any],
+) -> List[Issue]:
+    """
+    Normal-movement policy for the site ramp restriction zone.
+
+    - A movement starting outside may not touch or enter the restriction zone.
+    - A movement starting in a landing buffer may exit through any side.
+    - An exit must end outside and must not touch/cross the bump core.
+    - A normal movement starting in the bump core is always rejected.
+    """
+    geometry = dict(macro_policy.get("ramp_geometry", {}) or {})
+    restriction = dict(geometry.get("restriction_zone", {}) or {})
+    bump_core = dict(geometry.get("bump_core", {}) or {})
+    if not restriction or not bump_core:
+        return [{
+            "level": "error",
+            "code": "RAMP_POLICY_MISSING_GEOMETRY",
+            "message": "macro_policy.json is missing ramp restriction/core geometry.",
+            "suggestion": "Restore DemoRoom ramp_geometry in macro_policy.json.",
+        }]
+
+    x0, y0 = float(start_pose["x_m"]), float(start_pose["y_m"])
+    x1, y1 = float(end_pose["x_m"]), float(end_pose["y_m"])
+    start_in_zone = point_inside_axis_aligned_rect(x0, y0, restriction)
+    end_in_zone = point_inside_axis_aligned_rect(x1, y1, restriction)
+    start_in_core = point_inside_axis_aligned_rect(x0, y0, bump_core)
+
+    if start_in_core:
+        code = "NORMAL_MOVE_STARTS_IN_BUMP_CORE"
+        message = "normal mobility.move starts inside the bump core."
+    elif start_in_zone:
+        if end_in_zone:
+            code = "NORMAL_MOVE_DOES_NOT_EXIT_RAMP_ZONE"
+            message = "normal mobility.move starts and ends inside the ramp restriction zone."
+        elif segment_intersects_axis_aligned_rect(x0, y0, x1, y1, bump_core):
+            code = "NORMAL_MOVE_EXIT_CROSSES_BUMP_CORE"
+            message = "normal mobility.move exit path touches or crosses the bump core."
+        else:
+            return []
+    elif segment_intersects_axis_aligned_rect(x0, y0, x1, y1, restriction):
+        code = "NORMAL_MOVE_ENTERS_RAMP_ZONE"
+        message = "normal mobility.move from outside touches or enters the ramp restriction zone."
+    else:
+        return []
+
+    return [{
+        "level": "error",
+        "code": code,
+        "message": message,
+        "suggestion": "Use mobility.in2out/out2in for crossing, or choose a path that stays outside the ramp zone.",
     }]
 
 
@@ -586,35 +666,8 @@ def bump_guard_crossing_issues(
     end_pose: Pose,
     bump_guard_zones: Dict[str, Any],
 ) -> List[Issue]:
-    """
-    Shared bump-zone crossing check for normal mobility.move paths.
-    """
-    issues: List[Issue] = []
-
-    for rect in (bump_guard_zones.get("zones", []) or []):
-        if str(rect.get("type", "")).strip() != "axis_aligned_rectangle":
-            continue
-
-        if segment_intersects_axis_aligned_rect(
-            float(start_pose["x_m"]),
-            float(start_pose["y_m"]),
-            float(end_pose["x_m"]),
-            float(end_pose["y_m"]),
-            rect,
-        ):
-            issues.append({
-                "level": "error",
-                "code": "MOVE_CROSSES_BUMP_GUARD_ZONE",
-                "message": (
-                    f"mobility.move path crosses bump guard zone "
-                    f"{rect.get('name', '')}; bump crossing is allowed "
-                    "only through mobility.in2out or mobility.out2in."
-                ),
-                "suggestion": "Use the site macro mobility.in2out or mobility.out2in for bump crossing.",
-                "zone": rect.get("name", ""),
-            })
-
-    return issues
+    """Backward-compatible alias for the schema-v2 ramp policy helper."""
+    return ramp_restriction_movement_issues(start_pose, end_pose, bump_guard_zones)
 
 
 def charging_zone_crossing_issues(
@@ -793,4 +846,3 @@ def macro_robot_clearance_issues(
         out.append(item)
 
     return out
-

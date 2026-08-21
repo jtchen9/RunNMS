@@ -65,8 +65,9 @@ _ensure_common_checkers_on_path()
 from checker.static_safety_core import (  # type: ignore # noqa: E402
     bump_guard_crossing_issues,
     macro_planned_pose,
+    macro_planned_pose_from_current,
     macro_start_pose_issues,
-    point_inside_axis_aligned_rect,
+    ramp_restriction_movement_issues,
 )
 from m8mobility_command_model import (
     _normalize_mobility_command,
@@ -579,17 +580,9 @@ def _load_runtime_macro_cfg_by_action() -> Dict[str, Any]:
     return dict(getattr(config, "MOBILITY_BUMP_CROSSING_MACROS", {}) or {})
 
 
-def _load_runtime_bump_guard_zones() -> Dict[str, Any]:
-    """
-    Runtime bump guard policy.
-
-    Missing file means no explicit bump guard zones. Static restriction map and
-    dynamic obstacle checks still run as before.
-    """
-    data = _load_runtime_site_policy_json("bump_guard_zones.json")
-    if isinstance(data.get("zones"), list):
-        return data
-    return {"zones": []}
+def _load_runtime_ramp_policy() -> Dict[str, Any]:
+    """Return the authoritative site ramp/macro policy."""
+    return _load_runtime_site_policy_json("macro_policy.json")
 
 
 def _runtime_issue_message(issue: Dict[str, Any]) -> str:
@@ -598,76 +591,6 @@ def _runtime_issue_message(issue: Dict[str, Any]) -> str:
     if msg:
         return f"{code}: {msg}"
     return code
-
-
-def _grid_cell_center_m(row: int, col: int) -> tuple[float, float]:
-    """
-    Convert a map cell to its approximate world-center coordinate.
-
-    This is used only to decide whether a static blocked cell belongs to the
-    measured bump guard rectangle for bump-crossing macros.
-    """
-    try:
-        site = json.loads(Path(config.mobility_site_json_path()).read_text(encoding="utf-8"))
-        res = float(site.get("grid_resolution_m", getattr(config, "MOBILITY_GRID_RESOLUTION_M", 0.1)))
-    except Exception:
-        res = float(getattr(config, "MOBILITY_GRID_RESOLUTION_M", 0.1))
-
-    return (float(col) + 0.5) * res, (float(row) + 0.5) * res
-
-
-def _blocked_cells_after_bump_macro_allowance(
-    blocked_cells: list[Dict[str, Any]],
-    *,
-    move_profile: str,
-    bump_guard_zones: Dict[str, Any],
-) -> list[Dict[str, Any]]:
-    """
-    For move_profile=bump_crossing, allow static blocked cells only when their
-    cell centers lie inside a configured bump guard rectangle.
-
-    Dynamic robot blockers remain blockers. Static blockers outside the bump
-    guard remain blockers. Normal mobility.move has no allowance.
-    """
-    if str(move_profile or "").strip() != "bump_crossing":
-        return list(blocked_cells or [])
-
-    rects = [
-        z for z in (bump_guard_zones.get("zones", []) or [])
-        if str(z.get("type", "")).strip() == "axis_aligned_rectangle"
-    ]
-    if not rects:
-        return list(blocked_cells or [])
-
-    remaining: list[Dict[str, Any]] = []
-
-    for cell in blocked_cells or []:
-        if int(cell.get("dynamic", 0) or 0) != 0:
-            remaining.append(cell)
-            continue
-
-        # Only static-only bump cells are eligible for allowance.
-        if int(cell.get("static", 0) or 0) == 0:
-            remaining.append(cell)
-            continue
-
-        try:
-            row = int(cell["row"])
-            col = int(cell["col"])
-            x_m, y_m = _grid_cell_center_m(row, col)
-        except Exception:
-            remaining.append(cell)
-            continue
-
-        inside_bump = any(
-            point_inside_axis_aligned_rect(x_m, y_m, rect)
-            for rect in rects
-        )
-
-        if not inside_bump:
-            remaining.append(cell)
-
-    return remaining
 
 
 def _save_s0_command_arg_overrides(
@@ -702,6 +625,92 @@ def _clear_s0_command_arg_overrides(scanner: str) -> None:
             "s0_command_arg_overrides_json": "",
             "s0_command_arg_overrides_reason": "",
         },
+    )
+
+
+def _load_site_macro_context(scanner: str) -> Dict[str, Any]:
+    raw = utility._hget(key_state(scanner), "site_macro_context_json", "")
+    if not str(raw or "").strip():
+        return {}
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_site_macro_context(scanner: str, context: Dict[str, Any]) -> None:
+    utility._hset_many(
+        key_state(scanner),
+        {
+            "site_macro_context_json": context or {},
+            "site_macro_active": "true" if context else "false",
+            "site_macro_phase": str((context or {}).get("phase") or ""),
+        },
+    )
+
+
+def _clear_site_macro_context(scanner: str) -> None:
+    """Clear successful/obsolete macro transaction state, not trace history."""
+    utility._hset_many(
+        key_state(scanner),
+        {
+            "site_macro_context_json": "",
+            "site_macro_active": "false",
+            "site_macro_phase": "",
+            "last_site_macro_action": "",
+            "last_site_macro_start_error_m": "",
+            "last_site_macro_start_error_x_m": "",
+            "last_site_macro_start_error_y_m": "",
+            "last_site_macro_planned_json": "",
+            "last_site_macro_move_profile": "",
+        },
+    )
+
+
+def _site_macro_active(scanner: str) -> bool:
+    return bool(_load_site_macro_context(scanner))
+
+
+def _update_site_macro_phase(scanner: str, phase: str, **updates: Any) -> Dict[str, Any]:
+    context = _load_site_macro_context(scanner)
+    if not context:
+        return {}
+    context.update(updates)
+    context["phase"] = str(phase)
+    _save_site_macro_context(scanner, context)
+    return context
+
+
+def _is_site_macro_precondition_source(source: str) -> bool:
+    return str(source or "").strip() in {
+        "site_macro_precondition_location",
+        "site_macro_precondition_turn",
+    }
+
+
+def _site_macro_landing_issue(
+    true_loc: Dict[str, Any],
+    macro_cfg: Dict[str, Any],
+) -> str:
+    gate = dict(macro_cfg.get("landing_gate", {}) or {})
+    try:
+        axis = str(gate["axis"]).strip().lower()
+        operator = str(gate["operator"]).strip()
+        threshold = float(gate["threshold_m"])
+        value = float(true_loc[f"{axis}_m"])
+    except Exception as e:
+        return f"invalid landing_gate policy: {type(e).__name__}: {e}"
+
+    passed = (
+        (operator == ">" and value > threshold)
+        or (operator == "<" and value < threshold)
+    )
+    if passed:
+        return ""
+    return (
+        f"macro landing gate failed: {axis}_m={value:.3f} "
+        f"does not satisfy {operator} {threshold:.3f}"
     )
 
 
@@ -745,6 +754,7 @@ def _s0_move_planned_pose_from_args(
 
 
 def _s0_enter_mobility_move(scanner: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    _clear_site_macro_context(scanner)
     start_planned = _s0_init_planned(scanner)
     new_planned = _s0_move_planned_pose_from_args(scanner, args)
 
@@ -756,7 +766,7 @@ def _s0_enter_mobility_move(scanner: str, args: Dict[str, Any]) -> Dict[str, Any
     bump_issues = bump_guard_crossing_issues(
         start_pose=start_planned,
         end_pose=new_planned,
-        bump_guard_zones=_load_runtime_bump_guard_zones(),
+        bump_guard_zones=_load_runtime_ramp_policy(),
     )
     if bump_issues:
         return _s0_stop_for_bad_script_action(
@@ -800,67 +810,152 @@ def _s0_enter_site_macro(scanner: str, action: str, args: Dict[str, Any]) -> Dic
             f"{action} does not accept arguments in macro v1",
         )
 
-    true_loc = _load_true(scanner)
-    if not _is_loc_ok(true_loc):
-        return _s0_stop_for_macro(
-            scanner,
-            f"{action} requires valid true location",
-        )
-
-    start_issues = macro_start_pose_issues(true_loc, macro_cfg)
-    if start_issues:
-        first = start_issues[0]
-        if first.get("code") == "MACRO_CONFIG_BAD_NUMERIC_VALUE":
-            return _s0_stop_for_macro(
-                scanner,
-                f"{action} macro config invalid: {first.get('message', '')}",
-            )
-
-        return _s0_stop_for_macro(
-            scanner,
-            f"{action} start check failed: {_runtime_issue_message(first)}",
-        )
-
-    start_error_m = 0.0
-
     try:
-        distance_m = float(macro_cfg.get("distance_m", 1.0))
-        move_profile = str(macro_cfg.get("move_profile", "bump_crossing") or "bump_crossing")
-        planned = {
-            "location_ok": True,
-            **macro_planned_pose(macro_cfg),
-        }
+        move_profile = str(macro_cfg["move_profile"]).strip()
+        if move_profile not in {"bump_crossing_up", "bump_crossing_down"}:
+            raise ValueError(f"unsupported move_profile={move_profile!r}")
+        float(macro_cfg["distance_m"])
+        float(macro_cfg["target_heading_deg"])
+        float(macro_cfg["runtime_tolerance_x_m"])
+        float(macro_cfg["runtime_tolerance_y_m"])
     except Exception as e:
         return _s0_stop_for_macro(
             scanner,
             f"{action} macro config invalid: {type(e).__name__}: {e}",
         )
 
-    # Macro uses script-owned geometry. Planned pose is computed from the
-    # configured start point, not from noisy true pose. S5 remains responsible
-    # for computing the low-level robot turn-move-turn command.
+    # A macro never trusts the cached pose for launch admission. It first turns
+    # to the launch-cell preferred heading (when necessary) and obtains a fresh
+    # AprilTag result. The cached pose is used only to calculate that safe turn.
+    true_loc = _load_true(scanner)
+    if not _is_loc_ok(true_loc):
+        return _s0_stop_for_macro(scanner, f"{action} requires a pose for preferred-heading precondition")
 
+    preferred = lookup_preferred_direction(
+        x_m=float(macro_cfg["start_x_m"]),
+        y_m=float(macro_cfg["start_y_m"]),
+    )
+    if not bool(preferred.get("ok")):
+        return _s0_stop_for_macro(
+            scanner,
+            f"{action} launch preferred-direction lookup failed: {preferred.get('detail', '')}",
+        )
+
+    preferred_heading = utility._deg_norm_360(float(preferred["preferred_heading_deg"]))
+    turn_angle = _shortest_signed_angle_deg(preferred_heading, float(true_loc["heading_deg"]))
+    if abs(turn_angle) > 1e-6:
+        precondition_action = "mobility.turn"
+        precondition_args = {"angle_deg": float(turn_angle)}
+        precondition_source = "site_macro_precondition_turn"
+    else:
+        precondition_action = "mobility.report.location"
+        precondition_args = {}
+        precondition_source = "site_macro_precondition_location"
+
+    _clear_pending_sequence(scanner)
+    _clear_outgoing_command_preview(scanner)
+    _clear_s0_command_arg_overrides(scanner)
+    _reset_correction_counter(scanner)
+    _save_site_macro_context(scanner, {
+        "action": action,
+        "phase": "precondition_issued",
+        "macro_cfg": macro_cfg,
+        "crossing_profile": move_profile,
+        "precondition_source": precondition_source,
+        "launch_preferred_heading_deg": preferred_heading,
+    })
+
+    _trace_begin_direct_command(
+        scanner,
+        action=precondition_action,
+        args=precondition_args,
+        source=precondition_source,
+    )
+    _save_outgoing_command_preview(
+        scanner,
+        action=precondition_action,
+        args=precondition_args,
+        source=precondition_source,
+    )
+    issued_at = _save_last_issued_command(
+        scanner,
+        action=precondition_action,
+        args=precondition_args,
+    )
+    _set_state(scanner, S1_WAITING_REPORT, f"site macro precondition issued: {action}")
+    _start_s1_timer(scanner)
+    return {
+        "state": S1_WAITING_REPORT,
+        "status": "ok",
+        "detail": f"site macro precondition issued: {action}",
+        "issued_command": {"action": precondition_action, "args": precondition_args},
+        "issued_at": issued_at,
+    }
+
+
+def _resume_site_macro_after_fresh_location(
+    scanner: str,
+    true_loc: Dict[str, Any],
+) -> Dict[str, Any]:
+    context = _load_site_macro_context(scanner)
+    action = str(context.get("action") or "")
+    macro_cfg = dict(context.get("macro_cfg") or {})
+    if not action or not macro_cfg:
+        return _s0_stop_for_macro(scanner, "site macro precondition lost its transaction context")
+
+    if str(true_loc.get("source") or "").strip().lower() != "apriltag":
+        return _s0_stop_for_macro(scanner, f"{action} requires a fresh AprilTag-derived launch pose")
+
+    start_issues = macro_start_pose_issues(true_loc, macro_cfg, runtime=True)
+    if start_issues:
+        return _s0_stop_for_macro(
+            scanner,
+            f"{action} runtime launch check failed: {_runtime_issue_message(start_issues[0])}",
+        )
+
+    try:
+        planned = {
+            "location_ok": True,
+            **macro_planned_pose_from_current(true_loc, macro_cfg),
+        }
+        move_profile = str(macro_cfg["move_profile"]).strip()
+    except Exception as e:
+        return _s0_stop_for_macro(
+            scanner,
+            f"{action} runtime target calculation failed: {type(e).__name__}: {e}",
+        )
+
+    dx = float(true_loc["x_m"]) - float(macro_cfg["start_x_m"])
+    dy = float(true_loc["y_m"]) - float(macro_cfg["start_y_m"])
     _save_planned(scanner, planned)
     _clear_pending_sequence(scanner)
     _clear_outgoing_command_preview(scanner)
     _save_s0_command_arg_overrides(
         scanner,
         {"move_profile": move_profile},
-        f"site_macro:{action}",
+        f"site_macro_initial_crossing:{action}",
     )
     _reset_correction_counter(scanner)
-
+    _update_site_macro_phase(
+        scanner,
+        "crossing_ready",
+        runtime_start=true_loc,
+        planned_target=planned,
+        start_error_x_m=dx,
+        start_error_y_m=dy,
+    )
     utility._hset_many(
         key_state(scanner),
         {
             "last_site_macro_action": action,
-            "last_site_macro_start_error_m": f"{start_error_m:.6f}",
+            "last_site_macro_start_error_m": f"{math.hypot(dx, dy):.6f}",
+            "last_site_macro_start_error_x_m": f"{dx:.6f}",
+            "last_site_macro_start_error_y_m": f"{dy:.6f}",
             "last_site_macro_planned_json": planned,
             "last_site_macro_move_profile": move_profile,
         },
     )
-
-    _set_state(scanner, S5_COMPUTING_CORRECTION, f"site macro accepted: {action}")
+    _set_state(scanner, S5_COMPUTING_CORRECTION, f"site macro launch pose accepted: {action}")
     return run_state_machine(scanner)
 
 def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -898,6 +993,10 @@ def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> 
         # into planned_location_json, then S5 computes the low-level command.
         if _is_site_macro_action(action):
             return _s0_enter_site_macro(scanner, action, args)
+
+        # A successfully completed macro must leave no transaction context for
+        # an unrelated later script command.
+        _clear_site_macro_context(scanner)
 
         # ---------------------------------------------------------
         # Step 3: semantic script move command
@@ -1090,6 +1189,23 @@ def process_s1_event(scanner: str, source: str, timer_token: Optional[str] = Non
                 if match_ok:
                     _cancel_s1_timer(scanner)
                     return enter_s1waiting_report_on_report(scanner)
+
+            # A site crossing deliberately requires a fresh report at every
+            # precondition/crossing/correction boundary.  Ordinary location
+            # propagation or retry recovery is unsafe here.
+            if _site_macro_active(scanner):
+                _cancel_s1_timer(scanner)
+                detail = f"site macro report timeout after {S1_REPORT_TIMEOUT_SEC}s"
+                result = _s5_stop_experiment(
+                    scanner,
+                    detail=detail,
+                    error={
+                        "site_macro_context": _load_site_macro_context(scanner),
+                        "timeout_source": source,
+                    },
+                )
+                _set_state(scanner, S7_STOPPED, detail)
+                return result
 
             # No acceptable report has arrived in time -> dangerous.
             state_hash = key_state(scanner)
@@ -1405,6 +1521,26 @@ def _s2_evaluate_policy(scanner: str) -> Dict[str, Any]:
         "busy_count": str(old_busy_count),
         "exec_fail_count": str(old_exec_fail_count),
     }
+
+    # Macro staging/crossing/landing is strict: no busy retry, dead-spot turn,
+    # accident recovery, or pose propagation may substitute for a clean report.
+    if _site_macro_active(scanner) and (
+        last_error_code
+        or last_exec_status.lower() not in ("completed", "accepted", "ok", "")
+    ):
+        out.update({
+            "need_location_recovery": "false",
+            "stop_experiment": "true",
+            "stop_reason": f"SITE_MACRO_REPORT_FAILURE:{last_error_code or last_exec_status}",
+            "robot_safety_state": "UNSAFE_STOP",
+        })
+        utility._hset_many(state_hash, out)
+        _save_policy_time(scanner)
+        return {
+            "status": "stop",
+            "transition_to": S7_STOPPED,
+            "detail": f"site macro report failure: {last_error_code or last_exec_status}",
+        }
 
     def recovery_exhausted_detail(code: str) -> Dict[str, Any]:
         out.update({
@@ -1956,6 +2092,9 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
         # overwritten by a location refresh.
         issued_source = _last_issued_source(scanner)
 
+        if _is_site_macro_precondition_source(issued_source):
+            return _resume_site_macro_after_fresh_location(scanner, loc)
+
         if _is_location_precondition_source(issued_source):
             planned_before = _load_planned(scanner)
             planned_initialized = False
@@ -2013,6 +2152,13 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
 
         _set_state(scanner, S5_COMPUTING_CORRECTION, "true location solved")
         return run_state_machine(scanner)
+
+    # Macro launch and landing decisions require measured AprilTag poses. Never
+    # propagate the previous true pose during an active macro transaction.
+    if _site_macro_active(scanner):
+        detail = str(loc.get("detail") or "site macro location solve failed")
+        _set_state(scanner, S7_STOPPED, f"site macro requires fresh AprilTag location: {detail}")
+        return s7stopped(scanner)
 
     # ---------------------------------------------------------
     # Case B0: report.location failed
@@ -2846,6 +2992,29 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         correction_count < 0
     )
 
+    macro_context = _load_site_macro_context(scanner)
+    if macro_context and not initial_script_execution:
+        macro_cfg = dict(macro_context.get("macro_cfg") or {})
+        landing_issue = _site_macro_landing_issue(true_loc, macro_cfg)
+        if landing_issue:
+            return _s5_stop_experiment(
+                scanner,
+                detail=landing_issue,
+                error={
+                    **err,
+                    "site_macro_action": macro_context.get("action"),
+                    "site_macro_phase": macro_context.get("phase"),
+                    "true_location": true_loc,
+                    "landing_gate": macro_cfg.get("landing_gate", {}),
+                },
+            )
+        if str(macro_context.get("phase") or "") == "crossing_issued":
+            macro_context = _update_site_macro_phase(
+                scanner,
+                "post_cross_landing_verified",
+                landing_true_location=true_loc,
+            )
+
     # ---------------------------------------------------------
     # Entry mode A: initial S5 from S0 after a new script command.
     #
@@ -2860,6 +3029,7 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
             _clear_pending_sequence(scanner)
             _clear_outgoing_command_preview(scanner)
 
+            _clear_site_macro_context(scanner)
             return {
                 "status": "ok",
                 "transition_to": S0_IDLE,
@@ -3000,6 +3170,7 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
             _clear_pending_sequence(scanner)
             _clear_outgoing_command_preview(scanner)
             _clear_s0_command_arg_overrides(scanner)
+            _clear_site_macro_context(scanner)
 
             accepted_detail = (
                 "post-correction residual accepted: "
@@ -3032,6 +3203,7 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         if not bool(decision.get("go")):
             _clear_pending_sequence(scanner)
             _clear_outgoing_command_preview(scanner)
+            _clear_site_macro_context(scanner)
 
             no_go_detail = (
                 "follow-up correction NO_GO: "
@@ -3123,6 +3295,7 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
     if not action:
         _clear_pending_sequence(scanner)
         _clear_outgoing_command_preview(scanner)
+        _clear_site_macro_context(scanner)
 
         return {
             "status": "ok",
@@ -3189,32 +3362,34 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
             )
         )
 
-        s0_overrides = _load_s0_command_arg_overrides(scanner)
-        move_profile = str(
-            (s0_overrides or {}).get("move_profile")
-            or args.get("move_profile")
-            or ""
-        )
+        # restriction_map.npy is furniture/buffer truth. A site macro never
+        # receives an exemption from those cells.
+        blocked_cells = list(path_debug.get("blocked_cells", []) or [])
 
-        blocked_after_allowance = list(path_debug.get("blocked_cells", []) or [])
-        if not path_ok:
-            blocked_after_allowance = _blocked_cells_after_bump_macro_allowance(
-                blocked_after_allowance,
-                move_profile=move_profile,
-                bump_guard_zones=_load_runtime_bump_guard_zones(),
+        # Ramp semantics are separate from the static map. Ordinary movements
+        # may exit a landing buffer, but may not enter the restriction zone or
+        # cross the bump core. The active macro transaction owns its crossing
+        # and post-cross correction until completion.
+        ramp_issues = []
+        if not macro_context:
+            ramp_issues = ramp_restriction_movement_issues(
+                true_loc,
+                simulated_target,
+                _load_runtime_ramp_policy(),
             )
 
         path_summary = {
             "checked": True,
-            "path_ok": len(blocked_after_allowance) == 0,
-            "blocked_count": len(blocked_after_allowance),
+            "path_ok": len(blocked_cells) == 0 and not ramp_issues,
+            "blocked_count": len(blocked_cells),
+            "ramp_issue_codes": [str(i.get("code") or "") for i in ramp_issues],
             "start": path_debug.get("start", {}),
             "target": path_debug.get("target", {}),
             "static_blocked_count": path_debug.get("static_blocked_count"),
             "dynamic_blocked_count": path_debug.get("dynamic_blocked_count"),
         }
 
-        if blocked_after_allowance:
+        if blocked_cells or ramp_issues:
             if not initial_script_execution:
                 _trace_followup_decision(
                     scanner,
@@ -3230,19 +3405,20 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
                 scanner,
                 detail=(
                     f"path unsafe in s5, "
-                    f"blocked={len(blocked_after_allowance)}, "
+                    f"blocked={len(blocked_cells)}, "
                     f"start_grid="
                     f"{path_debug.get('start', {}).get('grid')}, "
                     f"target_grid="
                     f"{path_debug.get('target', {}).get('grid')}, "
                     f"blocked_cells="
-                    f"{blocked_after_allowance[:10]}"
+                    f"{blocked_cells[:10]}, "
+                    f"ramp_issues={[i.get('code') for i in ramp_issues]}"
                 ),
                 error={
                     **err,
                     "path_debug": path_debug,
-                    "blocked_after_bump_allowance": blocked_after_allowance[:30],
-                    "move_profile": move_profile,
+                    "blocked_cells": blocked_cells[:30],
+                    "ramp_issues": ramp_issues,
                     "action": action,
                     "args": args,
                     "simulated_target":
@@ -3390,15 +3566,26 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
             "issued_command": {},
         }
 
-    # S0 may attach optional robot-side execution hints, such as
-    # move_profile=bump_crossing for site macros. S5 still owns command
-    # computation; this only appends safe optional args immediately before issue.
+    # S0 may attach the one-shot robot-side crossing profile. S5 still owns
+    # command computation; the override is consumed immediately after this
+    # initial command. Post-cross corrections therefore omit move_profile.
     overrides = _load_s0_command_arg_overrides(scanner)
     if overrides:
+        profile = str(overrides.get("move_profile") or "")
+        if profile not in {"bump_crossing_up", "bump_crossing_down"}:
+            _clear_s0_command_arg_overrides(scanner)
+            return {
+                "status": "stop",
+                "transition_to": S7_STOPPED,
+                "detail": f"invalid site macro move_profile at s6: {profile!r}",
+                "issued_command": {},
+            }
         args = {
             **args,
             **overrides,
         }
+        if _site_macro_active(scanner):
+            _update_site_macro_phase(scanner, "crossing_issued")
 
     # ---------------------------------------------------------
     # S6 is the sole command-issuance state.

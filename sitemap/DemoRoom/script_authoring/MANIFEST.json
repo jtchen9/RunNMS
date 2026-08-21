@@ -1,14 +1,18 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-14-04:27:07",
+  "generated_at": "2026-08-19",
   "site_authoring_version": "2026.07.14.1",
   "file_hashes": {
     "VERSION.json": "sha256:f22a50f7bd2909a76395085247bd9a1b2e7fcfa218637c2a44846781957a9ab7",
-    "config/bump_guard_zones.json": "sha256:803740c56a5e3079cc07bb61090b4c2d9ca6b8db4000c948c30228cee8dceb5f",
-    "config/macro_policy.json": "sha256:0312853b060d90a1e034e7d5f03d75fb1378081316a042f29e072864da0d0c08",
-    "config/safety_policy.json": "sha256:1cf626ee17ff78b1701112ec9b00a4e8b2d464f4d9e8ec573664efca307b91d5",
-    "examples/demo_initial_poses.csv": "sha256:946690c2dc54adf8a814176af364b748f200a797d0cd8ca57ad8727971c7cc38",
+    "config/bump_guard_zones.json": "sha256:77ae5b6911ac8ee4106815a49c04f827012170d9f72440515d657882e5f6fa7a",
+    "config/macro_policy.json": "sha256:682330224dd47d009f72637e9cb33d2c35ada935249814167167d14e79f7d7ac",
+    "config/zone_policy.json": "sha256:fdc9de52467a392e4e9adccd9c1f3f21b3313c9575594650bb169fd4fd639e42",
+    "config/safety_policy.json": "sha256:448a734b8005228ba986b2f0fe2ec61a24f8fad6b46a09a228d4a8b90f75e19d",
+    "examples/demo_initial_poses.csv": "sha256:62e8ccb632f7ab3eef0211e459e5e0326d176a1ed136a79ad8186ef766407db5",
     "examples/demo_invalid_timing.csv": "sha256:90ebb649b804f4a4c774a38e08f64fd9f0683057cdaf8bd78968231079683102",
-    "examples/demo_safe_script.csv": "sha256:6a8bdb26c4e6f545f74f849659722b4b10f53f63c742d040b11b0124ecd57df7"
+    "examples/demo_safe_script.csv": "sha256:e2f19a8e2ea344ece17a50ba1191ba269cdaab367484748c64a4d31d32db39b2",
+    "examples/demo_macro_initial_poses.csv": "sha256:3ae452b218b8cd96f4c3d84d11d282e54df62e59b8c3b86dc351368bf5ccaad5",
+    "examples/demo_p4_macro_start_initial_poses.csv": "sha256:3ae452b218b8cd96f4c3d84d11d282e54df62e59b8c3b86dc351368bf5ccaad5",
+    "examples/run_p4_regression_examples.py": "sha256:d2edc4c6a28b8e55be92951314679a8985baac80d096b5397781ff1ade813bad"
   }
 }

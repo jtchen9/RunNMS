@@ -75,5 +75,5 @@
     "default_semantics": "blocked_zone",
     "charging_zone_override": "Charging zones remain restricted and are already covered by restriction_map.npy. Script initial poses should normally be outside charging zones, e.g. y=4.4 for the current rough DemoRoom setup."
   },
-  "bump_guard_zone_source": "script_authoring/config/bump_guard_zones.json"
+  "bump_guard_zone_source": "script_authoring/config/macro_policy.json"
 }
