@@ -39,7 +39,7 @@ mobility.out2in
 The XLSM source script stages these macros with reserved coordinates:
 
 ```text
-IN2OUT, IN2OUT -> (9.06, 4.30) -> mobility.in2out
+IN2OUT, IN2OUT -> (9.06, 4.299) -> mobility.in2out
 OUT2IN, OUT2IN -> (9.06, 6.10) -> mobility.out2in
 ```
 

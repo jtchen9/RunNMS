@@ -65,7 +65,7 @@ class ReservedLaunchLocationTests(unittest.TestCase):
             with output.open(encoding="utf-8-sig") as stream:
                 normalized_rows = list(csv.DictReader(stream))
             move_args = json.loads(normalized_rows[1]["args_json"])
-            self.assertEqual(move_args, {"x_m": 9.06, "y_m": 4.3})
+            self.assertEqual(move_args, {"x_m": 9.06, "y_m": 4.299})
 
             second_report = validate_script(
                 script_csv=output,

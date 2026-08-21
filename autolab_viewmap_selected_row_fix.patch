@@ -1,0 +1,47 @@
+diff --git a/sitemap/DemoRoom/script_authoring/vba/Module1.bas b/sitemap/DemoRoom/script_authoring/vba/Module1.bas
+index dd489f5..c036260 100644
+--- a/sitemap/DemoRoom/script_authoring/vba/Module1.bas
++++ b/sitemap/DemoRoom/script_authoring/vba/Module1.bas
+@@ -115,6 +115,10 @@ End Sub
+ 
+ Private Function ResolveSelectedCommandValueRow(wsCmd As Worksheet) As Long
+     Dim r As Long
++    Dim candidateRow As Long
++    Dim lastRow As Long
++    Dim selectedCmdRowID As String
++    Dim candidateAction As String
+     r = ActiveCell.Row
+ 
+     If ActiveSheet.Name <> SHEET_COMMAND Then
+@@ -128,8 +132,28 @@ Private Function ResolveSelectedCommandValueRow(wsCmd As Worksheet) As Long
+     If lineType = "value" Then
+         ResolveSelectedCommandValueRow = r
+     ElseIf lineType = "key" Then
+-        If LCase$(Trim$(CStr(wsCmd.Cells(r + 1, COL_LINE_TYPE).value))) = "value" Then
+-            ResolveSelectedCommandValueRow = r + 1
++        selectedCmdRowID = Trim$(CStr(wsCmd.Cells(r, COL_CMD_ID).value))
++        lastRow = wsCmd.Cells(wsCmd.rows.Count, COL_CMD_ID).End(xlUp).Row
++
++        ' Key and Value rows belong together by CmdRowID. Do not assume the
++        ' Value row is physically below the selected Key row.
++        If selectedCmdRowID <> "" Then
++            For candidateRow = FIRST_DATA_ROW To lastRow
++                If LCase$(Trim$(CStr(wsCmd.Cells(candidateRow, COL_LINE_TYPE).value))) = "value" And _
++                   Trim$(CStr(wsCmd.Cells(candidateRow, COL_CMD_ID).value)) = selectedCmdRowID Then
++                    ResolveSelectedCommandValueRow = candidateRow
++                    Exit Function
++                End If
++            Next candidateRow
++        End If
++
++        ' A no-argument macro may be represented directly on its Key row.
++        candidateAction = LCase$(Trim$(CStr(wsCmd.Cells(r, COL_ACTION).value)))
++        If candidateAction = "" Then
++            candidateAction = LCase$(Trim$(CStr(wsCmd.Cells(r, COL_COMMAND_ID).value)))
++        End If
++        If IsMacroCommand(candidateAction) Then
++            ResolveSelectedCommandValueRow = r
+         Else
+             ResolveSelectedCommandValueRow = 0
+         End If
+

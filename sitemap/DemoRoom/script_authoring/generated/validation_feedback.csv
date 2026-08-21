@@ -1,1 +1,2 @@
 ﻿cmd_row_id,row_number,status,level,issue_code,message,suggestion,scanner,action,other_scanner,distance_m
+2,3,ERROR,error,NORMAL_MOVE_ENTERS_RAMP_ZONE,normal mobility.move from outside touches or enters the ramp restriction zone.,"Use mobility.in2out/out2in for crossing, or choose a path that stays outside the ramp zone.",twin-scout-alpha,mobility.move,,

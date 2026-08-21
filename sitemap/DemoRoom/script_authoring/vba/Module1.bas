@@ -115,6 +115,10 @@ End Sub
 
 Private Function ResolveSelectedCommandValueRow(wsCmd As Worksheet) As Long
     Dim r As Long
+    Dim candidateRow As Long
+    Dim lastRow As Long
+    Dim selectedCmdRowID As String
+    Dim candidateAction As String
     r = ActiveCell.Row
 
     If ActiveSheet.Name <> SHEET_COMMAND Then
@@ -128,8 +132,25 @@ Private Function ResolveSelectedCommandValueRow(wsCmd As Worksheet) As Long
     If lineType = "value" Then
         ResolveSelectedCommandValueRow = r
     ElseIf lineType = "key" Then
-        If LCase$(Trim$(CStr(wsCmd.Cells(r + 1, COL_LINE_TYPE).value))) = "value" Then
-            ResolveSelectedCommandValueRow = r + 1
+        selectedCmdRowID = Trim$(CStr(wsCmd.Cells(r, COL_CMD_ID).value))
+        lastRow = wsCmd.Cells(wsCmd.rows.Count, COL_CMD_ID).End(xlUp).Row
+
+        ' Key and Value rows belong together by CmdRowID. Do not assume the
+        ' Value row is physically below the selected Key row.
+        If selectedCmdRowID <> "" Then
+            For candidateRow = FIRST_DATA_ROW To lastRow
+                If LCase$(Trim$(CStr(wsCmd.Cells(candidateRow, COL_LINE_TYPE).value))) = "value" And _
+                   Trim$(CStr(wsCmd.Cells(candidateRow, COL_CMD_ID).value)) = selectedCmdRowID Then
+                    ResolveSelectedCommandValueRow = candidateRow
+                    Exit Function
+                End If
+            Next candidateRow
+        End If
+
+        ' A no-argument macro may be represented directly on its Key row.
+        candidateAction = ResolveActionForMapRow(wsCmd, r)
+        If IsMacroCommand(candidateAction) Then
+            ResolveSelectedCommandValueRow = r
         Else
             ResolveSelectedCommandValueRow = 0
         End If
@@ -169,35 +190,22 @@ Private Sub DrawPlannedOverlay(ByVal selectedCmdRowID As Long, ByVal selectedVal
     Dim selectedAction As String
     Dim selectedIsMovement As Boolean
     Dim selectedIsMacro As Boolean
-    Dim selectedIsLaunchApproach As Boolean
-    Dim selectedAllowsBumpGuard As Boolean
-    Dim stagingValueRow As Long
     Dim selectedStartX As Double, selectedStartY As Double
     Dim selectedTargetX As Double, selectedTargetY As Double
     Dim macroPolicyStartX As Double, macroPolicyStartY As Double
     Dim macroStartErrorM As Double
     Dim hasPlannedCurrent As Boolean
 
-    selectedScanner = CStr(wsCmd.Cells(selectedValueRow, COL_SCANNER).value)
-    selectedAction = Trim$(CStr(wsCmd.Cells(selectedValueRow, COL_ACTION).value))
-    If selectedAction = "" Then
-        selectedAction = Trim$(CStr(wsCmd.Cells(selectedValueRow, COL_COMMAND_ID).value))
-    End If
+    selectedScanner = Trim$(CStr(wsCmd.Cells(selectedValueRow, COL_SCANNER).value))
+    selectedAction = ResolveActionForMapRow(wsCmd, selectedValueRow)
 
     selectedIsMovement = False
     selectedIsMacro = IsMacroCommand(selectedAction)
 
-    ' For a selected ramp macro, preview the normal mobility.move approach to
-    ' its reserved destination point. CommonCheckers remains responsible for
-    ' validating and normalizing the macro itself.
-    If selectedIsMacro Then
-        stagingValueRow = FindMacroStagingValueRow(wsCmd, selectedCmdRowID, selectedScanner)
-        If stagingValueRow > 0 Then
-            ApplyCommandsBeforeSelected wsCmd, CLng(wsCmd.Cells(stagingValueRow, COL_CMD_ID).value), xDict, yDict, hDict
-        End If
-    Else
-        ApplyCommandsBeforeSelected wsCmd, selectedCmdRowID, xDict, yDict, hDict
-    End If
+    ' Simulate all enabled commands before the selected row. Reserved launch
+    ' constants in earlier mobility.move rows are resolved from macro_policy,
+    ' so a selected macro starts at its accumulated launch position.
+    ApplyCommandsBeforeSelected wsCmd, selectedCmdRowID, xDict, yDict, hDict
 
     hasPlannedCurrent = xDict.Exists(selectedScanner)
 
@@ -207,19 +215,14 @@ Private Sub DrawPlannedOverlay(ByVal selectedCmdRowID As Long, ByVal selectedVal
             selectedStartX = CDbl(xDict(selectedScanner))
             selectedStartY = CDbl(yDict(selectedScanner))
         End If
-    ElseIf selectedIsMacro And stagingValueRow > 0 And hasPlannedCurrent Then
+    ElseIf selectedIsMacro And hasPlannedCurrent Then
         selectedStartX = CDbl(xDict(selectedScanner))
         selectedStartY = CDbl(yDict(selectedScanner))
-        If ResolveMoveTargetForMap(wsCmd, stagingValueRow, selectedTargetX, selectedTargetY) Then
+        If GetMacroSegment(selectedAction, macroPolicyStartX, macroPolicyStartY, selectedTargetX, selectedTargetY) Then
             selectedIsMovement = True
-            selectedIsLaunchApproach = True
-            If GetMacroPolicyStart(selectedAction, macroPolicyStartX, macroPolicyStartY) Then
-                macroStartErrorM = Sqr((selectedTargetX - macroPolicyStartX) ^ 2 + (selectedTargetY - macroPolicyStartY) ^ 2)
-            End If
+            macroStartErrorM = Sqr((selectedStartX - macroPolicyStartX) ^ 2 + (selectedStartY - macroPolicyStartY) ^ 2)
         End If
     End If
-
-    selectedAllowsBumpGuard = selectedIsMacro And Not selectedIsLaunchApproach
 
     ' Draw dynamic safety zones using planned positions before the selected command.
     ' If the selected row is a movement command, do not draw the selected robot's
@@ -232,8 +235,8 @@ Private Sub DrawPlannedOverlay(ByVal selectedCmdRowID As Long, ByVal selectedVal
     Next scanner
 
     If selectedIsMovement Then
-        DrawSelectedPath wsMap, selectedStartX, selectedStartY, selectedTargetX, selectedTargetY, selectedAllowsBumpGuard, selectedScanner, xDict, yDict
-        DrawTargetCell wsMap, selectedTargetX, selectedTargetY, RobotShortLabel(selectedScanner), selectedAllowsBumpGuard
+        DrawSelectedPath wsMap, selectedStartX, selectedStartY, selectedTargetX, selectedTargetY, selectedIsMacro, selectedScanner, xDict, yDict
+        DrawTargetCell wsMap, selectedTargetX, selectedTargetY, RobotShortLabel(selectedScanner), selectedIsMacro
     End If
 
     For Each scanner In xDict.Keys
@@ -242,7 +245,7 @@ Private Sub DrawPlannedOverlay(ByVal selectedCmdRowID As Long, ByVal selectedVal
 
     DrawApMarkersFromInitialPoses wsPose, wsMap
 
-    WriteMapStatus wsMap, selectedCmdRowID, selectedScanner, selectedIsMovement, selectedIsMacro, selectedIsLaunchApproach, selectedAction, _
+    WriteMapStatus wsMap, selectedCmdRowID, selectedScanner, selectedIsMovement, selectedIsMacro, selectedAction, _
                    selectedStartX, selectedStartY, selectedTargetX, selectedTargetY, _
                    macroPolicyStartX, macroPolicyStartY, macroStartErrorM
 End Sub
@@ -282,65 +285,6 @@ Private Sub DrawApMarkersFromInitialPoses(wsPose As Worksheet, wsMap As Workshee
     Next r
 End Sub
 
-Private Sub ApplyCommandsUpToSelected(wsCmd As Worksheet, ByVal selectedCmdRowID As Long, ByRef xDict As Object, ByRef yDict As Object, ByRef hDict As Object)
-    Dim lastRow As Long
-    lastRow = wsCmd.Cells(wsCmd.rows.Count, COL_CMD_ID).End(xlUp).Row
-
-    Dim r As Long
-    Dim cmdID As Long
-    Dim lineType As String
-    Dim scanner As String
-    Dim action As String
-
-    For r = 4 To lastRow
-        lineType = LCase$(Trim$(CStr(wsCmd.Cells(r, COL_LINE_TYPE).value)))
-
-        If lineType = "value" And IsTruthy(wsCmd.Cells(r, COL_ENABLED).value) Then
-            If IsNumeric(wsCmd.Cells(r, COL_CMD_ID).value) Then
-                cmdID = CLng(wsCmd.Cells(r, COL_CMD_ID).value)
-            Else
-                cmdID = 0
-            End If
-
-            If cmdID > 0 And cmdID <= selectedCmdRowID Then
-                scanner = Trim$(CStr(wsCmd.Cells(r, COL_SCANNER).value))
-                action = Trim$(CStr(wsCmd.Cells(r, COL_ACTION).value))
-                If action = "" Then
-                    action = Trim$(CStr(wsCmd.Cells(r, COL_COMMAND_ID).value))
-                End If
-
-                If scanner <> "" And xDict.Exists(scanner) Then
-                    Select Case action
-                        Case "mobility.move"
-                            Dim moveX As Double, moveY As Double
-                            If ResolveMoveTargetForMap(wsCmd, r, moveX, moveY) Then
-                                xDict(scanner) = moveX
-                                yDict(scanner) = moveY
-                            End If
-                            If IsNumeric(wsCmd.Cells(r, COL_PARAM3).value) Then
-                                hDict(scanner) = CDbl(wsCmd.Cells(r, COL_PARAM3).value)
-                            End If
-
-                        Case "mobility.report.location"
-                            ' No planned pose change.
-
-                        Case "mobility.in2out", "mobility.out2in"
-                            Dim mx0 As Double, my0 As Double, mx1 As Double, my1 As Double, mh As Double
-                            If GetMacroEndpointFromCurrent(action, CDbl(xDict(scanner)), CDbl(yDict(scanner)), mx1, my1) Then
-                                xDict(scanner) = mx1
-                                yDict(scanner) = my1
-                                If GetMacroHeading(action, mh) Then
-                                    hDict(scanner) = mh
-                                End If
-                            End If
-                    End Select
-                End If
-            End If
-        End If
-    Next r
-End Sub
-
-
 Private Sub ApplyCommandsBeforeSelected(wsCmd As Worksheet, ByVal selectedCmdRowID As Long, ByRef xDict As Object, ByRef yDict As Object, ByRef hDict As Object)
     Dim lastRow As Long
     lastRow = wsCmd.Cells(wsCmd.rows.Count, COL_CMD_ID).End(xlUp).Row
@@ -363,10 +307,7 @@ Private Sub ApplyCommandsBeforeSelected(wsCmd As Worksheet, ByVal selectedCmdRow
 
             If cmdID > 0 And cmdID < selectedCmdRowID Then
                 scanner = Trim$(CStr(wsCmd.Cells(r, COL_SCANNER).value))
-                action = Trim$(CStr(wsCmd.Cells(r, COL_ACTION).value))
-                If action = "" Then
-                    action = Trim$(CStr(wsCmd.Cells(r, COL_COMMAND_ID).value))
-                End If
+                action = ResolveActionForMapRow(wsCmd, r)
 
                 If scanner <> "" And xDict.Exists(scanner) Then
                     Select Case action
@@ -384,8 +325,8 @@ Private Sub ApplyCommandsBeforeSelected(wsCmd As Worksheet, ByVal selectedCmdRow
                             ' No planned pose change.
 
                         Case "mobility.in2out", "mobility.out2in"
-                            Dim ex As Double, ey As Double, mh As Double
-                            If GetMacroEndpointFromCurrent(action, CDbl(xDict(scanner)), CDbl(yDict(scanner)), ex, ey) Then
+                            Dim macroStartX As Double, macroStartY As Double, ex As Double, ey As Double, mh As Double
+                            If GetMacroSegment(action, macroStartX, macroStartY, ex, ey) Then
                                 xDict(scanner) = ex
                                 yDict(scanner) = ey
                                 If GetMacroHeading(action, mh) Then
@@ -440,6 +381,8 @@ Private Sub DrawSelectedPath(wsMap As Worksheet, ByVal x0 As Double, ByVal y0 As
     Dim rr As Long, cc As Long
     Dim cell As Range
     Dim robotConflict As Boolean
+    Dim bumpGuardCell As Boolean
+    Dim furnitureConflict As Boolean
 
     For i = 0 To steps
         t = i / steps
@@ -451,8 +394,10 @@ Private Sub DrawSelectedPath(wsMap As Worksheet, ByVal x0 As Double, ByVal y0 As
             Set cell = GridCell(wsMap, rr, cc)
 
             robotConflict = PathSampleTooCloseToOtherRobot(x, y, movingScanner, xDict, yDict)
+            bumpGuardCell = IsBumpGuardCell(cell)
+            furnitureConflict = IsStaticRestrictedCell(cell) And Not (allowBumpGuard And bumpGuardCell)
 
-            If IsStaticRestrictedCell(cell) Or IsDynamicZoneCell(cell) Or robotConflict Or ((Not allowBumpGuard) And IsBumpGuardCell(cell)) Then
+            If furnitureConflict Or IsDynamicZoneCell(cell) Or robotConflict Or ((Not allowBumpGuard) And bumpGuardCell) Then
                 cell.Interior.Color = RGB(112, 48, 160)
                 cell.value = "!"
                 cell.Font.Color = RGB(255, 255, 255)
@@ -481,11 +426,17 @@ End Function
 
 Private Sub DrawTargetCell(wsMap As Worksheet, ByVal xM As Double, ByVal yM As Double, ByVal label As String, ByVal allowBumpGuard As Boolean)
     Dim rr As Long, cc As Long
+    Dim targetCell As Range
+    Dim bumpGuardCell As Boolean
+    Dim furnitureConflict As Boolean
     XYToGrid xM, yM, rr, cc
 
     If InGrid(rr, cc) Then
-        With GridCell(wsMap, rr, cc)
-            If IsStaticRestrictedCell(GridCell(wsMap, rr, cc)) Or ((Not allowBumpGuard) And IsBumpGuardCell(GridCell(wsMap, rr, cc))) Then
+        Set targetCell = GridCell(wsMap, rr, cc)
+        bumpGuardCell = IsBumpGuardCell(targetCell)
+        furnitureConflict = IsStaticRestrictedCell(targetCell) And Not (allowBumpGuard And bumpGuardCell)
+        With targetCell
+            If furnitureConflict Or ((Not allowBumpGuard) And bumpGuardCell) Then
                 .Interior.Color = RGB(112, 48, 160)
                 .value = "!"
             Else
@@ -533,7 +484,7 @@ Private Sub DrawApCenter(wsMap As Worksheet, ByVal xM As Double, ByVal yM As Dou
 End Sub
 
 Private Sub WriteMapStatus(wsMap As Worksheet, ByVal cmdRowId As Long, ByVal scanner As String, ByVal isMovement As Boolean, _
-                           ByVal isMacro As Boolean, ByVal isLaunchApproach As Boolean, ByVal action As String, _
+                           ByVal isMacro As Boolean, ByVal action As String, _
                            ByVal sx As Double, ByVal sy As Double, ByVal tx As Double, ByVal ty As Double, _
                            ByVal policyStartX As Double, ByVal policyStartY As Double, ByVal startErrorM As Double)
     wsMap.Range("DO10:DR20").ClearContents
@@ -553,14 +504,8 @@ Private Sub WriteMapStatus(wsMap As Worksheet, ByVal cmdRowId As Long, ByVal sca
         wsMap.Range("DO14").value = "Actual planned path"
         wsMap.Range("DP14").value = "(" & sx & ", " & sy & ") -> (" & tx & ", " & ty & ")"
         wsMap.Range("DO15").value = "Path type"
-        If isLaunchApproach Then
-            wsMap.Range("DP15").value = "Reserved macro destination approach; bump guard restricted"
-            wsMap.Range("DO16").value = "Configured destination point"
-            wsMap.Range("DP16").value = "(" & policyStartX & ", " & policyStartY & ")"
-            wsMap.Range("DO17").value = "Reserved target error"
-            wsMap.Range("DP17").value = Format(startErrorM, "0.000") & " m"
-        ElseIf isMacro Then
-            wsMap.Range("DP15").value = "Macro relative path; bump guard allowed"
+        If isMacro Then
+            wsMap.Range("DP15").value = "Macro fixed destination; bump guard allowed"
             wsMap.Range("DO16").value = "Macro policy start"
             wsMap.Range("DP16").value = "(" & policyStartX & ", " & policyStartY & ")"
             wsMap.Range("DO17").value = "Macro start error"
@@ -3310,6 +3255,24 @@ Private Function ActionForCommandId(ByVal commandId As String) As String
     End If
 End Function
 
+Private Function ResolveActionForMapRow(wsCmd As Worksheet, ByVal valueRow As Long) As String
+    ' CommandID is the public editable field. The hidden Action column is a
+    ' derived cache and may be stale until the command-layout macro runs.
+    ' Map preview must therefore resolve CommandID first, exactly as the GUI
+    ' layout code does, and use the cached Action only when CommandID is blank.
+    Dim commandId As String
+    Dim cachedAction As String
+
+    commandId = Trim$(CStr(wsCmd.Cells(valueRow, COL_COMMAND_ID).value))
+    If commandId <> "" Then
+        ResolveActionForMapRow = LCase$(Trim$(ActionForCommandId(commandId)))
+        Exit Function
+    End If
+
+    cachedAction = Trim$(CStr(wsCmd.Cells(valueRow, COL_ACTION).value))
+    ResolveActionForMapRow = LCase$(cachedAction)
+End Function
+
 Private Function ParameterModeForCommandId(ByVal commandId As String) As String
     ParameterModeForCommandId = CommandCatalogText( _
         commandId, _
@@ -3367,42 +3330,6 @@ End Function
 
 
 
-Private Function FindMacroStagingValueRow(wsCmd As Worksheet, ByVal selectedCmdRowID As Long, _
-                                          ByVal scannerName As String) As Long
-    Dim lastRow As Long
-    Dim r As Long
-    Dim cmdID As Long
-    Dim action As String
-    Dim category As String
-    Dim lastMobilityRow As Long
-
-    lastRow = wsCmd.Cells(wsCmd.rows.Count, COL_CMD_ID).End(xlUp).Row
-    For r = FIRST_DATA_ROW To lastRow
-        If LCase$(Trim$(CStr(wsCmd.Cells(r, COL_LINE_TYPE).value))) = "value" And _
-           IsTruthy(wsCmd.Cells(r, COL_ENABLED).value) And _
-           StrComp(Trim$(CStr(wsCmd.Cells(r, COL_SCANNER).value)), scannerName, vbTextCompare) = 0 And _
-           IsNumeric(wsCmd.Cells(r, COL_CMD_ID).value) Then
-
-            cmdID = CLng(wsCmd.Cells(r, COL_CMD_ID).value)
-            If cmdID > 0 And cmdID < selectedCmdRowID Then
-                action = Trim$(CStr(wsCmd.Cells(r, COL_ACTION).value))
-                If action = "" Then action = Trim$(CStr(wsCmd.Cells(r, COL_COMMAND_ID).value))
-                category = LCase$(Trim$(CStr(wsCmd.Cells(r, COL_CATEGORY).value)))
-
-                If category = "mobility" Or LCase$(Left$(action, 9)) = "mobility." Then
-                    lastMobilityRow = r
-                End If
-            End If
-        End If
-    Next r
-
-    If lastMobilityRow > 0 Then
-        action = Trim$(CStr(wsCmd.Cells(lastMobilityRow, COL_ACTION).value))
-        If action = "" Then action = Trim$(CStr(wsCmd.Cells(lastMobilityRow, COL_COMMAND_ID).value))
-        If action = "mobility.move" Then FindMacroStagingValueRow = lastMobilityRow
-    End If
-End Function
-
 Private Function ResolveMoveTargetForMap(wsCmd As Worksheet, ByVal valueRow As Long, _
                                          ByRef targetX As Double, ByRef targetY As Double) As Boolean
     Dim rawX As Variant, rawY As Variant
@@ -3444,7 +3371,8 @@ Private Function GetReservedLaunchPoint(ByVal launchConstant As String, _
 End Function
 
 Private Function IsMacroCommand(ByVal action As String) As Boolean
-    IsMacroCommand = (Trim$(action) = "mobility.in2out" Or Trim$(action) = "mobility.out2in")
+    action = LCase$(Trim$(action))
+    IsMacroCommand = (action = "mobility.in2out" Or action = "mobility.out2in")
 End Function
 
 Private Function GetMacroText(ByVal action As String, ByVal keyName As String, ByRef outValue As String) As Boolean
@@ -3505,20 +3433,6 @@ Private Function GetMacroPolicyStart(ByVal action As String, ByRef startX As Dou
     If Not GetMacroNumber(action, "start_y_m", startY) Then Exit Function
     GetMacroPolicyStart = True
 End Function
-
-Private Function GetMacroEndpointFromCurrent(ByVal action As String, ByVal currentX As Double, ByVal currentY As Double, _
-                                             ByRef endX As Double, ByRef endY As Double) As Boolean
-    Dim headingDeg As Double
-    Dim distanceM As Double
-
-    If Not GetMacroNumber(action, "target_heading_deg", headingDeg) Then Exit Function
-    If Not GetMacroNumber(action, "distance_m", distanceM) Then Exit Function
-
-    endX = currentX + distanceM * Cos(DegToRad(headingDeg))
-    endY = currentY + distanceM * Sin(DegToRad(headingDeg))
-    GetMacroEndpointFromCurrent = True
-End Function
-
 
 Private Function LoadMacroPolicyText() As String
     Dim path1 As String

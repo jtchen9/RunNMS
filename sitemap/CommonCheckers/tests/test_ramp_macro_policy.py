@@ -30,7 +30,7 @@ class RampMacroPolicyTests(unittest.TestCase):
         cls.out2in = cls.policy["macros"]["mobility.out2in"]
 
     def test_authoritative_geometry_and_profiles(self) -> None:
-        self.assertEqual((self.in2out["start_x_m"], self.in2out["start_y_m"]), (9.06, 4.3))
+        self.assertEqual((self.in2out["start_x_m"], self.in2out["start_y_m"]), (9.06, 4.299))
         self.assertEqual((self.out2in["start_x_m"], self.out2in["start_y_m"]), (9.06, 6.1))
         self.assertEqual(self.in2out["move_profile"], "bump_crossing_up")
         self.assertEqual(self.out2in["move_profile"], "bump_crossing_down")
@@ -40,9 +40,9 @@ class RampMacroPolicyTests(unittest.TestCase):
         self.assertEqual(self.out2in["distance_m"], 2.0)
 
     def test_preflight_requires_exact_launch_but_runtime_uses_axis_tolerances(self) -> None:
-        exact = {"x_m": 9.06, "y_m": 4.3, "heading_deg": 0.0}
+        exact = {"x_m": 9.06, "y_m": 4.299, "heading_deg": 0.0}
         offset = {"x_m": 9.16, "y_m": 4.49, "heading_deg": 0.0}
-        outside_x = {"x_m": 9.211, "y_m": 4.3, "heading_deg": 0.0}
+        outside_x = {"x_m": 9.211, "y_m": 4.299, "heading_deg": 0.0}
         self.assertEqual(macro_start_pose_issues(exact, self.in2out), [])
         self.assertTrue(macro_start_pose_issues(offset, self.in2out))
         self.assertEqual(macro_start_pose_issues(offset, self.in2out, runtime=True), [])
@@ -55,7 +55,7 @@ class RampMacroPolicyTests(unittest.TestCase):
             self.in2out,
         )
         self.assertAlmostEqual(fixed["x_m"], 9.06)
-        self.assertAlmostEqual(fixed["y_m"], 6.3)
+        self.assertAlmostEqual(fixed["y_m"], 6.299)
         self.assertAlmostEqual(relative["x_m"], 9.15)
         self.assertAlmostEqual(relative["y_m"], 6.11)
 

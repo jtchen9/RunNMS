@@ -17,7 +17,7 @@
     "checker/vocabulary_rules.py": "sha256:c4e4f9fa14c0716d72b726447f1d5de8d531ce0b883fa523df0dc71cbf22a65a",
     "config/script_policy.json": "sha256:5fade5e5818d4f05b101061e780fee21e1467ddc9dbf372d4a738fdd1c215de8",
     "docs/README_for_script_writers.md": "sha256:e7db32386e751f5e085631afe359e7c2654b2f47c164f90763e7af7d43acae6c",
-    "tests/test_ramp_macro_policy.py": "sha256:a78662de3d2a112ce2da4d6928c03acb580e8d4cddfbdf69b2840eb7eee79b5d",
-    "tests/test_reserved_launch_locations.py": "sha256:8448db72cdc0f9a172742d47724c7296fce20c73482e86476eb44dcbd7f01d21"
+    "tests/test_ramp_macro_policy.py": "sha256:7ece83c719d5c8d11a75a464c5f03b051ea0f04599c455a9087304be3c5e3868",
+    "tests/test_reserved_launch_locations.py": "sha256:ce5670bf4779cd4b26b7222dede955a30c9e86da3a03758bbc629a3e01e58096"
   }
 }

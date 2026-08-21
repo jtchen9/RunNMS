@@ -1,20 +1,34 @@
 {
-  "ok": true,
-  "status": "pass",
+  "ok": false,
+  "status": "fail",
   "site_id": "DemoRoom",
   "site_version": "2026.07.14.1",
   "common_checkers_version": "2026.07.14.1",
   "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\experiment_script.csv",
   "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\initial_poses.csv",
-  "script_hash": "sha256:3a5adefcfbb521440b2278a21cc4fe6e1c1504235874e8de205655bc83ebe3c0",
-  "initial_poses_hash": "sha256:844537fbd51143ec688e850867efda45c92181626545b9ef5092719e5caf1dfa",
-  "error_count": 0,
+  "script_hash": "sha256:b91260d568e71907b917ce8e2b7af4af91402ea258cb36ebae1b4a5bcc61117a",
+  "initial_poses_hash": "sha256:30602861a9b9ad5bd3a14dbd22420d52d72398a944132a7a8c73a5d33d3d1552",
+  "error_count": 1,
   "warning_count": 0,
-  "issues": [],
+  "issues": [
+    {
+      "level": "error",
+      "code": "NORMAL_MOVE_ENTERS_RAMP_ZONE",
+      "message": "normal mobility.move from outside touches or enters the ramp restriction zone.",
+      "suggestion": "Use mobility.in2out/out2in for crossing, or choose a path that stays outside the ramp zone.",
+      "row_number": 3,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.move"
+    }
+  ],
+  "resolved_launch_constant_count": 0,
+  "normalized_script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\experiment_script.csv",
   "generated_by": "autolab_xlsm_run_checker.py",
-  "generated_at": "2026-07-29T10:58:06"
+  "generated_at": "2026-08-21T14:57:18"
 }
 
-CHECK RESULT: PASS
+CHECK RESULT: FAIL
+Errors: 1
+Warnings: 0
 Report written to: D:\Data\_Action\_RunNMS\sitemap\DemoRoom\script_authoring\generated\validation_report.json
 Feedback written to: D:\Data\_Action\_RunNMS\sitemap\DemoRoom\script_authoring\generated\validation_feedback.csv
