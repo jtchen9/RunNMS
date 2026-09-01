@@ -514,11 +514,51 @@ def _is_site_macro_action(action: str) -> bool:
     )
 
 
+def _s0_begin_command_diagnostics(
+    scanner: str,
+    action: str,
+    args: Dict[str, Any],
+) -> None:
+    """Start a fresh diagnostic record for every command presented to S0."""
+    utility._hset_many(
+        key_state(scanner),
+        {
+            "s5_runtime_safety_stop_json": "",
+            "last_s0_command_action": action,
+            "last_s0_command_args_json": args or {},
+            "last_s0_command_at": utility.local_ts(),
+            "last_s0_rejected_action": "",
+            "last_s0_rejected_args_json": "",
+            "last_s0_rejected_reason": "",
+            "last_s0_rejected_at": "",
+        },
+    )
+
+
+def _s0_record_rejection(scanner: str, detail: str) -> None:
+    """Record an S0 rejection without changing last accepted-script fields."""
+    state_hash = key_state(scanner)
+    utility._hset_many(
+        state_hash,
+        {
+            "last_s0_rejected_action": utility._hget(
+                state_hash, "last_s0_command_action", ""
+            ),
+            "last_s0_rejected_args_json": utility._hget(
+                state_hash, "last_s0_command_args_json", ""
+            ),
+            "last_s0_rejected_reason": str(detail or "")[:300],
+            "last_s0_rejected_at": utility.local_ts(),
+        },
+    )
+
+
 def _shortest_signed_angle_deg(target_deg: float, current_deg: float) -> float:
     return float(_angle_diff_deg(float(target_deg), float(current_deg)))
 
 
 def _s0_stop_for_macro(scanner: str, detail: str) -> Dict[str, Any]:
+    _s0_record_rejection(scanner, detail)
     _clear_pending_sequence(scanner)
     _clear_outgoing_command_preview(scanner)
     _clear_s0_command_arg_overrides(scanner)
@@ -527,13 +567,15 @@ def _s0_stop_for_macro(scanner: str, detail: str) -> Dict[str, Any]:
 
 
 def _s0_stop_for_bad_script_action(scanner: str, action: str) -> Dict[str, Any]:
+    detail = f"{action} is not accepted as a script-level S0 command"
+    _s0_record_rejection(scanner, detail)
     _clear_pending_sequence(scanner)
     _clear_outgoing_command_preview(scanner)
     _clear_s0_command_arg_overrides(scanner)
     _set_state(
         scanner,
         S7_STOPPED,
-        f"{action} is not accepted as a script-level S0 command",
+        detail,
     )
     return s7stopped(scanner)
 
@@ -971,15 +1013,18 @@ def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> 
     - command emission is handled in S6 via normal command stream
     - no direct queue logic here
     """
+    action = str(action or "").strip()
+    args = args or {}
+    _s0_begin_command_diagnostics(scanner, action, args)
+
     stop = _load_stop()
     if stop.get("stop"):
-        _set_state(scanner, S7_STOPPED, stop.get("reason", ""))
+        detail = stop.get("reason", "")
+        _s0_record_rejection(scanner, detail)
+        _set_state(scanner, S7_STOPPED, detail)
         return s7stopped(scanner)
 
     try:
-        action = str(action or "").strip()
-        args = args or {}
-
         # ---------------------------------------------------------
         # Step 1: block low-level / obsolete script commands
         # ---------------------------------------------------------
@@ -1083,7 +1128,9 @@ def enter_s0idle_on_command(scanner: str, action: str, args: Dict[str, Any]) -> 
         return run_state_machine(scanner)
 
     except Exception as e:
-        _set_state(scanner, S7_STOPPED, f"s0 stop: {e}")
+        detail = f"s0 stop: {e}"
+        _s0_record_rejection(scanner, detail)
+        _set_state(scanner, S7_STOPPED, detail)
         return s7stopped(scanner)
 
 def _s0_init_planned(scanner: str) -> Dict[str, Any]:
@@ -2951,6 +2998,7 @@ def s5computing_correction(scanner: str) -> Dict[str, Any]:
     _set_state(scanner, transition_to, result["detail"])
 
     if transition_to == S0_IDLE:
+        _s5_clear_runtime_safety_stop(scanner)
         return {
             "state": transition_to,
             "status": result["status"],
