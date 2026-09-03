@@ -1,8 +1,8 @@
 {
-  "table_version": "preferred_direction_v1",
-  "rule_history": "former_rule_C",
+  "table_version": "preferred_direction_v2",
+  "rule_history": "preferred_direction_v1_with_front_layer1_gates_aligned_to_robot_location_v1_1_and_field_tuned_geometry",
   "tag_map_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\tag_location.txt",
-  "tag_map_sha256": "2e75424fff2b8bd882122acf539fd6fc3b50298dbb48329d21e4a0c50cf19b28",
+  "tag_map_sha256": "a2ab9b54abe986ecfa869157bf1d3d006b7f4bbe572de2cb3145774b8ea85252",
   "grid_step_m": 0.1,
   "heading_step_deg": 5.0,
   "x_min_m": 0.0,
@@ -23,12 +23,12 @@
   "rule": {
     "front_forward_offset_m": 0.055,
     "rear_forward_offset_m": -0.075,
-    "front_half_fov_deg": 35.0,
+    "front_half_fov_deg": 30.0,
     "rear_half_fov_deg": 15.0,
     "tag_incidence_limit_deg": 60.0,
     "front_distance_full_m": 4.0,
     "front_distance_soft1_m": 5.0,
-    "front_distance_max_m": 6.0,
+    "front_distance_max_m": 5.5,
     "front_distance_soft1_weight": 0.7,
     "front_distance_soft2_weight": 0.4,
     "rear_distance_full_m": 2.5,
@@ -39,10 +39,10 @@
     "rear_confidence": 0.6,
     "min_good_effective": 3.0,
     "min_marginal_effective": 2.0,
-    "min_good_geometry_span_deg": 45.0,
-    "score_geometry_bonus_per_deg": 0.1,
+    "min_good_geometry_span_deg": 40.0,
+    "score_geometry_bonus_per_deg": 0.05,
     "inner_y_max_m": 5.2,
     "outer_y_min_m": 5.4
   },
-  "generated_unix_time": 1783487247.6489718
+  "generated_unix_time": 1788332527.062635
 }

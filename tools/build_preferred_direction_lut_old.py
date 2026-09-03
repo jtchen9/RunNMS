@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-r"""
+"""
 Offline preferred-direction LUT generator.
 
-Operational rule:
-    preferred_direction_v2
-Revision history:
-    v1 scoring with front-camera Layer-1 gates aligned to
-    robot_location_v1_1
+Frozen operational rule:
+    preferred_direction_v1
+Historical origin:
+    former experimental Rule C
 
 Default placement:
     D:\Data\_Action\_RunNMS\tools\build_preferred_direction_lut.py
@@ -50,14 +49,11 @@ DEFAULT_OUTPUT_DIR = (
 
 
 # ---------------------------------------------------------------------------
-# Preferred-direction v2 rule
+# Frozen preferred_direction_v1 rule
 # ---------------------------------------------------------------------------
 
-RULE_ID = "preferred_direction_v2"
-RULE_HISTORY = (
-    "preferred_direction_v1_with_front_layer1_gates_"
-    "aligned_to_robot_location_v1_1_and_field_tuned_geometry"
-)
+RULE_ID = "preferred_direction_v1"
+RULE_HISTORY = "former_rule_C"
 
 GRID_STEP_M = 0.1
 HEADING_STEP_DEG = 5.0
@@ -75,16 +71,13 @@ DISTANCE_MIN_M = 0.4
 FRONT_FORWARD_OFFSET_M = 0.055
 REAR_FORWARD_OFFSET_M = -0.075
 
-# These two front-camera limits must match robot_location_v1_1 Layer-1
-# usability gates.  A direction should not receive LUT credit for a tag that
-# the runtime location solver will reject.
-FRONT_HALF_FOV_DEG = 30.0
+FRONT_HALF_FOV_DEG = 35.0
 REAR_HALF_FOV_DEG = 15.0
 TAG_INCIDENCE_LIMIT_DEG = 60.0
 
 FRONT_DISTANCE_FULL_M = 4.0
 FRONT_DISTANCE_SOFT1_M = 5.0
-FRONT_DISTANCE_MAX_M = 5.5
+FRONT_DISTANCE_MAX_M = 6.0
 FRONT_DISTANCE_SOFT1_WEIGHT = 0.7
 FRONT_DISTANCE_SOFT2_WEIGHT = 0.4
 
@@ -98,14 +91,9 @@ REAR_CONFIDENCE = 0.6
 
 MIN_GOOD_EFFECTIVE = 3.0
 MIN_MARGINAL_EFFECTIVE = 2.0
-# The launch-point field trial localized successfully with six lower-wall tags
-# spanning about 42 degrees.  Treat that observed geometry as GOOD.
-MIN_GOOD_GEOMETRY_SPAN_DEG = 40.0
+MIN_GOOD_GEOMETRY_SPAN_DEG = 45.0
 
-# Prefer a larger set of usable tags over a much smaller set whose bearings
-# merely have a wider span.  The former 0.10 bonus selected 235 degrees at the
-# launch grid cell; 0.05 selects the field-proven lower-wall view near 250.
-SCORE_GEOMETRY_BONUS_PER_DEG = 0.05
+SCORE_GEOMETRY_BONUS_PER_DEG = 0.10
 
 
 FACING_TO_YAW = {
@@ -863,7 +851,7 @@ def main() -> None:
     p = argparse.ArgumentParser(
         description=(
             "Build DemoRoom preferred-direction LUT "
-            "using preferred_direction_v2."
+            "using frozen preferred_direction_v1."
         )
     )
 

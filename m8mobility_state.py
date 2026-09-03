@@ -945,7 +945,8 @@ def _resume_site_macro_after_fresh_location(
     if not action or not macro_cfg:
         return _s0_stop_for_macro(scanner, "site macro precondition lost its transaction context")
 
-    if str(true_loc.get("source") or "").strip().lower() != "apriltag":
+    launch_pose_source = str(true_loc.get("source") or "").strip().lower()
+    if launch_pose_source not in {"apriltag", "apriltag_componentwise"}:
         return _s0_stop_for_macro(scanner, f"{action} requires a fresh AprilTag-derived launch pose")
 
     start_issues = macro_start_pose_issues(true_loc, macro_cfg, runtime=True)
