@@ -2,7 +2,7 @@
   "table_version": "preferred_direction_v2",
   "rule_history": "preferred_direction_v1_with_front_layer1_gates_aligned_to_robot_location_v1_1_and_field_tuned_geometry",
   "tag_map_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\tag_location.txt",
-  "tag_map_sha256": "428e31deac0b95ae1d11ee29817611b7d7cb22ffe76674839c36895df997664e",
+  "tag_map_sha256": "6b1a89c3f808353a07a082a3fc9f28ba7a38307bf3892ba2a3cd5a0cde85403f",
   "grid_step_m": 0.1,
   "heading_step_deg": 5.0,
   "x_min_m": 0.0,
@@ -44,5 +44,5 @@
     "inner_y_max_m": 5.2,
     "outer_y_min_m": 5.4
   },
-  "generated_unix_time": 1788420453.1055286
+  "generated_unix_time": 1788430775.9108124
 }
