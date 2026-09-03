@@ -1,7 +1,8 @@
 {
-  "package_name": "AutoLab CommonCheckers",
-  "common_checkers_version": "2026.07.14.1",
+  "site_id": "DemoRoom",
+  "site_authoring_version": "2026.09.03.1",
   "schema_version": 1,
+  "required_common_checkers_version": "2026.07.14.1",
   "status": "development",
-  "description": "Common offline script checker core shared by all AutoLab sites."
+  "description": "DemoRoom site-specific script authoring resources."
 }
