@@ -553,10 +553,6 @@ def _s0_record_rejection(scanner: str, detail: str) -> None:
     )
 
 
-def _shortest_signed_angle_deg(target_deg: float, current_deg: float) -> float:
-    return float(_angle_diff_deg(float(target_deg), float(current_deg)))
-
-
 def _s0_stop_for_macro(scanner: str, detail: str) -> Dict[str, Any]:
     _s0_record_rejection(scanner, detail)
     _clear_pending_sequence(scanner)
@@ -724,13 +720,6 @@ def _update_site_macro_phase(scanner: str, phase: str, **updates: Any) -> Dict[s
     return context
 
 
-def _is_site_macro_precondition_source(source: str) -> bool:
-    return str(source or "").strip() in {
-        "site_macro_precondition_location",
-        "site_macro_precondition_turn",
-    }
-
-
 def _site_macro_landing_issue(
     true_loc: Dict[str, Any],
     macro_cfg: Dict[str, Any],
@@ -866,88 +855,16 @@ def _s0_enter_site_macro(scanner: str, action: str, args: Dict[str, Any]) -> Dic
             f"{action} macro config invalid: {type(e).__name__}: {e}",
         )
 
-    # A macro never trusts the cached pose for launch admission. It first turns
-    # to the launch-cell preferred heading (when necessary) and obtains a fresh
-    # AprilTag result. The cached pose is used only to calculate that safe turn.
+    # The immediately preceding reserved mobility.move owns launch positioning,
+    # correction, and its final AprilTag report. Reuse that accepted pose here;
+    # do not add another turn/report cycle before the crossing.
     true_loc = _load_true(scanner)
     if not _is_loc_ok(true_loc):
-        return _s0_stop_for_macro(scanner, f"{action} requires a pose for preferred-heading precondition")
-
-    preferred = lookup_preferred_direction(
-        x_m=float(macro_cfg["start_x_m"]),
-        y_m=float(macro_cfg["start_y_m"]),
-    )
-    if not bool(preferred.get("ok")):
-        return _s0_stop_for_macro(
-            scanner,
-            f"{action} launch preferred-direction lookup failed: {preferred.get('detail', '')}",
-        )
-
-    preferred_heading = utility._deg_norm_360(float(preferred["preferred_heading_deg"]))
-    turn_angle = _shortest_signed_angle_deg(preferred_heading, float(true_loc["heading_deg"]))
-    if abs(turn_angle) > 1e-6:
-        precondition_action = "mobility.turn"
-        precondition_args = {"angle_deg": float(turn_angle)}
-        precondition_source = "site_macro_precondition_turn"
-    else:
-        precondition_action = "mobility.report.location"
-        precondition_args = {}
-        precondition_source = "site_macro_precondition_location"
-
-    _clear_pending_sequence(scanner)
-    _clear_outgoing_command_preview(scanner)
-    _clear_s0_command_arg_overrides(scanner)
-    _reset_correction_counter(scanner)
-    _save_site_macro_context(scanner, {
-        "action": action,
-        "phase": "precondition_issued",
-        "macro_cfg": macro_cfg,
-        "crossing_profile": move_profile,
-        "precondition_source": precondition_source,
-        "launch_preferred_heading_deg": preferred_heading,
-    })
-
-    _trace_begin_direct_command(
-        scanner,
-        action=precondition_action,
-        args=precondition_args,
-        source=precondition_source,
-    )
-    _save_outgoing_command_preview(
-        scanner,
-        action=precondition_action,
-        args=precondition_args,
-        source=precondition_source,
-    )
-    issued_at = _save_last_issued_command(
-        scanner,
-        action=precondition_action,
-        args=precondition_args,
-    )
-    _set_state(scanner, S1_WAITING_REPORT, f"site macro precondition issued: {action}")
-    _start_s1_timer(scanner)
-    return {
-        "state": S1_WAITING_REPORT,
-        "status": "ok",
-        "detail": f"site macro precondition issued: {action}",
-        "issued_command": {"action": precondition_action, "args": precondition_args},
-        "issued_at": issued_at,
-    }
-
-
-def _resume_site_macro_after_fresh_location(
-    scanner: str,
-    true_loc: Dict[str, Any],
-) -> Dict[str, Any]:
-    context = _load_site_macro_context(scanner)
-    action = str(context.get("action") or "")
-    macro_cfg = dict(context.get("macro_cfg") or {})
-    if not action or not macro_cfg:
-        return _s0_stop_for_macro(scanner, "site macro precondition lost its transaction context")
+        return _s0_stop_for_macro(scanner, f"{action} requires an accepted launch pose")
 
     launch_pose_source = str(true_loc.get("source") or "").strip().lower()
     if launch_pose_source not in {"apriltag", "apriltag_componentwise"}:
-        return _s0_stop_for_macro(scanner, f"{action} requires a fresh AprilTag-derived launch pose")
+        return _s0_stop_for_macro(scanner, f"{action} requires an AprilTag-derived launch pose")
 
     start_issues = macro_start_pose_issues(true_loc, macro_cfg, runtime=True)
     if start_issues:
@@ -961,7 +878,6 @@ def _resume_site_macro_after_fresh_location(
             "location_ok": True,
             **macro_planned_pose_from_current(true_loc, macro_cfg),
         }
-        move_profile = str(macro_cfg["move_profile"]).strip()
     except Exception as e:
         return _s0_stop_for_macro(
             scanner,
@@ -970,22 +886,26 @@ def _resume_site_macro_after_fresh_location(
 
     dx = float(true_loc["x_m"]) - float(macro_cfg["start_x_m"])
     dy = float(true_loc["y_m"]) - float(macro_cfg["start_y_m"])
-    _save_planned(scanner, planned)
+
     _clear_pending_sequence(scanner)
     _clear_outgoing_command_preview(scanner)
+    _clear_s0_command_arg_overrides(scanner)
+    _reset_correction_counter(scanner)
+    _save_site_macro_context(scanner, {
+        "action": action,
+        "phase": "crossing_ready",
+        "macro_cfg": macro_cfg,
+        "crossing_profile": move_profile,
+        "runtime_start": true_loc,
+        "planned_target": planned,
+        "start_error_x_m": dx,
+        "start_error_y_m": dy,
+    })
+    _save_planned(scanner, planned)
     _save_s0_command_arg_overrides(
         scanner,
         {"move_profile": move_profile},
         f"site_macro_initial_crossing:{action}",
-    )
-    _reset_correction_counter(scanner)
-    _update_site_macro_phase(
-        scanner,
-        "crossing_ready",
-        runtime_start=true_loc,
-        planned_target=planned,
-        start_error_x_m=dx,
-        start_error_y_m=dy,
     )
     utility._hset_many(
         key_state(scanner),
@@ -2139,9 +2059,6 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
         # operation, planned remains the script target and must not be
         # overwritten by a location refresh.
         issued_source = _last_issued_source(scanner)
-
-        if _is_site_macro_precondition_source(issued_source):
-            return _resume_site_macro_after_fresh_location(scanner, loc)
 
         if _is_location_precondition_source(issued_source):
             planned_before = _load_planned(scanner)
