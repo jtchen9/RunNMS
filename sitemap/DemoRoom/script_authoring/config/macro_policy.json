@@ -42,6 +42,7 @@
       "runtime_tolerance_y_m": 0.15,
       "target_mode": "runtime_relative_true_pose",
       "target_heading_deg": 90.0,
+      "pre_turn_compensation_deg": 0.0,
       "distance_m": 2.0,
       "move_profile": "bump_crossing_up",
       "landing_gate": {
@@ -60,12 +61,13 @@
       "runtime_tolerance_y_m": 0.15,
       "target_mode": "runtime_relative_true_pose",
       "target_heading_deg": 270.0,
+      "pre_turn_compensation_deg": 0.0,
       "distance_m": 2.0,
       "move_profile": "bump_crossing_down",
       "landing_gate": {
         "axis": "y",
         "operator": "<",
-        "threshold_m": 4.4
+        "threshold_m": 4.6
       }
     }
   }

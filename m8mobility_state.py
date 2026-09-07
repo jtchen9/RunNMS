@@ -849,6 +849,16 @@ def _s0_enter_site_macro(scanner: str, action: str, args: Dict[str, Any]) -> Dic
         float(macro_cfg["target_heading_deg"])
         float(macro_cfg["runtime_tolerance_x_m"])
         float(macro_cfg["runtime_tolerance_y_m"])
+        pre_turn_compensation_deg = float(
+            macro_cfg.get("pre_turn_compensation_deg", 0.0)
+        )
+        if (
+            not math.isfinite(pre_turn_compensation_deg)
+            or abs(pre_turn_compensation_deg) > 30.0
+        ):
+            raise ValueError(
+                "pre_turn_compensation_deg must be finite and within [-30, 30]"
+            )
     except Exception as e:
         return _s0_stop_for_macro(
             scanner,
@@ -904,7 +914,10 @@ def _s0_enter_site_macro(scanner: str, action: str, args: Dict[str, Any]) -> Dic
     _save_planned(scanner, planned)
     _save_s0_command_arg_overrides(
         scanner,
-        {"move_profile": move_profile},
+        {
+            "move_profile": move_profile,
+            "pre_turn_compensation_deg": pre_turn_compensation_deg,
+        },
         f"site_macro_initial_crossing:{action}",
     )
     utility._hset_many(
@@ -3546,9 +3559,35 @@ def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
                 "detail": f"invalid site macro move_profile at s6: {profile!r}",
                 "issued_command": {},
             }
+        try:
+            pre_turn_compensation_deg = float(
+                overrides.get("pre_turn_compensation_deg", 0.0)
+            )
+            if (
+                not math.isfinite(pre_turn_compensation_deg)
+                or abs(pre_turn_compensation_deg) > 30.0
+            ):
+                raise ValueError("outside [-30, 30]")
+            if "pre_angle" not in args:
+                raise ValueError("crossing command has no pre_angle")
+            compensated_pre_angle = (
+                float(args["pre_angle"]) + pre_turn_compensation_deg
+            )
+        except Exception as e:
+            _clear_s0_command_arg_overrides(scanner)
+            return {
+                "status": "stop",
+                "transition_to": S7_STOPPED,
+                "detail": (
+                    "invalid site macro pre-turn compensation at s6: "
+                    f"{type(e).__name__}: {e}"
+                ),
+                "issued_command": {},
+            }
         args = {
             **args,
-            **overrides,
+            "pre_angle": compensated_pre_angle,
+            "move_profile": profile,
         }
         if _site_macro_active(scanner):
             _update_site_macro_phase(scanner, "crossing_issued")
