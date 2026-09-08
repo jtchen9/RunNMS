@@ -835,7 +835,9 @@ def _s0_enter_site_macro(scanner: str, action: str, args: Dict[str, Any]) -> Dic
             f"unknown site mobility macro: {action}",
         )
 
-    if args not in ({}, None):
+    semantic_args = dict(args or {})
+    semantic_args.pop("_experiment", None)
+    if semantic_args:
         return _s0_stop_for_macro(
             scanner,
             f"{action} does not accept arguments in macro v1",
