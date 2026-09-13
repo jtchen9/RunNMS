@@ -7,6 +7,10 @@ import io
 import copy
 import sys
 import tempfile
+import urllib.request
+import urllib.error
+import mimetypes
+import uuid
 
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, Form
 from pydantic import BaseModel, Field
@@ -1973,6 +1977,185 @@ def cmd_ack(scanner: str, ack: CmdAck) -> Dict[str, Any]:
 #     )
 
 
+
+# ============================================================
+# Webserver Data Lake notification helpers
+# ============================================================
+def _web_datalake_base_url() -> str:
+    """
+    Optional NMS -> webserver base URL for Data Lake northbound calls.
+
+    Configure one of these in config.py when this NMS should relay experiment
+    registration packages to the webserver:
+      WEB_NORTHBOUND_BASE_URL = "http://<webserver>:<port>"
+      or
+      NORTHBOUND_WEB_BASE_URL = "http://<webserver>:<port>"
+    """
+    return str(
+        getattr(config, "WEB_NORTHBOUND_BASE_URL", "")
+        or getattr(config, "NORTHBOUND_WEB_BASE_URL", "")
+        or ""
+    ).rstrip("/")
+
+
+def _web_datalake_api_key() -> str:
+    return str(
+        getattr(config, "WEB_NORTHBOUND_API_KEY", "")
+        or getattr(config, "NORTHBOUND_API_KEY", "")
+        or getattr(config, "NMS_API_KEY", "")
+        or ""
+    )
+
+
+def _multipart_body(fields: Dict[str, Any], files: Dict[str, tuple[str, bytes, str]]) -> tuple[bytes, str]:
+    boundary = "----AutoLabDataLake" + uuid.uuid4().hex
+    chunks: List[bytes] = []
+
+    for name, value in fields.items():
+        if value is None:
+            continue
+        chunks.append(f"--{boundary}\r\n".encode())
+        chunks.append(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+        chunks.append(str(value).encode("utf-8"))
+        chunks.append(b"\r\n")
+
+    for name, file_tuple in files.items():
+        filename, data, content_type = file_tuple
+        chunks.append(f"--{boundary}\r\n".encode())
+        chunks.append(
+            f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode()
+        )
+        chunks.append(f"Content-Type: {content_type}\r\n\r\n".encode())
+        chunks.append(data or b"")
+        chunks.append(b"\r\n")
+
+    chunks.append(f"--{boundary}--\r\n".encode())
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
+
+
+def _post_multipart_to_webserver(path: str, fields: Dict[str, Any], files: Dict[str, tuple[str, bytes, str]]) -> Dict[str, Any]:
+    base = _web_datalake_base_url()
+    if not base:
+        return {
+            "status": "skipped",
+            "detail": "WEB_NORTHBOUND_BASE_URL/NORTHBOUND_WEB_BASE_URL not configured",
+        }
+
+    url = base + path
+    body, content_type = _multipart_body(fields, files)
+    headers = {"Content-Type": content_type}
+    api_key = _web_datalake_api_key()
+    if api_key:
+        headers["X-API-Key"] = api_key
+
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            try:
+                return json.loads(raw)
+            except Exception:
+                return {"status": "ok", "raw_response": raw}
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")
+        return {
+            "status": "error",
+            "error": "http_error",
+            "code": e.code,
+            "detail": detail[:1000],
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": type(e).__name__,
+            "detail": str(e)[:1000],
+        }
+
+
+def _notify_web_experiment_register(
+    *,
+    experiment_id: str,
+    session_id: Optional[str],
+    exp: Dict[str, Any],
+    replace_existing: bool,
+    raw_bytes: bytes,
+    initial_poses_raw_bytes: bytes,
+    csv_filename: str,
+    initial_poses_filename: str,
+    public_validation: Dict[str, Any],
+    preflight: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Best-effort NMS -> webserver relay for Experiment-level Data Lake.
+
+    Failure here must not roll back the local NMS experiment registration.
+    """
+    fields = {
+        "nms_id": _nms_lab_id(),
+        "lab_id": _nms_lab_id(),
+        "experiment_id": experiment_id,
+        "session_id": (session_id or "").strip() or "default",
+        "registered_at": exp.get("registered_at") or utility.local_ts(),
+        "start_at": exp.get("start_at") or "",
+        "end_at": exp.get("end_at") or "",
+        "command_count": exp.get("command_count") or 0,
+        "replace_existing": "true" if replace_existing else "false",
+        "time_format": exp.get("time_format") or config.TIME_FMT,
+        "public_validation_json": json.dumps(public_validation or {}, ensure_ascii=False),
+        "preflight_json": json.dumps(preflight or {}, ensure_ascii=False),
+        "extra_metadata_json": json.dumps({"nms_experiment_registry": exp}, ensure_ascii=False),
+    }
+
+    files = {
+        "command_sheet_file": (
+            csv_filename or f"{experiment_id}.csv",
+            raw_bytes or b"",
+            mimetypes.guess_type(csv_filename or "CommandSheet.csv")[0] or "text/csv",
+        ),
+        "initial_poses_file": (
+            initial_poses_filename or "InitialPoses.csv",
+            initial_poses_raw_bytes or b"",
+            mimetypes.guess_type(initial_poses_filename or "InitialPoses.csv")[0] or "text/csv",
+        ),
+    }
+
+    return _post_multipart_to_webserver("/nms/experiment/register", fields, files)
+
+
+def _notify_web_experiment_delete_from_rows(registry_rows: List[Any]) -> Dict[str, Any]:
+    """
+    Best-effort notification that the currently registered experiment was deleted
+    from the active NMS schedule.
+    """
+    if not registry_rows:
+        return {"status": "skipped", "detail": "no local registry rows to notify"}
+
+    results = []
+    for _, raw_fields in registry_rows:
+        fields = {
+            _redis_text(k): _redis_text(v)
+            for k, v in dict(raw_fields).items()
+        }
+        experiment_id = fields.get("experiment_id", "")
+        if not experiment_id:
+            continue
+        post_fields = {
+            "nms_id": _nms_lab_id(),
+            "lab_id": fields.get("lab_id") or _nms_lab_id(),
+            "experiment_id": experiment_id,
+            "session_id": fields.get("session_id") or "default",
+            "deleted_at": utility.local_ts(),
+            "reason": "nms_delete_experiment",
+        }
+        results.append(_post_multipart_to_webserver("/nms/experiment/delete", post_fields, {}))
+
+    return {
+        "status": "ok" if results else "skipped",
+        "count": len(results),
+        "results": results,
+    }
+
+
 @router.post("/cmd/_delete_experiment", tags=["4 Commands (Polling)"])
 def cmd_delete_experiment() -> Dict[str, Any]:
     """
@@ -1987,6 +2170,7 @@ def cmd_delete_experiment() -> Dict[str, Any]:
     """
     try:
         registered_count = int(config.r.xlen(config.KEY_EXPERIMENT_REGISTRY))
+        registry_rows_for_web = config.r.xrange(config.KEY_EXPERIMENT_REGISTRY, min="-", max="+")
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -2002,6 +2186,7 @@ def cmd_delete_experiment() -> Dict[str, Any]:
         )
 
     queue_cleanup = m8mobility._clear_all_command_queues()
+    web_datalake_notify = _notify_web_experiment_delete_from_rows(registry_rows_for_web)
 
     return {
         "status": "ok",
@@ -2009,6 +2194,7 @@ def cmd_delete_experiment() -> Dict[str, Any]:
         "registered_experiment_count_before": registered_count,
         "deleted_registry_keys": deleted_registry_keys,
         "queue_cleanup": queue_cleanup,
+        "web_datalake_notify": web_datalake_notify,
         "results_history_preserved": True,
         "pose_preserved": True,
         "mobility_state_preserved": True,
@@ -2309,6 +2495,19 @@ async def cmd_load_csv_file(
         "mobility_reset": mobility_reset,
     }
 
+    web_datalake_notify = _notify_web_experiment_register(
+        experiment_id=experiment_id,
+        session_id=session_id,
+        exp=exp,
+        replace_existing=replace_existing,
+        raw_bytes=raw_bytes,
+        initial_poses_raw_bytes=initial_poses_raw_bytes,
+        csv_filename=csv_file.filename or "",
+        initial_poses_filename=initial_poses_file.filename or "",
+        public_validation=public_validation,
+        preflight=preflight,
+    )
+
     return {
         "status": "ok",
         "t0": t0_dt.strftime(config.TIME_FMT),
@@ -2324,4 +2523,5 @@ async def cmd_load_csv_file(
         "public_validation": public_validation,
         "preflight": preflight,
         "experiment": exp,
+        "web_datalake_notify": web_datalake_notify,
     }

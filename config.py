@@ -76,6 +76,18 @@ WEB_API_KEY: str = ""  # optional in early dev
 WEB_NMS_UPLOAD_URL: str = f"{WEB_BASE}/nms/upload_scan_batch"
 WEB_NMS_STATUS_URL: str = f"{WEB_BASE}/nms/report_status"
 
+# Experiment-level Data Lake northbound APIs.
+#
+# NMS keeps only the active local experiment registry in its own Redis.
+# The webserver owns the permanent Data Lake Experiment level, including
+# registration metadata and the two submitted CSV files.
+WEB_NMS_EXPERIMENT_REGISTER_URL: str = f"{WEB_BASE}/nms/experiment/register"
+WEB_NMS_EXPERIMENT_DELETE_URL: str = f"{WEB_BASE}/nms/experiment/delete"
+
+# Compatibility aliases used by m4Commands.py notification helpers.
+WEB_NORTHBOUND_BASE_URL: str = WEB_BASE
+WEB_NORTHBOUND_API_KEY: str = WEB_API_KEY
+
 STATUS_EVERY_SEC: int = 10
 NORTHBOUND_UPLOAD_EVERY_SEC: int = 60
 # Internal NMS-only attribution window after experiment end_at.
