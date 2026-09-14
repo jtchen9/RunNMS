@@ -1902,6 +1902,7 @@ def cmd_poll(
         pass
 
     collected = _collect_due_commands(scanner=scanner, limit=limit, server_now_str=server_now_str)
+    experiment_finalize_result = _finalize_due_experiments_from_poll(server_now_str)
 
     return {
         "scanner": scanner,
@@ -1912,6 +1913,7 @@ def cmd_poll(
         "skipped": collected["skipped"],
         "commands": collected["commands"],
         "mobility_report_process_result": mobility_report_process_result,
+        "experiment_finalize_result": experiment_finalize_result,
     }
 
 
@@ -2154,6 +2156,151 @@ def _notify_web_experiment_delete_from_rows(registry_rows: List[Any]) -> Dict[st
         "count": len(results),
         "results": results,
     }
+
+
+def _notify_web_experiment_finalize(fields: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Best-effort NMS -> webserver relay for successful experiment finalization.
+
+    Called only after end_at + NORTHBOUND_EXPERIMENT_WRAPUP_SEC, so the
+    webserver can move the permanent Experiment-level session from future to
+    history.
+    """
+    post_fields = {
+        "nms_id": _nms_lab_id(),
+        "lab_id": fields.get("lab_id") or _nms_lab_id(),
+        "experiment_id": fields.get("experiment_id") or "",
+        "session_id": fields.get("session_id") or "default",
+        "finalized_at": utility.local_ts(),
+        "final_state": "completed",
+        "result": "success",
+        "reason": "planned_experiment_finished_after_wrapup",
+        "start_at": fields.get("start_at") or "",
+        "end_at": fields.get("end_at") or "",
+        "wrapup_sec": str(int(getattr(config, "NORTHBOUND_EXPERIMENT_WRAPUP_SEC", 120) or 0)),
+    }
+    return _post_multipart_to_webserver("/nms/experiment/finalize", post_fields, {})
+
+
+def _finalize_due_experiments_from_poll(server_now_str: str) -> Dict[str, Any]:
+    """
+    Opportunistically finalize finished experiments from the robot polling path.
+
+    Robots poll every 10 seconds during normal operation.  The first poll after
+    end_at + NORTHBOUND_EXPERIMENT_WRAPUP_SEC sends the finalize notification.
+    If the webserver call fails, keep the local row as registered so a later
+    poll can retry.
+    """
+    try:
+        rows = config.r.xrange(config.KEY_EXPERIMENT_REGISTRY, min="-", max="+")
+    except Exception as e:
+        return {
+            "status": "error",
+            "detail": f"unable to inspect experiment registry: {type(e).__name__}: {e}",
+        }
+
+    if not rows:
+        return {"status": "idle", "detail": "no registered experiment"}
+
+    now_dt = utility.parse_local_dt(server_now_str)
+    wrapup_sec = int(getattr(config, "NORTHBOUND_EXPERIMENT_WRAPUP_SEC", 120) or 0)
+    results = []
+
+    for xid, raw_fields in rows:
+        fields = {
+            _redis_text(k): _redis_text(v)
+            for k, v in dict(raw_fields).items()
+        }
+
+        state = fields.get("state", "").strip().lower()
+        if state in {"completed", "finalized", "deleted", "cancelled", "canceled", "failed", "stopped"}:
+            continue
+
+        experiment_id = fields.get("experiment_id", "").strip()
+        end_s = fields.get("end_at", "").strip()
+        if not experiment_id or not end_s:
+            continue
+
+        try:
+            finalize_dt = utility.parse_local_dt(end_s) + timedelta(seconds=wrapup_sec)
+        except Exception as e:
+            results.append({
+                "experiment_id": experiment_id,
+                "status": "error",
+                "detail": f"end_at parse failed: {type(e).__name__}: {e}",
+            })
+            continue
+
+        if now_dt < finalize_dt:
+            results.append({
+                "experiment_id": experiment_id,
+                "session_id": fields.get("session_id") or "default",
+                "status": "not_due",
+                "end_at": end_s,
+                "wrapup_sec": wrapup_sec,
+            })
+            continue
+
+        notify_result = _notify_web_experiment_finalize(fields)
+        notify_status = str(notify_result.get("status", "")).lower()
+
+        # Do not mark local registry completed unless the webserver explicitly
+        # accepted the lifecycle finalization. This prevents a half-applied
+        # state when the endpoint is missing, unauthenticated, or cannot find
+        # the session. Leaving the row registered allows a later poll to retry.
+        if notify_status != "ok":
+            results.append({
+                "experiment_id": experiment_id,
+                "session_id": fields.get("session_id") or "default",
+                "status": "notify_not_accepted",
+                "web_status": notify_status or "<empty>",
+                "web_datalake_notify": notify_result,
+            })
+            continue
+
+        finalized_at = utility.local_ts()
+        completed_fields = {
+            **fields,
+            "state": "completed",
+            "final_result": "success",
+            "final_reason": "planned_experiment_finished_after_wrapup",
+            "finalized_at": finalized_at,
+            "finalize_notified_at": finalized_at,
+            "web_finalize_notify_json": json.dumps(notify_result, ensure_ascii=False),
+        }
+
+        try:
+            config.r.xdel(config.KEY_EXPERIMENT_REGISTRY, xid)
+            new_xid = config.r.xadd(
+                config.KEY_EXPERIMENT_REGISTRY,
+                completed_fields,
+                maxlen=200,
+                approximate=True,
+            )
+            results.append({
+                "experiment_id": experiment_id,
+                "session_id": fields.get("session_id") or "default",
+                "status": "finalized",
+                "old_stream_id": _redis_text(xid),
+                "new_stream_id": _redis_text(new_xid),
+                "web_datalake_notify": notify_result,
+            })
+        except Exception as e:
+            results.append({
+                "experiment_id": experiment_id,
+                "session_id": fields.get("session_id") or "default",
+                "status": "local_registry_update_failed",
+                "detail": f"{type(e).__name__}: {e}",
+                "web_datalake_notify": notify_result,
+            })
+
+    if not results:
+        return {"status": "noop", "detail": "no due registered experiment"}
+
+    if any(r.get("status") == "finalized" for r in results):
+        return {"status": "finalized", "results": results}
+
+    return {"status": "checked", "results": results}
 
 
 @router.post("/cmd/_delete_experiment", tags=["4 Commands (Polling)"])

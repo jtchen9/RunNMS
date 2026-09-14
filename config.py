@@ -14,8 +14,8 @@ NMS_NAME = "DemoRoom"
 # with incomplete certificate chain.
 # MUST set WEB_VERIFY_TLS = True before production deployment.
 # ======================
-# WEB_BASE: str = "http://localhost:80"
-WEB_BASE: str = "https://6g-private.com:80"
+WEB_BASE: str = "http://localhost:80"
+# WEB_BASE: str = "https://6g-private.com:80"
 WEB_VERIFY_TLS = False
 
 REDIS_URL: str = "redis://localhost:6379/0"
@@ -83,6 +83,7 @@ WEB_NMS_STATUS_URL: str = f"{WEB_BASE}/nms/report_status"
 # registration metadata and the two submitted CSV files.
 WEB_NMS_EXPERIMENT_REGISTER_URL: str = f"{WEB_BASE}/nms/experiment/register"
 WEB_NMS_EXPERIMENT_DELETE_URL: str = f"{WEB_BASE}/nms/experiment/delete"
+WEB_NMS_EXPERIMENT_FINALIZE_URL: str = f"{WEB_BASE}/nms/experiment/finalize"
 
 # Compatibility aliases used by m4Commands.py notification helpers.
 WEB_NORTHBOUND_BASE_URL: str = WEB_BASE

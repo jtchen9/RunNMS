@@ -46,6 +46,8 @@ def main():
     args = parser.parse_args()
     if args.connected_seconds <= 0 or args.timeout < 60:
         parser.error("connected-seconds must be positive; timeout must be >=60")
+    import os
+    os.chdir(Path(__file__).resolve().parents[1])
     import config
     import redis
     client = redis.Redis.from_url(config.REDIS_URL, decode_responses=True,
