@@ -1,3 +1,13 @@
+Latest 10-second status snapshot* ==>	lab:status:latest_snapshot
+
+Latest full 1-minute report ==>	lab:nms:upload_scan_batch:latest_raw
+
+Latest AP1 traffic raw report ==>	lab:ap_traffic:latest_raw:AP1
+
+Latest AP1 traffic summary ==> lab:ap_traffic:latest_summary:AP1
+
+=============
+
 10-second report:
 
 {
