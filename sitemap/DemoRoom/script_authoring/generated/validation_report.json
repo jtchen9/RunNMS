@@ -1,28 +1,20 @@
 {
-  "ok": false,
-  "status": "fail",
+  "ok": true,
+  "status": "pass",
   "site_id": "DemoRoom",
   "site_version": "2026.07.14.1",
-  "common_checkers_version": "2026.07.14.1",
+  "common_checkers_version": "",
   "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\experiment_script.csv",
   "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\initial_poses.csv",
-  "script_hash": "sha256:b91260d568e71907b917ce8e2b7af4af91402ea258cb36ebae1b4a5bcc61117a",
+  "script_hash": "sha256:89a6c1a498f9c4dbec2c5e4b72d3522967d13073ac08ec985836a17df88158e2",
   "initial_poses_hash": "sha256:30602861a9b9ad5bd3a14dbd22420d52d72398a944132a7a8c73a5d33d3d1552",
-  "error_count": 1,
+  "error_count": 0,
   "warning_count": 0,
-  "issues": [
-    {
-      "level": "error",
-      "code": "NORMAL_MOVE_ENTERS_RAMP_ZONE",
-      "message": "normal mobility.move from outside touches or enters the ramp restriction zone.",
-      "suggestion": "Use mobility.in2out/out2in for crossing, or choose a path that stays outside the ramp zone.",
-      "row_number": 3,
-      "scanner": "twin-scout-alpha",
-      "action": "mobility.move"
-    }
-  ],
+  "issues": [],
   "resolved_launch_constant_count": 0,
   "normalized_script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\experiment_script.csv",
+  "source_script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\experiment_script.csv",
+  "source_script_hash": "sha256:ddcdcb7a1a13e46cbe7286a313cc06bd6d194ab5b88cb468a3e82f4a72f62023",
   "generated_by": "autolab_xlsm_run_checker.py",
-  "generated_at": "2026-08-21T14:57:18"
+  "generated_at": "2026-09-22T16:29:17"
 }
