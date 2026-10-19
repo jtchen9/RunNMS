@@ -1210,6 +1210,23 @@ def process_s1_event(scanner: str, source: str, timer_token: Optional[str] = Non
             )
 
             _cancel_s1_timer(scanner)
+
+            # Missing reports must obey the same cumulative limit as abnormal
+            # reports; otherwise each recovery report can time out forever.
+            unexpected_sum = _unexpected_event_sum(
+                busy_count=new_busy_count,
+                collision_veto_count=int(utility._hget(state_hash, "collision_veto_count", "0") or "0"),
+                exec_fail_count=int(utility._hget(state_hash, "exec_fail_count", "0") or "0"),
+            )
+            if unexpected_sum >= UNEXPECTED_EVENT_SUM_LIMIT:
+                detail = (
+                    f"s1 report timeout after {S1_REPORT_TIMEOUT_SEC}s; "
+                    f"UNEXPECTED_EVENT_SUM_LIMIT sum={unexpected_sum} "
+                    f"limit={UNEXPECTED_EVENT_SUM_LIMIT}"
+                )
+                _set_state(scanner, S7_STOPPED, detail)
+                return run_state_machine(scanner)
+
             _set_state(scanner, S4_WAITING_LOCATION_RETRY, f"s1 timeout after {S1_REPORT_TIMEOUT_SEC}s")
             return run_state_machine(scanner)
 
