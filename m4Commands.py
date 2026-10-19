@@ -6,6 +6,7 @@ import csv
 import io
 import copy
 import sys
+import ssl
 import tempfile
 import urllib.request
 import urllib.error
@@ -2052,7 +2053,13 @@ def _post_multipart_to_webserver(path: str, fields: Dict[str, Any], files: Dict[
 
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        context = None
+        if url.lower().startswith("https://"):
+            context = ssl.create_default_context()
+            if not getattr(config, "WEB_VERIFY_TLS", True):
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(req, timeout=10, context=context) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
             try:
                 return json.loads(raw)
