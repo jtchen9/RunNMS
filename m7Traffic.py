@@ -416,6 +416,14 @@ def traffic_stop(cmd: TrafficCmd) -> Dict[str, Any]:
     )
 
 
+@router.get("/traffic/_remote_result/{scanner}", tags=["7 iperf3 Traffic"])
+def traffic_remote_result(scanner: str) -> Dict[str, Any]:
+    """Latest accepted robot-client result (48-hour diagnostic snapshot)."""
+    m1Registry.require_whitelisted(scanner)
+    from m7TrafficRemote import latest_result
+    return {"scanner": scanner, "result": latest_result(scanner)}
+
+
 @router.get("/traffic/_list", tags=["7 iperf3 Traffic"])
 def traffic_list(limit: int = Query(200, ge=1, le=2000)) -> Dict[str, Any]:
     rows = config.r.xrange(config.KEY_TRAFFIC_CMD_STREAM, count=limit)
@@ -794,6 +802,11 @@ def _event_duration_sec_from_args(args: Dict[str, Any]) -> int:
 def _execute_due_command(xid: str, fields: Dict[str, str]) -> None:
     scanner = (fields.get("scanner") or "").strip()
     action = (fields.get("action") or "").strip()
+
+    from m7TrafficRemote import remote_enabled, dispatch_due, has_remote_session
+    if remote_enabled(scanner) or (action == "traffic.session.stop" and has_remote_session(scanner, fields)):
+        dispatch_due(xid, fields)
+        return
 
     try:
         args = json.loads(fields.get("args_json") or "{}")

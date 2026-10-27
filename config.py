@@ -137,6 +137,11 @@ def key_ap_uplink_stream(scanner: str) -> str:
 # -------------------
 # Robot-side passive reflector ports:
 # NMS allocates from the free-port FIFO queue of each robot.
+# Internet mode is opt-in per robot; blank host preserves original execution.
+TRAFFIC_SERVER_HOST: str = "ping.online.net"
+TRAFFIC_SERVER_PORTS = list(range(5200, 5210))
+TRAFFIC_REMOTE_SCANNERS = ["twin-scout-echo"]
+
 TRAFFIC_PORT_START: int = 5201
 TRAFFIC_PORT_END: int = 5212
 

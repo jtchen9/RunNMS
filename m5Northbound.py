@@ -43,6 +43,17 @@ def _web_headers() -> Dict[str, str]:
     return h
 
 
+def _attach_traffic_origin(item: Dict[str, Any], fields: Dict[str, str]) -> None:
+    for name in ("execution_id", "record_id", "client_role", "server_host", "started_at",
+                 "lab_id", "experiment_id", "experiment_session_id"):
+        if fields.get(name):
+            item[name] = fields[name]
+    if fields.get("server_port"):
+        item["server_port"] = _optional_int(fields["server_port"])
+    if fields.get("iperf_reverse") in ("0", "1"):
+        item["iperf_reverse"] = fields["iperf_reverse"] == "1"
+
+
 def _collect_iperf3_sessions_for_upload(
     budget: int,
     limit: int = 200,
@@ -88,6 +99,8 @@ def _collect_iperf3_sessions_for_upload(
             "detail": fields.get("detail", ""),
             "raw": raw_obj,
         }
+
+        _attach_traffic_origin(item, fields)
 
         if reverse is not None:
             item["reverse"] = reverse
@@ -460,6 +473,8 @@ def _collect_traffic_events(limit: int = 200) -> Tuple[List[Dict[str, Any]], Lis
 
         if duration_sec is not None:
             item["duration_sec"] = duration_sec
+
+        _attach_traffic_origin(item, fields)
 
         if reverse is not None:
             item["reverse"] = reverse

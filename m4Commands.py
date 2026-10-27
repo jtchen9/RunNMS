@@ -70,6 +70,7 @@ class CmdPollReq(BaseModel):
     boot_id: Optional[str] = None
     status_report: Dict[str, Any] = Field(default_factory=dict)
     mobility_report: Optional[Dict[str, Any]] = None
+    traffic_records: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 def _trace_compact_mobility_report(report: Dict[str, Any]) -> Dict[str, Any]:
@@ -1902,6 +1903,10 @@ def cmd_poll(
     except Exception:
         pass
 
+    # Keep traffic failures isolated from mobility/status processing. Only
+    # records durably accepted by the traffic ingest helper are acknowledged.
+    from m7TrafficRemote import ingest_records
+    traffic_ack_ids, traffic_rejections = ingest_records(scanner, req.traffic_records)
     collected = _collect_due_commands(scanner=scanner, limit=limit, server_now_str=server_now_str)
     experiment_finalize_result = _finalize_due_experiments_from_poll(server_now_str)
 
@@ -1915,6 +1920,8 @@ def cmd_poll(
         "commands": collected["commands"],
         "mobility_report_process_result": mobility_report_process_result,
         "experiment_finalize_result": experiment_finalize_result,
+        "traffic_ack_ids": traffic_ack_ids,
+        "traffic_rejections": traffic_rejections,
     }
 
 
