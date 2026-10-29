@@ -140,7 +140,18 @@ def key_ap_uplink_stream(scanner: str) -> str:
 # Internet mode is opt-in per robot; blank host preserves original execution.
 TRAFFIC_SERVER_HOST: str = "ping.online.net"
 TRAFFIC_SERVER_PORTS = list(range(5200, 5210))
-TRAFFIC_REMOTE_SCANNERS = ["twin-scout-echo"]
+TRAFFIC_REMOTE_SCANNERS = [
+    "twin-scout-alpha",
+    "twin-scout-bravo",
+    "twin-scout-charlie",
+    "twin-scout-delta",
+    "twin-scout-echo",
+    "twin-scout-foxtrot",
+    "twin-scout-golf",
+    "twin-scout-hotel",
+    "twin-scout-india",
+    "twin-scout-julia",
+]
 
 TRAFFIC_PORT_START: int = 5201
 TRAFFIC_PORT_END: int = 5212
