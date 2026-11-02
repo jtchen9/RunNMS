@@ -67,45 +67,56 @@ def check_first_move_after_report_location_spacing(
 
 
 def check_global_moving_command_spacing(
-    rows: List[ScriptRow],
-    policy: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    rows, policy, initial_poses=None, macro_policy=None,
+):
+    """Keep the public name; permit nearby-in-time moves only with safe paths.
+
+    Missing geometry fails closed to the original timing rule. All pairs in
+    the time window are checked, including non-adjacent rows and same robots.
     """
-    Strict global timing rule:
-    no two moving mobility commands, across all robots, may be closer than the
-    configured global minimum spacing.
-    """
-    issues: List[Dict[str, Any]] = []
+    from .concurrent_movement_rules import planned_segments, segment_distance
+    import math
+
     moving = set(policy.get("moving_mobility_actions", []))
     min_gap = int(policy.get("global_min_seconds_between_moving_mobility_commands", 180))
-
-    moving_rows = sorted(
+    clearance = float(policy.get("concurrent_movement_min_path_separation_m", 1.0))
+    if min_gap <= 0 or not math.isfinite(clearance) or clearance < 1.0:
+        raise ValueError("Movement safety policy requires positive spacing and separation >= 1 m")
+    ordered = sorted(
         [r for r in rows if r.category == "mobility" and r.action in moving],
         key=lambda r: (r.t_offset_sec, r.row_number),
     )
-
-    for prev, cur in zip(moving_rows, moving_rows[1:]):
-        gap = int(cur.t_offset_sec) - int(prev.t_offset_sec)
-        if gap < min_gap:
+    segments = planned_segments(ordered, initial_poses or {}, macro_policy or {})
+    issues = []
+    for i, cur in enumerate(ordered):
+        for prev in reversed(ordered[:i]):
+            gap = cur.t_offset_sec - prev.t_offset_sec
+            if gap >= min_gap:
+                break
+            distance = None
+            if cur.scanner != prev.scanner:
+                a, b = segments.get(prev.row_number), segments.get(cur.row_number)
+                if a is not None and b is not None:
+                    distance = segment_distance(a, b)
+                    if distance >= clearance:
+                        continue
+            reason = (
+                "same robot" if cur.scanner == prev.scanner else
+                "path geometry unavailable" if distance is None else
+                f"minimum path separation {distance:.6f} m < {clearance:g} m"
+            )
             issues.append({
-                "level": "error",
-                "code": "MOVING_COMMANDS_TOO_CLOSE",
-                "row_number": cur.row_number,
-                "scanner": cur.scanner,
-                "action": cur.action,
-                "message": (
-                    f"moving mobility command at row {cur.row_number} starts {gap} "
-                    f"seconds after row {prev.row_number}; minimum is {min_gap} seconds."
-                ),
-                "suggestion": (
-                    f"Move row {cur.row_number} to at least "
-                    f"t_offset_sec={prev.t_offset_sec + min_gap}, or remove one movement."
-                ),
-                "previous_row_number": prev.row_number,
-                "previous_scanner": prev.scanner,
-                "previous_action": prev.action,
-                "minimum_gap_sec": min_gap,
-                "actual_gap_sec": gap,
+                "level": "error", "code": "MOVING_COMMANDS_TOO_CLOSE",
+                "row_number": cur.row_number, "scanner": cur.scanner,
+                "action": cur.action, "previous_row_number": prev.row_number,
+                "previous_scanner": prev.scanner, "previous_action": prev.action,
+                "minimum_gap_sec": min_gap, "actual_gap_sec": gap,
+                "minimum_path_separation_m": clearance,
+                "actual_path_separation_m": distance,
+                "message": f"Rows {prev.row_number} and {cur.row_number}: {reason}; "
+                           f"start times are {gap}s apart, require {min_gap}s.",
+                "suggestion": f"Schedule row {cur.row_number} at or after "
+                              f"t_offset_sec={prev.t_offset_sec + min_gap}, "
+                              "or separate different robots' entire paths.",
             })
-
     return issues

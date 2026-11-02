@@ -131,7 +131,7 @@ def validate_script(
         issues.extend(check_planned_path_rules(rows, initial_poses, macro_policy, zone_policy, path_policy, safety_policy, site_dir))
 
     issues.extend(check_first_move_after_report_location_spacing(rows, policy))
-    issues.extend(check_global_moving_command_spacing(rows, policy))
+    issues.extend(check_global_moving_command_spacing(rows, policy, initial_poses, macro_policy))
 
     ok = not any(x.get("level") == "error" for x in issues)
 

@@ -291,5 +291,6 @@
   "first_mobility_action_required": "mobility.report.location",
   "min_seconds_after_report_location_before_first_move": 60,
   "global_min_seconds_between_moving_mobility_commands": 180,
+  "concurrent_movement_min_path_separation_m": 1.0,
   "max_single_mobility_move_distance_m": 3.0
 }
