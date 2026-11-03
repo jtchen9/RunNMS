@@ -66,6 +66,9 @@ def key_cmdack_stream(scanner: str) -> str:
 KEY_MOBILITY_CMD_STREAM: str = f"{KEY_PREFIX}mobility:cmd"
 MOBILITY_LOOP_EVERY_SEC: int = 1
 MOBILITY_LOOP_BATCH_LIMIT: int = 50
+MOBILITY_POLL_STALE_SEC = 30  # Normal scanner-agent poll interval is 10 s.
+MOBILITY_LINK_GRACE_SEC = 120
+MOBILITY_LINK_CHECK_SEC = 10
 
 # ------------------
 # 5) Northbound (NMS → Web Server)

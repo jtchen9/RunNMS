@@ -950,6 +950,7 @@ def _register_experiment_status(
     end_at_str: str,
     command_count: int,
     replace_existing: bool,
+    mobility_scanners=(),
 ) -> Dict[str, Any]:
     """
     Write one coherent experiment-registration record.
@@ -980,6 +981,7 @@ def _register_experiment_status(
         "end_at": end_at_str,
         "guard_sec": "3600",
         "command_count": str(int(command_count)),
+        "mobility_scanners_json": json.dumps(sorted(set(mobility_scanners))),
         "replace_existing": "true" if replace_existing else "false",
         "state": "registered",
         "time_format": config.TIME_FMT,
@@ -1595,6 +1597,14 @@ def _collect_due_commands(scanner: str, limit: int, server_now_str: str) -> Dict
         except Exception:
             pass
 
+        if fields.get("mobility_s1_managed") == "1":
+            # Claim once even across parallel polls. If the HTTP reply is lost,
+            # existing S1 recovery reconciles location instead of replaying motion.
+            # Legacy manual and non-mobility commands retain ACK-based delivery.
+            if not config.r.xdel(config.key_cmd_stream(scanner), xid):
+                continue
+            if age_sec > config.MOBILITY_POLL_STALE_SEC or m8mobility.should_block_command("mobility"):
+                continue
         due_cmds.append((xid, f2))
         if len(due_cmds) >= limit:
             break
@@ -2646,6 +2656,7 @@ async def cmd_load_csv_file(
         start_at_str=t0_dt.strftime(config.TIME_FMT),
         end_at_str=last_execute_at.strftime(config.TIME_FMT),
         command_count=added,
+        mobility_scanners=analysis["mobility_scanners"],
         replace_existing=replace_existing,
     )
 

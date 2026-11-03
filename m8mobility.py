@@ -18,6 +18,7 @@ import asyncio
 
 import config
 import utility
+import m8mobility_link as link
 
 from m8mobility_state_store import (
     _clear_outgoing_command_preview, _clear_pending_sequence,  _clear_pose, _load_stop, _save_stop,
@@ -363,6 +364,16 @@ def _dispatch_due_mobility_command(xid: str, fields: Dict[str, str]) -> None:
     except Exception:
         args = {}
 
+    if _get_state(scanner) == S0_IDLE and not _load_stop().get("stop"):
+        gate = link.disposition(scanner, key_time(scanner), "communication_deadline")
+        if gate == "wait":
+            return  # Original row stays in the NMS stream; no robot command or retry.
+        if gate == "expired":
+            from m8mobility_state import S7_STOPPED, s7stopped
+            _set_state(scanner, S7_STOPPED, "communication_timeout before dispatch")
+            s7stopped(scanner)
+            config.r.xdel(config.KEY_MOBILITY_CMD_STREAM, xid)
+            return
     result = on_command_issued(scanner, action, args)
 
     status = str(result.get("status") or "").strip().lower()
@@ -375,13 +386,42 @@ def _dispatch_due_mobility_command(xid: str, fields: Dict[str, str]) -> None:
         except Exception:
             pass
 
+def _check_participant_links(now):
+    if _load_stop().get("stop"):
+        return
+    for _, record in config.r.xrange(config.KEY_EXPERIMENT_REGISTRY):
+        if (record.get("state") != "registered" or
+                not record["start_at"] <= now <= record["end_at"]):
+            continue
+        for scanner in json.loads(record.get("mobility_scanners_json", "[]")):
+            key = key_time(scanner)
+            status = link.disposition(scanner, key, "communication_deadline")
+            if status == "expired":
+                from m8mobility_state import S7_STOPPED, s7stopped
+                _set_state(scanner, S7_STOPPED, "communication_timeout: robot polls absent")
+                s7stopped(scanner)
+                return
+
+
 async def _mobility_loop() -> None:
+    import time
+    next_check = 0
     while True:
         try:
             server_now_str = utility.local_ts()
+            if time.monotonic() >= next_check:
+                next_check = time.monotonic() + config.MOBILITY_LINK_CHECK_SEC
+                _check_participant_links(server_now_str)
             due = _collect_due_mobility_commands(server_now_str)
 
+            # Oldest due command per robot first. A reconnect halfway through
+            # a batch must not release a later row ahead of the held row.
+            seen = set()
             for xid, fields in due:
+                scanner = fields.get("scanner")
+                if scanner in seen:
+                    continue
+                seen.add(scanner)
                 try:
                     _dispatch_due_mobility_command(xid, fields)
                 except Exception:

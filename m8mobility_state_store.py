@@ -73,6 +73,7 @@ def _save_planned(scanner: str, loc: Dict[str, Any]) -> None:
 
 def _clear_pose(scanner: str) -> None:
     """Invalidate both true and planned mobility pose for one scanner."""
+    config.r.hdel(key_time(scanner), "communication_deadline")
     utility._hset_many(
         key_pose(scanner),
         {
@@ -228,10 +229,12 @@ def _save_outgoing_command_preview(scanner: str, action: str, args: Dict[str, An
         },
     )
 
-    config.r.xadd(
+    pipe = config.r.pipeline(transaction=True)
+    pipe.xadd(
         config.key_cmd_stream(scanner),
         {
             "category": "mobility",
+            "mobility_s1_managed": "1",
             "action": action,
             "execute_at": now_ts,
             "created_at": now_ts,
@@ -240,7 +243,9 @@ def _save_outgoing_command_preview(scanner: str, action: str, args: Dict[str, An
         maxlen=5000,
         approximate=True,
     )
-    
+    # Enqueues are ordered per scanner. Only one managed command may be outstanding.
+    pipe.execute()
+
 def _clear_outgoing_command_preview(scanner: str) -> None:
     """
     Unfinished temporary function

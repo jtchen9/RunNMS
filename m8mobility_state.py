@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 import config
 import utility
+import m8mobility_link as link
 
 from preferred_direction_helper import (
     lookup_preferred_direction,
@@ -1132,6 +1133,11 @@ def process_s1_event(scanner: str, source: str, timer_token: Optional[str] = Non
         # Source A: report arrival
         # ---------------------------------------------------------
         if source == "report":
+            if config.r.hget(key_time(scanner), "communication_deadline") and (
+                    link.disposition(scanner, key_time(scanner), "communication_deadline") == "expired"):
+                _cancel_s1_timer(scanner)
+                _set_state(scanner, S7_STOPPED, "communication_timeout: late report")
+                return s7stopped(scanner)
             ok, reason = _s1_has_fresh_report(scanner)
             if not ok:
                 return {
@@ -1189,6 +1195,16 @@ def process_s1_event(scanner: str, source: str, timer_token: Optional[str] = Non
                 )
                 _set_state(scanner, S7_STOPPED, detail)
                 return result
+
+            gate = link.disposition(scanner, key_time(scanner), "communication_deadline")
+            if gate == "wait":
+                _start_s1_timer(scanner, delay=2)
+                return {"status": "waiting", "scanner": scanner, "state": S1_WAITING_REPORT,
+                        "detail": "waiting for robot poll; retry not spent"}
+            if gate == "expired":
+                _cancel_s1_timer(scanner)
+                _set_state(scanner, S7_STOPPED, "communication_timeout waiting for mobility report")
+                return s7stopped(scanner)
 
             # No acceptable report has arrived in time -> dangerous.
             state_hash = key_state(scanner)
@@ -1351,7 +1367,7 @@ def _release_s1_lock(scanner: str, owner: str) -> None:
     except Exception:
         pass
 
-def _start_s1_timer(scanner: str) -> None:
+def _start_s1_timer(scanner: str, delay=S1_REPORT_TIMEOUT_SEC) -> None:
     _cancel_s1_timer(scanner)
 
     token = uuid.uuid4().hex
@@ -1363,7 +1379,7 @@ def _start_s1_timer(scanner: str) -> None:
         },
     )
 
-    t = threading.Timer(S1_REPORT_TIMEOUT_SEC, _s1_timeout_callback, args=(scanner, token))
+    t = threading.Timer(delay, _s1_timeout_callback, args=(scanner, token))
     t.daemon = True
     _S1_TIMERS[scanner] = t
     t.start()
