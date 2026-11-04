@@ -1,5 +1,8 @@
 from typing import Dict, Any, List, Optional, Tuple
 import json
+import os
+import re
+import subprocess
 import asyncio
 import requests
 from fastapi import APIRouter
@@ -951,7 +954,26 @@ def _apply_web_cmds_as_intents(cmds: List[Dict[str, Any]]) -> Tuple[int, int, in
     return intent_updates, enq, noop
 
 
-def _northbound_status_once() -> Dict[str, Any]:
+def _current_wifi_bssid() -> Optional[str]:
+    if os.name != "nt":
+        return None
+    try:
+        result = subprocess.run(
+            ["netsh", "wlan", "show", "interfaces"], capture_output=True,
+            check=True, timeout=2, creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    # Match only the BSSID field; localized headings need no decoding.
+    match = re.search(
+        rb"^[ \t]*(?:AP[ \t]+)?BSSID[ \t]*:[ \t]*((?:[0-9a-f]{2}:){5}[0-9a-f]{2})[ \t]*\r?$",
+        result.stdout, re.I | re.M,
+    )
+    return match.group(1).decode("ascii").lower() if match else None
+
+
+def _northbound_status_once(wifi_bssid: Optional[str] = None) -> Dict[str, Any]:
     traffic_events: List[Dict[str, Any]] = []
     traffic_event_ids: List[str] = []
 
@@ -961,6 +983,9 @@ def _northbound_status_once() -> Dict[str, Any]:
         traffic_events, traffic_event_ids = [], []
 
     snap = _build_status_snapshot(traffic_events=traffic_events)
+
+    if wifi_bssid:
+        snap["nms_status"]["assoc_bssid"] = wifi_bssid
 
     ok = False
     detail = ""
@@ -1028,7 +1053,8 @@ async def _northbound_loop():
 async def _status_loop():
     while True:
         try:
-            _northbound_status_once()
+            wifi_bssid = await asyncio.to_thread(_current_wifi_bssid)
+            _northbound_status_once(wifi_bssid)
         except Exception:
             pass
         await asyncio.sleep(config.STATUS_EVERY_SEC)
