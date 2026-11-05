@@ -2,6 +2,7 @@ from typing import Optional, List, Dict, Any
 from datetime import timedelta
 from pathlib import Path
 import json
+import re
 import csv
 import io
 import copy
@@ -707,6 +708,34 @@ def _enqueue_manual_direct_command(
     }
 
 
+def _resolve_ap_sta_alias(action: str, args: Any) -> Any:
+    """Resolve optional robot names for direct AP commands; keep legacy MAC calls."""
+    if action not in ("ap.sta.disassociate", "ap.txpower.set"):
+        return args
+    if not isinstance(args, dict):
+        raise HTTPException(status_code=400, detail="AP command args must be a JSON object")
+    if "sta" not in args:
+        return args
+    name = args["sta"]
+    if not isinstance(name, str) or not name.strip():
+        raise HTTPException(status_code=400, detail="sta must be a non-empty robot name")
+    name = name.strip().lower()
+    mapped = config.AP_STA_MAC_BY_NAME.get(name)
+    if mapped is None:
+        raise HTTPException(status_code=400, detail=f"unknown sta: {name}")
+    if not isinstance(mapped, str) or not re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", mapped.strip()):
+        raise HTTPException(status_code=500, detail=f"invalid AX210 MAC configured for sta: {name}")
+    mapped = mapped.strip().lower()
+    if "sta_mac" in args:
+        explicit = args["sta_mac"]
+        if not isinstance(explicit, str) or explicit.strip().lower() != mapped:
+            raise HTTPException(status_code=400, detail="sta and sta_mac refer to different stations")
+    resolved = dict(args)
+    resolved.pop("sta")
+    resolved["sta_mac"] = mapped
+    return resolved
+
+
 def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
     m1Registry.require_whitelisted(scanner)
 
@@ -736,6 +765,10 @@ def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
     category_n = (cmd.category or "").strip().lower()
     action_n = (cmd.action or "").strip()
     args_obj = json.loads(args_json)
+    resolved_args = _resolve_ap_sta_alias(action_n, args_obj)
+    if resolved_args is not args_obj:
+        args_obj = resolved_args
+        args_json = json.dumps(args_obj, ensure_ascii=False)
 
     if category_n == "traffic" or action_n in ("traffic.session.start", "traffic.session.stop"):
         return m7Traffic._traffic_enqueue_core(
