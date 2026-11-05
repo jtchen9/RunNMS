@@ -709,7 +709,7 @@ def _enqueue_manual_direct_command(
 
 
 def _resolve_ap_sta_alias(action: str, args: Any) -> Any:
-    """Resolve optional robot names for direct AP commands; keep legacy MAC calls."""
+    """Resolve optional robot names for AP commands; keep legacy MAC calls."""
     if action not in ("ap.sta.disassociate", "ap.txpower.set"):
         return args
     if not isinstance(args, dict):
@@ -720,7 +720,17 @@ def _resolve_ap_sta_alias(action: str, args: Any) -> Any:
     if not isinstance(name, str) or not name.strip():
         raise HTTPException(status_code=400, detail="sta must be a non-empty robot name")
     name = name.strip().lower()
-    mapped = config.AP_STA_MAC_BY_NAME.get(name)
+    # Resolve relative to NMS source, independent of the process working directory.
+    # Read on demand so updates to the shared policy need no copied MAC table.
+    policy_path = Path(__file__).resolve().parent / "sitemap" / "CommonCheckers" / "config" / "script_policy.json"
+    try:
+        policy = json.loads(policy_path.read_text(encoding="utf-8-sig"))
+        mapping = policy["sta_mac_by_name"]
+        if not isinstance(mapping, dict) or not mapping:
+            raise ValueError("sta_mac_by_name must be a non-empty object")
+    except (OSError, ValueError, KeyError, TypeError):
+        raise HTTPException(status_code=500, detail="unable to load sta_mac_by_name from shared script_policy.json")
+    mapped = mapping.get(name)
     if mapped is None:
         raise HTTPException(status_code=400, detail=f"unknown sta: {name}")
     if not isinstance(mapped, str) or not re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", mapped.strip()):
@@ -1403,7 +1413,7 @@ def _enqueue_script_or_csv_item(
     # Keep experiment metadata both as stream fields and inside args_json.
     # Stream fields are for Redis-side deletion/filtering.
     # args_json metadata is useful for downstream consumers/debugging.
-    args2 = dict(args or {})
+    args2 = dict(_resolve_ap_sta_alias(action_n, args or {}))
     args2.setdefault("_experiment", {})
     if isinstance(args2["_experiment"], dict):
         args2["_experiment"].update(

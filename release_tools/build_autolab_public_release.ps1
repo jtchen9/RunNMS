@@ -279,6 +279,7 @@ try {
     )
 
     $RequiredSourceFiles = @(
+        (Join-Path $PSScriptRoot "update_autolab_sta_aliases.ps1"),
         $FinalXlsm,
         (Join-Path $NmsRoot "sitemap\CommonCheckers\VERSION.json"),
         (Join-Path $NmsRoot "sitemap\CommonCheckers\config\script_policy.json"),
@@ -358,6 +359,13 @@ try {
     Copy-Item `
         -LiteralPath $FinalXlsm `
         -Destination $PublicXlsm
+
+    # Derive dropdowns from the exact policy shipped with this release.
+    # Update only the staging copy; the source workbook is not modified here.
+    & (Join-Path $PSScriptRoot "update_autolab_sta_aliases.ps1") `
+        -WorkbookPath $PublicXlsm `
+        -PolicyPath (Join-Path $StageCommonConfig "script_policy.json") `
+        -SkipBackup
 
     Copy-Item `
         -LiteralPath (

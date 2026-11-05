@@ -278,7 +278,31 @@ def check_command_arguments(
                 )
                 continue
 
-            if format_name == "mac_address" and not _MAC_ADDRESS_RE.fullmatch(value.strip()):
+            if format_name == "robot_alias":
+                mapping = policy.get("sta_mac_by_name")
+                name = value.strip().lower()
+                mapped = mapping.get(name) if isinstance(mapping, dict) else None
+                if not isinstance(mapping, dict) or not mapping:
+                    issues.append(_row_issue(
+                        row, code="COMMAND_STA_POLICY_INVALID",
+                        message="Shared policy sta_mac_by_name is missing or invalid.",
+                        suggestion="Restore sta_mac_by_name in script_policy.json.",
+                    ))
+                elif name not in mapping:
+                    issues.append(_row_issue(
+                        row, code="COMMAND_STA_UNKNOWN",
+                        message=f"Unknown robot alias: {value!r}.",
+                        suggestion="Use a robot alias from script_policy.json sta_mac_by_name.",
+                        field=field_name,
+                    ))
+                elif not isinstance(mapped, str) or not _MAC_ADDRESS_RE.fullmatch(mapped.strip()):
+                    issues.append(_row_issue(
+                        row, code="COMMAND_STA_POLICY_INVALID",
+                        message=f"Invalid MAC configured for robot alias: {name}.",
+                        suggestion="Correct this alias in script_policy.json sta_mac_by_name.",
+                        field=field_name,
+                    ))
+            elif format_name == "mac_address" and not _MAC_ADDRESS_RE.fullmatch(value.strip()):
                 issues.append(
                     _row_issue(
                         row,

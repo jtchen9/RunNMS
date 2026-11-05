@@ -6,22 +6,6 @@ import redis
 # Used as lab_id in experiment registration and northbound reports.
 NMS_NAME = "DemoRoom"
 
-# Robot AX210 addresses for the direct AP command API sta alias.
-# Keep canonical robot names lowercase; update this table after hardware changes.
-AP_STA_MAC_BY_NAME = {
-    "twin-scout-alpha": "20:bd:1d:d6:1a:4b",
-    "twin-scout-bravo": "20:bd:1d:d9:4f:a4",
-    "twin-scout-charlie": "20:bd:1d:d6:17:fd",
-    "twin-scout-delta": "20:bd:1d:d9:40:68",
-    "twin-scout-echo": "20:bd:1d:d9:40:81",
-    "twin-scout-foxtrot": "20:bd:1d:d9:4f:72",
-    "twin-scout-golf": "20:bd:1d:d6:19:97",
-    "twin-scout-hotel": "20:bd:1d:d9:4f:bd",
-    "twin-scout-india": "20:bd:1d:d9:40:59",
-    "twin-scout-julia": "20:bd:1d:d5:12:f4",
-}
-
-
 # ======================
 # Constants / Config  (NO getenv; lab-only hardcoded)
 #

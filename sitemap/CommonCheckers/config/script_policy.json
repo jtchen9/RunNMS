@@ -1,4 +1,16 @@
 {
+  "sta_mac_by_name": {
+    "twin-scout-alpha": "20:bd:1d:d6:1a:4b",
+    "twin-scout-bravo": "20:bd:1d:d9:4f:a4",
+    "twin-scout-charlie": "20:bd:1d:d6:17:fd",
+    "twin-scout-delta": "20:bd:1d:d9:40:68",
+    "twin-scout-echo": "20:bd:1d:d9:40:81",
+    "twin-scout-foxtrot": "20:bd:1d:d9:4f:72",
+    "twin-scout-golf": "20:bd:1d:d6:19:97",
+    "twin-scout-hotel": "20:bd:1d:d9:4f:bd",
+    "twin-scout-india": "20:bd:1d:d9:40:59",
+    "twin-scout-julia": "20:bd:1d:d5:12:f4"
+  },
   "schema_version": 1,
   "policy_name": "common_script_policy",
   "allowed_categories": [
@@ -106,11 +118,11 @@
       },
       "ap.sta.disassociate": {
         "allowed_keys": [
-          "sta_mac",
+          "sta",
           "time_period"
         ],
         "required_keys": [
-          "sta_mac",
+          "sta",
           "time_period"
         ],
         "numeric_ranges": {},
@@ -121,13 +133,13 @@
           }
         },
         "string_formats": {
-          "sta_mac": "mac_address"
+          "sta": "robot_alias"
         }
       },
       "ap.txpower.set": {
         "allowed_keys": [
           "txpower",
-          "sta_mac"
+          "sta"
         ],
         "required_keys": [
           "txpower"
@@ -140,7 +152,7 @@
           }
         },
         "string_formats": {
-          "sta_mac": "mac_address"
+          "sta": "robot_alias"
         }
       },
       "ap.traffic.enable": {
