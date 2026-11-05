@@ -10,7 +10,7 @@ from datetime import timedelta
 
 import config
 import utility
-from m8mobility_state_store import key_pose, key_state
+from m8mobility_state_store import key_pose, key_state, KEY_STOP
 import urllib3
 if not getattr(config, "WEB_VERIFY_TLS", True):
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -731,6 +731,21 @@ def _build_experiment_snapshot(mobility_stops=None) -> Dict[str, Any]:
 
 
 
+def _reported_experiment_stop_state() -> Optional[Dict[str, Any]]:
+    # Missing/invalid data must not be reported as a confirmed false flag.
+    try:
+        state = json.loads(config.r.get(KEY_STOP) or "null")
+    except Exception:
+        return None
+    if not isinstance(state, dict) or type(state.get("stop")) is not bool:
+        return None
+    return {
+        "stop": state["stop"],
+        "reason": state.get("reason") if isinstance(state.get("reason"), str) else "",
+        "updated_at": state.get("updated_at") if isinstance(state.get("updated_at"), str) else "",
+    }
+
+
 def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     scanners = sorted(list(config.r.smembers(config.KEY_REGISTRY)))
     mobility_stops = []
@@ -851,6 +866,7 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
         "time_format": config.TIME_FMT,
         "experiment": _build_experiment_snapshot(mobility_stops),
         "nms_status": {
+            "experiment_stop_state": _reported_experiment_stop_state(),
             "online": True,
             "detail": "",
             "uplink_queue_total": 0,
