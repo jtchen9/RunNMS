@@ -1,6 +1,6 @@
 Option Explicit
 
-' AutoLab DemoRoom mobility XLSM helper macros ¡X Phase 10a
+' AutoLab DemoRoom mobility XLSM helper macros ?X Phase 10a
 '
 ' This module is designed to be pasted into a normal VBA module such as Module1.
 ' Do NOT include an "Attribute VB_Name = ..." line when copy/pasting manually.
@@ -3813,3 +3813,48 @@ Private Sub ClearFeedback(wsCmd As Worksheet, ByVal r As Long)
     wsCmd.Cells(r, COL_MESSAGE).ClearContents
     wsCmd.Cells(r, COL_SUGGESTION).ClearContents
 End Sub
+
+Public Sub PreviewPlannedRoutes()
+    On Error GoTo Failed
+    Dim root As String, packageError As String, pythonExe As String
+    Dim bridge As String, job As String, workbookCopy As String
+    Dim fs As Object, shell As Object, rc As Long, cmd As String
+    If ThisWorkbook.path = "" Then
+        MsgBox "Save this workbook before generating a preview.", vbExclamation
+        Exit Sub
+    End If
+    root = Trim$(CStr(ThisWorkbook.Worksheets(SHEET_PREFLIGHT_CONFIG).Range("B5").value))
+    If root = "" Then
+        If Not ConfigurePreflightForPackage(root, packageError) Then
+            Err.Raise vbObjectError + 6200, , packageError
+        End If
+    End If
+    pythonExe = Trim$(CStr(ThisWorkbook.Worksheets(SHEET_PREFLIGHT_CONFIG).Range("B4").value))
+    If pythonExe = "" Then pythonExe = "python"
+    bridge = JoinPath(ThisWorkbook.path, "autolab_route_preview.py")
+    If Not FileExists(bridge) Then Err.Raise vbObjectError + 6201, , "Missing bridge: " & bridge
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    job = JoinPath(JoinPath(ThisWorkbook.path, "generated"), "route_preview")
+    EnsureFolderExists job
+    job = JoinPath(job, "current")
+		If fs.FolderExists(job) Then fs.DeleteFolder job, True
+    EnsureFolderExists job
+    ExportAllCsvToFolder job
+    workbookCopy = JoinPath(job, "preview_map.xlsm")
+    ThisWorkbook.SaveCopyAs workbookCopy
+    cmd = QuotePath(pythonExe) & " " & QuotePath(bridge) & _
+          " --root " & QuotePath(root) & " --workbook " & QuotePath(workbookCopy) & _
+          " --job " & QuotePath(job)
+    Set shell = CreateObject("WScript.Shell")
+    rc = shell.Run(cmd, 1, True)
+    If rc <> 0 Then
+        MsgBox "Preview is incomplete or failed. Review the preview diagnostics in:" & vbCrLf & job, vbExclamation
+    ElseIf Not FileExists(JoinPath(job, "preview.html")) Then
+        MsgBox "No preview was generated. Check the Python executable in PreflightConfig B4.", vbExclamation
+    End If
+    Exit Sub
+Failed:
+    MsgBox "Route preview failed: " & Err.Description, vbExclamation
+End Sub
+
+

@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from datetime import timedelta
 from pathlib import Path
 import json
@@ -2070,7 +2070,7 @@ def _web_datalake_api_key() -> str:
     )
 
 
-def _multipart_body(fields: Dict[str, Any], files: Dict[str, tuple[str, bytes, str]]) -> tuple[bytes, str]:
+def _multipart_body(fields: Dict[str, Any], files: Union[Dict[str, tuple[str, bytes, str]], List[tuple[str, tuple[str, bytes, str]]]]) -> tuple[bytes, str]:
     boundary = "----AutoLabDataLake" + uuid.uuid4().hex
     chunks: List[bytes] = []
 
@@ -2082,7 +2082,7 @@ def _multipart_body(fields: Dict[str, Any], files: Dict[str, tuple[str, bytes, s
         chunks.append(str(value).encode("utf-8"))
         chunks.append(b"\r\n")
 
-    for name, file_tuple in files.items():
+    for name, file_tuple in (files.items() if isinstance(files, dict) else files):
         filename, data, content_type = file_tuple
         chunks.append(f"--{boundary}\r\n".encode())
         chunks.append(
@@ -2096,7 +2096,7 @@ def _multipart_body(fields: Dict[str, Any], files: Dict[str, tuple[str, bytes, s
     return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
 
 
-def _post_multipart_to_webserver(path: str, fields: Dict[str, Any], files: Dict[str, tuple[str, bytes, str]]) -> Dict[str, Any]:
+def _post_multipart_to_webserver(path: str, fields: Dict[str, Any], files: Union[Dict[str, tuple[str, bytes, str]], List[tuple[str, tuple[str, bytes, str]]]]) -> Dict[str, Any]:
     base = _web_datalake_base_url()
     if not base:
         return {
@@ -2119,7 +2119,7 @@ def _post_multipart_to_webserver(path: str, fields: Dict[str, Any], files: Dict[
             if not getattr(config, "WEB_VERIFY_TLS", True):
                 context.check_hostname = False
                 context.verify_mode = ssl.CERT_NONE
-        with urllib.request.urlopen(req, timeout=10, context=context) as resp:
+        with urllib.request.urlopen(req, timeout=60 if path == "/nms/experiment/register" else 10, context=context) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
             try:
                 return json.loads(raw)
@@ -2139,6 +2139,64 @@ def _post_multipart_to_webserver(path: str, fields: Dict[str, Any], files: Dict[
             "error": type(e).__name__,
             "detail": str(e)[:1000],
         }
+
+
+def _registration_route_previews(raw_bytes: bytes, initial_poses_raw_bytes: bytes):
+    """Render the exact registration CSVs; previews never gate registration."""
+    try:
+        nms_root = Path(__file__).resolve().parent
+        common_dir = nms_root / "sitemap" / "CommonCheckers"
+        authoring = nms_root / "sitemap" / _nms_lab_id() / "script_authoring"
+        workbook = authoring / f"AutoLab_{_nms_lab_id()}_Template.xlsm"
+        if not workbook.is_file():
+            raise FileNotFoundError(f"Route map workbook not found: {workbook}")
+        if str(common_dir) not in sys.path:
+            sys.path.insert(0, str(common_dir))
+        from route_reconstruct import run as reconstruct_routes
+
+        # Separate from the Excel preview; cleaned on success and failure.
+        with tempfile.TemporaryDirectory(prefix="autolab_registration_routes_") as folder:
+            temp = Path(folder)
+            commands = temp / "experiment_script.csv"
+            poses = temp / "initial_poses.csv"
+            commands.write_bytes(raw_bytes)
+            poses.write_bytes(initial_poses_raw_bytes)
+            result = reconstruct_routes(
+                commands, poses, None, temp / "images",
+                macro_policy=authoring / "config" / "macro_policy.json",
+                map_workbook=workbook, per_robot=True,
+            )["integration_result"]
+            summary = {"status": result.get("status"), "safety_checked": False,
+                       "route_kind": "planned", "png_count": 0,
+                       "diagnostics": result.get("diagnostics", [])}
+            if result.get("status") != "ok" or not result.get("png_files"):
+                summary["warning"] = "Route previews were not uploaded; registration continues"
+                return [], summary
+            files = []
+            total = 0
+            names = set()
+            # Use only the tool's manifest, never files left from another run.
+            for item in result["png_files"]:
+                name = item["name"]
+                path = Path(item["path"]).resolve()
+                if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}\.png", name)
+                        or name.lower() in names
+                        or path.parent != (temp / "images").resolve()):
+                    raise ValueError("Invalid route PNG manifest entry")
+                names.add(name.lower())
+                if path.stat().st_size > 10 * 1024 * 1024:
+                    raise ValueError("Route PNG exceeds backend size limit")
+                data = path.read_bytes()
+                total += len(data)
+                if len(files) >= 32 or total > 50 * 1024 * 1024:
+                    raise ValueError("Route PNG package exceeds backend limits")
+                files.append(("route_png_files", (name, data, "image/png")))
+            summary["png_count"] = len(files)
+            summary["filenames"] = [entry[1][0] for entry in files]
+            return files, summary
+    except Exception as e:
+        return [], {"status": "error", "png_count": 0, "safety_checked": False,
+                    "warning": f"Route previews skipped: {type(e).__name__}: {e}"}
 
 
 def _notify_web_experiment_register(
@@ -2172,7 +2230,6 @@ def _notify_web_experiment_register(
         "time_format": exp.get("time_format") or config.TIME_FMT,
         "public_validation_json": json.dumps(public_validation or {}, ensure_ascii=False),
         "preflight_json": json.dumps(preflight or {}, ensure_ascii=False),
-        "extra_metadata_json": json.dumps({"nms_experiment_registry": exp}, ensure_ascii=False),
     }
 
     files = {
@@ -2188,7 +2245,15 @@ def _notify_web_experiment_register(
         ),
     }
 
-    return _post_multipart_to_webserver("/nms/experiment/register", fields, files)
+    route_files, preview = ([], {"status": "skipped", "png_count": 0})
+    if _web_datalake_base_url():
+        route_files, preview = _registration_route_previews(raw_bytes, initial_poses_raw_bytes)
+    fields["extra_metadata_json"] = json.dumps(
+        {"nms_experiment_registry": exp, "route_preview": preview}, ensure_ascii=False)
+    response = _post_multipart_to_webserver(
+        "/nms/experiment/register", fields, list(files.items()) + route_files)
+    response["route_preview"] = preview
+    return response
 
 
 def _notify_web_experiment_delete_from_rows(registry_rows: List[Any]) -> Dict[str, Any]:

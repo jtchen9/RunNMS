@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "run_id": "abce6405d02e4b3996cf98e32d16ba86",
+  "generated_at_utc": "2026-11-06T07:56:52.781070+00:00",
+  "status": "ok",
+  "success": true,
+  "exit_code": 0,
+  "png_files": [
+    {
+      "name": "route_01_twin-scout-alpha.png",
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\route_preview\\route_01_twin-scout-alpha.png",
+      "sha256": "9857c6bc67ec82ca717c628ddee1b7f154a118140ccd2b9a793e47de292af9fe"
+    },
+    {
+      "name": "routes.png",
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\route_preview\\routes.png",
+      "sha256": "a03e4bf7fc355dce53df7479b90b708d64e7824d2515bdd2ea815692e7508c79"
+    }
+  ],
+  "files": [
+    {
+      "name": "diagnostics.json",
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\route_preview\\diagnostics.json",
+      "sha256": "a5338d955b09046ec0b16f3a9625b7955c763aae07dc722e474e6078745f932f"
+    },
+    {
+      "name": "reconstruction.json",
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\route_preview\\reconstruction.json",
+      "sha256": "d6af4423ee0b89546d01a4e39e0ac4112d1d4ce2903e0e9279d50d94c8d4aa54"
+    },
+    {
+      "name": "render_diagnostics.json",
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\route_preview\\render_diagnostics.json",
+      "sha256": "a5338d955b09046ec0b16f3a9625b7955c763aae07dc722e474e6078745f932f"
+    },
+    {
+      "name": "render_manifest.json",
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\route_preview\\render_manifest.json",
+      "sha256": "37d6aadb1ddefeeb7c6867e2892abf7397a5769857a9d5b2e305d6832f172f0a"
+    },
+    {
+      "name": "route_01_twin-scout-alpha.png",
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\route_preview\\route_01_twin-scout-alpha.png",
+      "sha256": "9857c6bc67ec82ca717c628ddee1b7f154a118140ccd2b9a793e47de292af9fe"
+    },
+    {
+      "name": "route_points.csv",
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\route_preview\\route_points.csv",
+      "sha256": "f07be4b6e2cb09330ffdfc9a5b591ce21d32fa06e94726097de9975b5ecb2b8f"
+    },
+    {
+      "name": "routes.png",
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\route_preview\\routes.png",
+      "sha256": "a03e4bf7fc355dce53df7479b90b708d64e7824d2515bdd2ea815692e7508c79"
+    }
+  ],
+  "diagnostics": [],
+  "inputs": [
+    {
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\CommonCheckers\\config\\script_policy.json",
+      "sha256": "d2e274b1f5b986e72cc7143d500795719dad13b5b8c15eb54e990d48ad0953ce",
+      "size_bytes": 7044
+    },
+    {
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\initial_poses.csv",
+      "sha256": "6353a4c11beac922fdb3361a3957259948967e67918bc0599360fd96e1f0de4f",
+      "size_bytes": 132
+    },
+    {
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\experiment_script.csv",
+      "sha256": "dceca82a788954dac4220c37aed65da80c012aa3fb73dcc0609dd74b0e56e801",
+      "size_bytes": 9327
+    },
+    {
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\config\\macro_policy.json",
+      "sha256": "50a7d33a6846060818cb28a40f0c80d65827662917413c0051f64f3ad14f97a7",
+      "size_bytes": 1997
+    },
+    {
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\AutoLab_DemoRoom_Template.xlsm",
+      "sha256": "bbeb297093b8c263caaec733a4f3e9200914e4aacbe56bfc83e089330d6a8aca"
+    }
+  ],
+  "safety_checked": false,
+  "route_kind": "planned",
+  "result_file": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\route_preview\\preview_result.json"
+}

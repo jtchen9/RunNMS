@@ -31,7 +31,7 @@
   ],
   "map": {
     "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\AutoLab_DemoRoom_Template.xlsm",
-    "sha256": "4c84c28d3fcc439651e8042c8ad98bc41cc36fdc14e107d6f26590b2e4b695b6",
+    "sha256": "bbeb297093b8c263caaec733a4f3e9200914e4aacbe56bfc83e089330d6a8aca",
     "sheet": "StaticMap",
     "cell_range": "C4:DL117",
     "resolution_m": 0.1,

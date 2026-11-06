@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "tool_version": "0.4.0",
+  "tool_version": "0.5.0",
   "description": "Commanded destinations and straight planned segments; no arrival-time or safety inference",
   "status": "ok",
   "route_complete": true,
