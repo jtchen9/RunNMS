@@ -1,0 +1,51 @@
+{
+  "renderer_version": "0.4.1",
+  "outputs": [
+    "routes.png",
+    "route_01_twin-scout-alpha.png"
+  ],
+  "robot_files": {
+    "twin-scout-alpha": "route_01_twin-scout-alpha.png"
+  },
+  "reconstruction_inputs": [
+    {
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\CommonCheckers\\config\\script_policy.json",
+      "sha256": "d2e274b1f5b986e72cc7143d500795719dad13b5b8c15eb54e990d48ad0953ce",
+      "size_bytes": 7044
+    },
+    {
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\initial_poses.csv",
+      "sha256": "6353a4c11beac922fdb3361a3957259948967e67918bc0599360fd96e1f0de4f",
+      "size_bytes": 132
+    },
+    {
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\experiment_script.csv",
+      "sha256": "dceca82a788954dac4220c37aed65da80c012aa3fb73dcc0609dd74b0e56e801",
+      "size_bytes": 9327
+    },
+    {
+      "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\config\\macro_policy.json",
+      "sha256": "50a7d33a6846060818cb28a40f0c80d65827662917413c0051f64f3ad14f97a7",
+      "size_bytes": 1997
+    }
+  ],
+  "map": {
+    "path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\AutoLab_DemoRoom_Template.xlsm",
+    "sha256": "4c84c28d3fcc439651e8042c8ad98bc41cc36fdc14e107d6f26590b2e4b695b6",
+    "sheet": "StaticMap",
+    "cell_range": "C4:DL117",
+    "resolution_m": 0.1,
+    "origin_m": [
+      0,
+      0
+    ]
+  },
+  "settings": {
+    "dpi": 160,
+    "per_robot": true,
+    "overview_label_every": 5
+  },
+  "complete": true,
+  "safety_checked": false,
+  "render_diagnostics": []
+}
