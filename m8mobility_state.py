@@ -2079,11 +2079,19 @@ def _s3_dump_location_helper_data(
 def s3solving_true_location(scanner: str) -> Dict[str, Any]:
     loc = _s3_solve_true_location(scanner)
 
+    summary = _trace_location_summary(loc)
+    # Passive telemetry only; never use robot calibration in command planning.
+    try:
+        capture = _load_report_json(scanner).get("last_location_result") or {}
+        if isinstance(capture.get("movement_evidence"), dict):
+            summary["movement_evidence"] = capture["movement_evidence"]
+    except Exception:
+        pass
     append_trace_event(
         event="s3_pose_solved",
         scanner=scanner,
         trace_id=_trace_active_id(scanner),
-        data=_trace_location_summary(loc),
+        data=summary,
     )
 
     # Passive boundary capture: exact output returned by the current

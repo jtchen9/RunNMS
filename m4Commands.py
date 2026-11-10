@@ -22,7 +22,7 @@ import utility
 import m1Registry
 import m7Traffic
 import m8mobility
-from m8mobility_trace import append_trace_event
+from m8mobility_trace import append_trace_event, experiment_trace_boundary
 from m8mobility_state_store import key_report, key_time, key_state, key_pose, _save_stop
 
 router = APIRouter()
@@ -2739,39 +2739,55 @@ async def cmd_load_csv_file(
     last_execute_at = analysis["last_execute_at"]
     accepted_items = analysis["accepted_items"]
 
-    single_experiment_gate = _require_empty_experiment_registry()
+    # Serialize competing registrations while allowing all robot poll/ACK traffic.
+    startup_lock = config.r.lock(config.KEY_EXPERIMENT_REGISTRY + ":startup_lock", timeout=300)
+    if not startup_lock.acquire(blocking=False):
+        raise HTTPException(409, "Experiment registration is already in progress.")
+    try:
+        single_experiment_gate = _require_empty_experiment_registry()
 
-    # Registration occurs immediately before experiment execution.
-    # Reset the whole lab once, after all CSV validation/gating succeeds and
-    # before any accepted experiment command is enqueued.
-    mobility_reset = m8mobility.mobility_init()
+        from nms_static_readiness import check_targets
+        if skipped_not_whitelisted:
+            raise HTTPException(409, "Startup refused: script contains non-whitelisted targets.")
+        startup_health = await check_targets(analysis["scanners"], t0_dt)
+        _require_experiment_t0_future(t0_dt)
 
-    for item in accepted_items:
-        _enqueue_script_or_csv_item(
-            scanner=item["scanner"],
-            category=item["category"],
-            action=item["action"],
-            execute_at=item["execute_at"],
-            args=item["args"],
-            lab_id=_nms_lab_id(),
-            experiment_id=experiment_id,
-            session_id=session_id,
-        )
+        # Registration occurs immediately before experiment execution.
+        # Reset the whole lab once, after all CSV validation/gating succeeds and
+        # before any accepted experiment command is enqueued.
+        with experiment_trace_boundary():
+            mobility_reset = m8mobility.mobility_init()
 
-    exp = _register_experiment_status(
-        experiment_id=experiment_id,
-        session_id=session_id,
-        start_at_str=t0_dt.strftime(config.TIME_FMT),
-        end_at_str=last_execute_at.strftime(config.TIME_FMT),
-        command_count=added,
-        mobility_scanners=analysis["mobility_scanners"],
-        replace_existing=replace_existing,
-    )
+            for item in accepted_items:
+                _enqueue_script_or_csv_item(
+                    scanner=item["scanner"],
+                    category=item["category"],
+                    action=item["action"],
+                    execute_at=item["execute_at"],
+                    args=item["args"],
+                    lab_id=_nms_lab_id(),
+                    experiment_id=experiment_id,
+                    session_id=session_id,
+                )
+
+            exp = _register_experiment_status(
+                experiment_id=experiment_id,
+                session_id=session_id,
+                start_at_str=t0_dt.strftime(config.TIME_FMT),
+                end_at_str=last_execute_at.strftime(config.TIME_FMT),
+                command_count=added,
+                mobility_scanners=analysis["mobility_scanners"],
+                replace_existing=replace_existing,
+            )
+
+    finally:
+        startup_lock.release()
 
     preflight = {
         **analysis["preflight"],
         "t0_gate": t0_preflight,
         "single_experiment_gate": single_experiment_gate,
+        "startup_health": startup_health,
         "mobility_reset": mobility_reset,
     }
 

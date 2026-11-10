@@ -5,6 +5,7 @@ helpers from any state, and every filesystem/serialization failure is swallowed.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
@@ -21,7 +22,34 @@ TRACE_PATH = (
     / "output"
     / "mobility_trace.jsonl"
 )
-_TRACE_LOCK = threading.Lock()
+_TRACE_LOCK = threading.RLock()
+
+
+@contextmanager
+def experiment_trace_boundary():
+    """Rotate once for local registration; restore the prior trace on failure."""
+    with _TRACE_LOCK:
+        archived = None
+        try:
+            size = TRACE_PATH.stat().st_size
+        except FileNotFoundError:
+            size = 0
+        if size:
+            folder = TRACE_PATH.parent / "Archive"
+            folder.mkdir(exist_ok=True)
+            stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S-%f")
+            archived = folder / f"mobility_trace_{stamp}_{uuid.uuid4().hex}.jsonl"
+            TRACE_PATH.rename(archived)
+        try:
+            yield
+        except BaseException:
+            if archived is not None:
+                # In-process appenders are locked out. Preserve any synchronous
+                # diagnostics emitted by registration itself before restoring.
+                if TRACE_PATH.exists():
+                    TRACE_PATH.rename(archived.with_suffix(".failed-registration.jsonl"))
+                archived.rename(TRACE_PATH)
+            raise
 
 
 def new_trace_id(scanner: str) -> str:
