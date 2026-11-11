@@ -18,7 +18,7 @@ def reconstruct(commands,initial_poses,policy=None, *, macro_policy=None):
     diagnostics=[]; inputs=[]
     def issue(code,message,source,line=None,scanner=None,severity='error'):
         diagnostics.append(dict(severity=severity,code=code,message=message,source=str(source),source_line=line,scanner=scanner))
-    def read_rows(path,required):
+    def read_rows(path,required,*,command_sheet=False):
         path=Path(path)
         try:
             raw=path.read_bytes();inputs.append(dict(path=str(path),sha256=hashlib.sha256(raw).hexdigest(),size_bytes=len(raw)))
@@ -26,8 +26,12 @@ def reconstruct(commands,initial_poses,policy=None, *, macro_policy=None):
             import io
             reader=csv.reader(io.StringIO(text,newline=''),strict=True)
             header=next(reader,None)
-            if not header or len(set(header))!=len(header) or not set(required)<=set(header):
-                issue('CSV_HEADER','Missing required or duplicate headers: '+','.join(required),path,1);return []
+            if not header or any(header.count(col) != 1 for col in required):
+                issue('CSV_HEADER','Each required header must appear exactly once: '+','.join(required),path,1);return []
+            if not command_sheet and len(set(header)) != len(header):
+                issue('CSV_HEADER','Duplicate initial-pose header',path,1);return []
+            # Excel F-H may contain blank headers and a local-time formula.
+            fields = [(header.index(col), col) for col in required] if command_sheet else list(enumerate(header))
             result=[]
             while True:
                 start=reader.line_num+1
@@ -36,7 +40,7 @@ def reconstruct(commands,initial_poses,policy=None, *, macro_policy=None):
                 if not row:continue
                 if len(row)!=len(header):
                     issue('CSV_WIDTH','Row column count differs from header',path,start)
-                entry=dict(zip(header,row));entry['_line']=start;entry['_end']=reader.line_num;entry['_bad_width']=len(row)!=len(header)
+                entry={col:row[j] for j,col in fields if j<len(row)};entry['_line']=start;entry['_end']=reader.line_num;entry['_bad_width']=len(row)!=len(header)
                 result.append(entry)
             return result
         except (OSError,UnicodeError,csv.Error) as exc:
@@ -62,7 +66,7 @@ def reconstruct(commands,initial_poses,policy=None, *, macro_policy=None):
             starts[name]=None;issue('INITIAL_COORDINATE',str(exc),initial_poses,r['_line'],name)
     for n in duplicates:starts[n]=None
     events=[];unorderable=set();unidentified_movement=False
-    for idx,r in enumerate(read_rows(commands,COMMAND_COLUMNS),1):
+    for idx,r in enumerate(read_rows(commands,COMMAND_COLUMNS,command_sheet=True),1):
         name=r.get('scanner','');category=r.get('category','');action=r.get('action','')
         moving=category=='mobility' or action.startswith('mobility.')
         e=dict(event_id=idx,source_line=r['_line'],source_line_end=r['_end'],scanner=name,category=category,action=action,raw={k:v for k,v in r.items() if not k.startswith('_')},t_offset_sec=None,args=None,valid=True,mobility=moving,status='event')

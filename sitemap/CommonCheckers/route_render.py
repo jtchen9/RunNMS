@@ -61,9 +61,10 @@ def read_static_map(workbook,sheet='StaticMap',cell_range='C4:DL117',resolution_
     return dict(cells=grid,overlap=overlap,width=(c1-c0+1)*resolution_m,height=(r1-r0+1)*resolution_m,resolution=resolution_m,messages=messages,sha256=hashlib.sha256(raw).hexdigest(),sheet=sheet,cell_range=cell_range)
 
 def compact_label(prefix, event):
-    seconds = event['t_offset_sec']
-    seconds = '?' if seconds is None else str(int(seconds)) if seconds == int(seconds) else str(seconds)
-    return f"{prefix}#{event['source_line']},{seconds}"
+    # Separate numeric fallback prefixes (R1, R2, ...) from the row.
+    sep = ':' if prefix[-1:].isdigit() else ''
+    return f"{prefix}{sep}{event['source_line']}"
+
 
 def render_routes(result,workbook,output_dir,*,sheet='StaticMap',cell_range='C4:DL117',resolution_m=.1,dpi=160,per_robot=True,overview_label_every=5):
     """Return manifest; retain interpretation gaps and issue-time semantics."""
@@ -137,8 +138,8 @@ def render_routes(result,workbook,output_dir,*,sheet='StaticMap',cell_range='C4:
         title=selected[0] if detail else 'All robots'
         fig.suptitle('Commanded routes — '+title,fontsize=17)
         issues=len(result['diagnostics'])+len(messages)
-        fig.text(.07,.93,f'{len(selected)} robot(s) | command-issue times | '+('INCOMPLETE / DIAGNOSTICS: '+str(issues) if issues else 'Reconstruction has no interpretation errors'),color='#b02020' if issues else '#333333',fontsize=10)
-        note='A#134,303 = Alpha, CSV line 134 (header=1), offset 303 seconds. Dashed: expected macro crossing.\nStars: intended initial positions. Open squares: last known destinations. Arrows: commanded direction.\nNo safety checking or actual arrival-time inference. Unknown incoming segments are not connected.\n'+('Every known destination is labelled.' if detail else f'Overview labels every {overview_label_every}th movement; per-robot views label every known destination.')
+        fig.text(.07,.93,f'{len(selected)} robot(s) | planned command sequence | '+('INCOMPLETE / DIAGNOSTICS: '+str(issues) if issues else 'Reconstruction has no interpretation errors'),color='#b02020' if issues else '#333333',fontsize=10)
+        note='A134 = Alpha, command CSV row 134 (header = row 1). Dashed: expected macro crossing.\nStars: intended initial positions. Open squares: last known destinations. Arrows: commanded direction.\nNo safety checking or actual arrival-time inference. Unknown incoming segments are not connected.\n'+('Every known destination is labelled.' if detail else f'Overview labels every {overview_label_every}th movement; per-robot views label every known destination.')
         fig.text(.07,.04,note,fontsize=9)
         if issues:
             text='\n'.join(messages+[f"{d['code']} row {d['source_line'] or '-'}: {d['message']}" for d in result['diagnostics']][:4])
