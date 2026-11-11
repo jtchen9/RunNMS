@@ -101,6 +101,14 @@ def check_device_targets(
     issues: List[Dict[str, Any]] = []
 
     for row in rows:
+        if row.category == "system" and (row.scanner not in initial_pose_scanners or row.scanner in ap_scanners):
+            issues.append({
+                "level": "error", "code": "SYSTEM_COMMAND_BAD_TARGET",
+                "row_number": row.row_number, "scanner": row.scanner,
+                "category": row.category, "action": row.action,
+                "message": "Shutdown must target a participating robot.",
+                "suggestion": "Choose a robot listed in InitialPoses.",
+            })
         if row.category == "ap":
             if row.scanner not in ap_scanners:
                 issues.append({

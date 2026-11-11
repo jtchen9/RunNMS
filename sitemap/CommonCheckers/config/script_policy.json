@@ -17,9 +17,11 @@
     "mobility",
     "scan",
     "ap",
-    "traffic"
+    "traffic",
+    "system"
   ],
   "allowed_actions_by_category": {
+    "system": ["system.shutdown"],
     "mobility": [
       "mobility.report.location",
       "mobility.move",
@@ -51,6 +53,9 @@
     ]
   },
   "argument_rules_by_category": {
+    "system": {
+      "system.shutdown": {"allowed_keys": [], "required_keys": [], "numeric_ranges": {}}
+    },
     "mobility": {
       "mobility.report.location": {
         "allowed_keys": [],
