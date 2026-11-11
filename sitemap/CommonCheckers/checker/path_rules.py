@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
+from . import demoroom_planning_grid as planning_grid
+from .demoroom_planning_entrance import entrance_blocked
 from .script_model import InitialPose, ScriptRow
 from .static_safety_core import (
     apply_mobility_move_pose,
@@ -57,7 +59,7 @@ def _append_restriction_map_issue(
     if restricted_sample.get("out_of_map"):
         code = "PATH_LEAVES_RESTRICTION_MAP"
         detail = (
-            f"planned path leaves restriction_map.npy near "
+            f"planned path leaves the configured map near "
             f"({restricted_sample['x_m']:.3f}, {restricted_sample['y_m']:.3f}), "
             f"row={restricted_sample['row']}, col={restricted_sample['col']}."
         )
@@ -65,7 +67,7 @@ def _append_restriction_map_issue(
     else:
         code = "PATH_CROSSES_RESTRICTION_MAP"
         detail = (
-            "planned path touches a restricted cell in restriction_map.npy "
+            "planned path touches a restricted cell in the configured map "
             f"near ({restricted_sample['x_m']:.3f}, {restricted_sample['y_m']:.3f}), "
             f"row={restricted_sample['row']}, col={restricted_sample['col']}."
         )
@@ -115,8 +117,31 @@ def check_planned_path_rules(
     charging_zones = list(zone_policy.get("charging_zones", []) or [])
     macro_cfg_by_action = dict(macro_policy.get("macros", {}) or {})
     robot_safety_radius_m = float(safety_policy.get("robot_safety_radius_m", 0.25))
+    demo_planning = (site_dir.name.casefold() == "demoroom" or
+                     str(path_policy.get("site_id", "")).casefold() == "demoroom")
+    if demo_planning:
+        cfg = path_policy.get("restriction_map", {}) or {}
+        if cfg.get("enabled") is not True or cfg.get("relative_path") != "restriction_map_planning.npy":
+            return [{"level": "error", "code": "PLANNING_MAP_REQUIRED", "row_number": 0,
+                     "message": "DemoRoom preflight requires enabled restriction_map_planning.npy."}]
     restriction_map, restriction_cfg, map_issues = load_restriction_map_from_policy(site_dir, path_policy)
+    if demo_planning and map_issues:
+        for issue in map_issues:
+            issue["suggestion"] = "Restore the DemoRoom planning NPY before registration."
     issues.extend(map_issues)
+
+    point_check = point_restriction_status
+    segment_check = first_restricted_sample_on_segment
+    if demo_planning:
+        if map_issues:
+            return issues
+        try:
+            rectangles = planning_grid.load_layers(site_dir, macro_policy, restriction_cfg)
+        except (OSError, KeyError, ValueError, TypeError) as exc:
+            return [{"level": "error", "code": "PLANNING_LAYERS_INVALID", "row_number": 0,
+                     "message": f"DemoRoom planning layers unavailable: {exc}"}]
+        point_check = planning_grid.cell_status
+        segment_check = planning_grid.static_hit
 
     planned_by_scanner: Dict[str, Dict[str, float]] = {}
 
@@ -127,6 +152,10 @@ def check_planned_path_rules(
             "heading_deg": deg_norm_360(float(pose.heading_deg)),
         }
         planned_by_scanner[scanner] = p
+        if demo_planning and entrance_blocked((p["x_m"], p["y_m"])):
+            issues.append({"level": "error", "code": "INITIAL_POSE_IN_ENTRANCE_STRIP",
+                           "row_number": pose.row_number, "scanner": scanner,
+                           "message": "Initial pose lies in the restricted DemoRoom entrance strip."})
 
         if bounds and not point_in_bounds(p["x_m"], p["y_m"], bounds):
             issues.append({
@@ -143,7 +172,7 @@ def check_planned_path_rules(
             })
 
         if restriction_map is not None:
-            status = point_restriction_status(
+            status = point_check(
                 restriction_map,
                 restriction_cfg,
                 p["x_m"],
@@ -158,7 +187,7 @@ def check_planned_path_rules(
                     "scanner": scanner,
                     "message": (
                         f"initial pose ({p['x_m']:.3f}, {p['y_m']:.3f}) is unsafe "
-                        f"for restriction_map.npy row={status['row']}, col={status['col']}."
+                        f"for the configured map row={status['row']}, col={status['col']}."
                     ),
                     "suggestion": "Move the robot out of the restricted/charging zone before the experiment.",
                     "map_value": status["value"],
@@ -211,7 +240,14 @@ def check_planned_path_rules(
             ):
                 issues.append(_with_row_context(issue, row))
 
-            restricted_sample = first_restricted_sample_on_segment(
+            if demo_planning and planning_grid.bump_violation(rectangles, current, new_pose):
+                issues.append(_with_row_context({"level": "error", "code": "PLANNING_BUMP_MOVE",
+                    "message": "Ordinary move enters, re-enters, or remains in the DemoRoom planning bump zone."}, row))
+            if demo_planning and entrance_blocked((current["x_m"], current["y_m"]),
+                                                  (new_pose["x_m"], new_pose["y_m"])):
+                issues.append(_with_row_context({"level": "error", "code": "PATH_ENTERS_ENTRANCE_STRIP",
+                                                "message": "Planned movement enters the restricted DemoRoom entrance strip."}, row))
+            restricted_sample = segment_check(
                 restriction_map,
                 restriction_cfg,
                 float(current["x_m"]),
@@ -255,7 +291,11 @@ def check_planned_path_rules(
             ):
                 issues.append(_with_row_context(issue, row))
 
-            restricted_sample = first_restricted_sample_on_segment(
+            if demo_planning and entrance_blocked((current["x_m"], current["y_m"]),
+                                                  (new_pose["x_m"], new_pose["y_m"])):
+                issues.append(_with_row_context({"level": "error", "code": "PATH_ENTERS_ENTRANCE_STRIP",
+                                                "message": "Planned movement enters the restricted DemoRoom entrance strip."}, row))
+            restricted_sample = segment_check(
                 restriction_map,
                 restriction_cfg,
                 float(current["x_m"]),

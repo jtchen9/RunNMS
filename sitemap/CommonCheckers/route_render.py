@@ -3,7 +3,7 @@ from pathlib import Path
 import hashlib,json,math,posixpath,re,zipfile
 import xml.etree.ElementTree as ET
 NS={'s':'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
-VERSION='0.4.1'
+VERSION='0.4.2'
 
 def read_static_map(workbook,sheet='StaticMap',cell_range='C4:DL117',resolution_m=.1):
     """Bottom-left cell covers [0,resolution] on both axes; never execute VBA."""
@@ -16,7 +16,7 @@ def read_static_map(workbook,sheet='StaticMap',cell_range='C4:DL117',resolution_
         return c,int(m[2])
     a,b=cell_range.split(':');c0,r0=coord(a);c1,r1=coord(b)
     if c1<c0 or r1<r0:raise ValueError('Reversed cell range')
-    raw=Path(workbook).read_bytes();cells={};messages=[]
+    raw=Path(workbook).read_bytes();cells={};messages=[];overlap=[]
     with zipfile.ZipFile(Path(workbook)) as z:
         wb=ET.fromstring(z.read('xl/workbook.xml'))
         sheets=[s for s in wb.find('s:sheets',NS) if s.get('name')==sheet]
@@ -27,6 +27,10 @@ def read_static_map(workbook,sheet='StaticMap',cell_range='C4:DL117',resolution_
         tree=ET.fromstring(z.read(target));styles=ET.fromstring(z.read('xl/styles.xml'))
         fills=list(styles.find('s:fills',NS));xfs=list(styles.find('s:cellXfs',NS))
         if tree.findall('s:conditionalFormatting',NS):messages.append('Conditional formatting exists; only stored cell fills are rendered.')
+        shared = []
+        if 'xl/sharedStrings.xml' in z.namelist():
+            shared = [''.join(t.text or '' for t in si.findall('.//s:t', NS))
+                      for si in ET.fromstring(z.read('xl/sharedStrings.xml'))]
         for cell in tree.findall('.//s:sheetData/s:row/s:c',NS):
             c,r=coord(cell.get('r'))
             if not (c0<=c<=c1 and r0<=r<=r1):continue
@@ -38,6 +42,14 @@ def read_static_map(workbook,sheet='StaticMap',cell_range='C4:DL117',resolution_
                     rgb=fg.get('rgb','')
                     if re.fullmatch(r'(?:[0-9A-Fa-f]{2})?[0-9A-Fa-f]{6}',rgb):color=rgb[-6:].upper()
             except (IndexError,ValueError):pass
+            if color == 'FF0000':
+                value = cell.findtext('s:v', '', NS)
+                if cell.get('t') == 's':
+                    value = shared[int(value)]
+                elif cell.get('t') == 'inlineStr':
+                    value = ''.join(t.text or '' for t in cell.findall('.//s:is//s:t', NS))
+                if value.strip() == '+':
+                    overlap.append(((c-c0)*resolution_m, (r1-r)*resolution_m))
             cells[(c,r)]=color
     grid=[];unknown=[]
     for r in range(r0,r1+1):
@@ -46,7 +58,7 @@ def read_static_map(workbook,sheet='StaticMap',cell_range='C4:DL117',resolution_
             if kind=='unknown':unknown.append((c,r))
             grid.append(((c-c0)*resolution_m,(r1-r)*resolution_m,kind))
     if unknown:messages.append(f'{len(unknown)} cells have missing/unsupported fills; shown magenta, not free.')
-    return dict(cells=grid,width=(c1-c0+1)*resolution_m,height=(r1-r0+1)*resolution_m,resolution=resolution_m,messages=messages,sha256=hashlib.sha256(raw).hexdigest(),sheet=sheet,cell_range=cell_range)
+    return dict(cells=grid,overlap=overlap,width=(c1-c0+1)*resolution_m,height=(r1-r0+1)*resolution_m,resolution=resolution_m,messages=messages,sha256=hashlib.sha256(raw).hexdigest(),sheet=sheet,cell_range=cell_range)
 
 def compact_label(prefix, event):
     seconds = event['t_offset_sec']
@@ -88,6 +100,12 @@ def render_routes(result,workbook,output_dir,*,sheet='StaticMap',cell_range='C4:
                 patches=[Rectangle((x,y),data['resolution'],data['resolution']) for x,y,k in data['cells'] if k==kind]
                 if patches:ax.add_collection(PatchCollection(patches,facecolor=color,edgecolor='none',zorder=0))
         handles=[Patch(facecolor='#dddddd',label='Static restriction'),Patch(facecolor='#f6d66b',label='Bump guard')]
+        if data and data['overlap']:
+            patches = [Rectangle(xy,data['resolution'],data['resolution']) for xy in data['overlap']]
+            ax.add_collection(PatchCollection(patches, facecolor='none', edgecolor='#705600',
+                                              hatch='////', linewidths=0, zorder=1))
+            handles.append(Patch(facecolor='#dddddd', edgecolor='#705600', hatch='////',
+                                 label='Static + bump'))
         for name in selected:
             robot=result['robots'][name];color=colors[name];short=name.removeprefix('twin-scout-');initial=robot['initial_pose']
             handles.append(Line2D([0],[0],color=color,marker='o',label=prefixes[name]+' = '+name))

@@ -22,7 +22,7 @@
   },
   "restriction_map": {
     "enabled": true,
-    "relative_path": "restriction_map.npy",
+    "relative_path": "restriction_map_planning.npy",
     "format": "npy_uint8_2d",
     "free_value": 0,
     "restricted_value": 1,

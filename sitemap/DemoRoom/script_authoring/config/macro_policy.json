@@ -14,8 +14,8 @@
       "type": "axis_aligned_rectangle",
       "x_min_m": 8.6,
       "x_max_m": 9.599,
-      "y_min_m": 4.4,
-      "y_max_m": 6.199
+      "y_min_m": 4.6,
+      "y_max_m": 5.999
     },
     "bump_core": {
       "type": "axis_aligned_rectangle",

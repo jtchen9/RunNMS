@@ -1,0 +1,57 @@
+{
+  "description": "DemoRoom: runtime uses the continuous macro restriction_zone. Planning uses the continuous closed y limits below with the existing half-open x cell extent. Raster rectangles describe the 10 cm workbook display. Static NPYs and entrance restrictions are unchanged.",
+  "resolution_m": 0.1,
+  "runtime_rectangle_cells_xyxy": [
+    86,
+    46,
+    96,
+    60
+  ],
+  "runtime_continuous_policy": {
+    "type": "axis_aligned_rectangle",
+    "x_min_m": 8.6,
+    "x_max_m": 9.599,
+    "y_min_m": 4.6,
+    "y_max_m": 5.999
+  },
+  "planning_additional_rectangles_cells_xyxy": [
+    [
+      86,
+      44,
+      96,
+      46
+    ],
+    [
+      86,
+      60,
+      96,
+      62
+    ]
+  ],
+  "planning_static_additions_blue_v_cells_xyxy": [
+    [
+      93,
+      65,
+      96,
+      66
+    ],
+    [
+      93,
+      41,
+      94,
+      42
+    ],
+    [
+      92,
+      40,
+      94,
+      41
+    ]
+  ],
+  "sha256_runtime_static": "88f5b849c687159b299812a94db5d34b0d539052a74890c55f875119b96eb850",
+  "sha256_planning_static": "1e350b4960a2169abc554fa696fef5361560b9be37702fe1391b524309cfb4bd",
+  "planning_closed_y_m": [
+    4.4,
+    6.199
+  ]
+}
