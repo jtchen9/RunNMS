@@ -10,6 +10,9 @@ import json
 from typing import Dict, Any, Optional
 import math
 import threading
+import time
+import m8mobility_s8_landing as landing_rules
+import m8mobility_s8_view as view_rules
 import uuid
 import re
 import sys
@@ -86,6 +89,7 @@ S4_WAITING_LOCATION_RETRY = "s4waiting_location_retry"
 S5_COMPUTING_CORRECTION = "s5computing_correction"
 S6_ISSUING_CORRECTION = "s6issuing_correction"
 S7_STOPPED = "s7stopped"
+S8_RECOVERY = "s8recovery"
 
 VALID_STATES = {
     S0_IDLE,
@@ -96,6 +100,7 @@ VALID_STATES = {
     S5_COMPUTING_CORRECTION,
     S6_ISSUING_CORRECTION,
     S7_STOPPED,
+    S8_RECOVERY,
 }
 
 
@@ -458,6 +463,9 @@ def _trace_record_s5_command_impl(
         },
         "path_summary": path_summary,
     }
+    if getattr(config, "MOBILITY_S8_VIEW_ENABLED", False) is True:
+        snapshot["s8_start_trusted"] = landing_rules.measured(true_loc)
+        snapshot["s8_start_report_finished_ts"] = (_load_report_json(scanner) or {}).get("last_command_finished_ts")
     _trace_save_active(
         scanner,
         trace_id=trace_id,
@@ -521,6 +529,7 @@ def _s0_begin_command_diagnostics(
     args: Dict[str, Any],
 ) -> None:
     """Start a fresh diagnostic record for every command presented to S0."""
+    config.r.hdel(key_state(scanner), "s8_episode_json", "s8_landing_issue_claim")
     utility._hset_many(
         key_state(scanner),
         {
@@ -2302,7 +2311,7 @@ def _s3_solve_true_location(scanner: str) -> Dict[str, Any]:
 
     return loc
 
-def _s3_extract_visible_tags(scanner: str) -> list[Dict[str, Any]]:
+def _s3_extract_visible_tags(scanner: str, report=None) -> list[Dict[str, Any]]:
     """
     Parse dual-camera observations from latest mobility report.
 
@@ -2313,7 +2322,7 @@ def _s3_extract_visible_tags(scanner: str) -> list[Dict[str, Any]]:
     from camera position to robot-center position.
     """
 
-    report = _load_report_json(scanner)
+    report = _load_report_json(scanner) if report is None else report
 
     loc = report.get("last_location_result") or {}
     if not isinstance(loc, dict) or not bool(loc.get("ok")):
@@ -2705,6 +2714,144 @@ def _propagation_allowed(scanner: str) -> bool:
     ) == 0
 
 
+# ===== S8: one recovery episode for the original scripted command =====
+def _s8_episode(scanner):
+    try:
+        e = json.loads(utility._hget(key_state(scanner), "s8_episode_json", "") or "{}")
+        return e if isinstance(e, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def _s8_prepare(scanner, loc, target, distance, limit, macro, reason):
+    # Called only at the initial oversized-correction branch, after the landing gate.
+    report = _load_report_json(scanner) or {}
+    if (_load_stop().get("stop") or _get_state(scanner) != S5_COMPUTING_CORRECTION
+            or _get_correction_counter(scanner) != 0 or report.get("last_exec_status") != "completed"
+            or report.get("last_error_code") or loc.get("location_ok") is not True
+            or loc.get("source") not in ("apriltag_componentwise", "apriltag")
+            or not math.isfinite(distance) or distance <= limit):
+        return None
+    level = (loc.get("confidence") or {}).get("level")
+    original = utility._hget(key_state(scanner), "last_s0_command_action", "")
+    if macro:
+        if (macro.get("phase") != "post_cross_landing_verified" or
+                original not in ("mobility.in2out", "mobility.out2in") or
+                macro.get("action") != original):
+            return None
+    elif original != "mobility.move":
+        return None
+    if level == "HIGH" and distance <= limit + .001:
+        kind = "check_short_correction"
+    elif level == "LOW" and not macro:
+        kind = "check_alternate_view"
+    else:
+        return None
+    now = time.time()
+    episode = dict(id=uuid.uuid4().hex, original_action=original, kind=kind,
+        original_trace=_trace_active_id(scanner), original_target=target, suspect_or_landing_pose=loc,
+        pre_move_pose=_trace_active_snapshot(scanner).get("start_pose"),
+        original_reason=reason, entered_at=now, deadline=now + 120.0)
+    # The marker survives S8 -> S5. Only a new S0 intent/reset clears it.
+    if not config.r.hsetnx(key_state(scanner), "s8_episode_json", json.dumps(episode)):
+        return None
+    return {"transition_to": S8_RECOVERY, "status": "recovering",
+            "detail": reason, "pending_sequence": [], "error": {}}
+
+
+def _s8_strategy(scanner, episode):
+    if (getattr(config, "MOBILITY_S8_LANDING_ENABLED", False) is True
+            and episode.get("kind") == "check_short_correction"
+            and episode.get("original_action") == "mobility.in2out"):
+        return {"status": "plan_landing"}
+    # No other actuator strategy is installed. An enabled but unequipped NMS must stop.
+    # Future strategy must correlate a NEW capture to its own issued child command
+    # and verify clearance/pose plausibility. Raw polling reports are never trusted here.
+    return {"status": "failed", "reason": "no recovery action installed"}
+
+
+def _s8_stop(scanner, episode, reason):
+    existing = _load_stop()
+    detail = str(existing.get("reason") or "experiment already stopped") if existing.get("stop") else (
+        f"{episode.get('original_reason', 'S8 recovery')}; recovery: {reason}")
+    _set_state(scanner, S7_STOPPED, detail)
+    return s7stopped(scanner)
+
+
+def _s8_expired(episode):
+    try:
+        deadline = float(episode["deadline"])
+        return not math.isfinite(deadline) or time.time() >= deadline
+    except (KeyError, TypeError, ValueError):
+        return True
+
+
+def s8recovery(scanner, report=None):
+    episode = _s8_episode(scanner)
+    if _get_state(scanner) != S8_RECOVERY:
+        return {"status": "ignored", "detail": "not in S8"}
+    if _load_stop().get("stop") or not episode.get("id") or _s8_expired(episode):
+        return _s8_stop(scanner, episode, "stopped or recovery deadline expired")
+    if getattr(config, "MOBILITY_S8_ENABLED", False) is not True:
+        return _s8_stop(scanner, episode, "recovery disabled")
+    try:
+        if (getattr(config, "MOBILITY_S8_VIEW_ENABLED", False) is True
+                and episode.get("kind") == "check_alternate_view"):
+            result = view_rules.step(sys.modules[__name__], scanner, episode, report)
+        else:
+            result = _s8_strategy(scanner, episode)
+    except Exception as exc:
+        if _get_state(scanner) != S8_RECOVERY or _s8_episode(scanner).get("id") != episode["id"]:
+            return {"status":"ignored", "detail":"episode no longer active"}
+        return _s8_stop(scanner, episode, f"strategy error: {type(exc).__name__}: {str(exc)[:220]}")
+    if _get_state(scanner) != S8_RECOVERY or _s8_episode(scanner).get("id") != episode["id"]:
+        return {"status": "ignored", "detail": "episode no longer active"}
+    if _load_stop().get("stop") or not episode.get("id") or _s8_expired(episode):
+        return _s8_stop(scanner, episode, "stopped or recovery deadline expired")
+    if result.get("status") == "plan_landing":
+        # Only the completed upward crossing is in scope. Do not reuse this path for
+        # an uncertain position, an ordinary move, or a downward/incomplete macro.
+        report = _load_report_json(scanner) or {}
+        macro = _load_site_macro_context(scanner)
+        finish = report.get("last_command_finished_ts")
+        if (not landing_rules.number(finish) or finish <= 0
+                or report.get("last_command") != landing_rules.ACTION
+                or (report.get("last_command_args") or {}).get("move_profile") != "bump_crossing_up"
+                or report.get("last_exec_status") != "completed" or report.get("last_error_code")
+                or not macro or macro.get("action") != "mobility.in2out"
+                or macro.get("phase") != "post_cross_landing_verified"
+                or _site_macro_landing_issue(_load_true(scanner), macro.get("macro_cfg") or {})
+                or _load_planned(scanner) != episode["original_target"]
+                or _load_true(scanner) != episode["suspect_or_landing_pose"]
+                or _get_correction_counter(scanner) != 0 or _load_s0_command_arg_overrides(scanner)):
+            return _s8_stop(scanner, episode, "landing transaction not verified")
+        episode["landing"] = {"crossing_finish": finish}
+        utility._hset_many(key_state(scanner), {"s8_episode_json": episode})
+        _set_state(scanner, S5_COMPUTING_CORRECTION, "S8: one checked ordinary landing correction")
+        try:
+            return run_state_machine(scanner)
+        except Exception as exc:
+            return _s8_stop(scanner, episode, f"landing planner/issuer failed: {type(exc).__name__}")
+    if result.get("status") == "waiting":
+        return {"state": S8_RECOVERY, "status": "waiting", "detail": "awaiting recovery evidence"}
+    # This internal success seam is exercised with a fake strategy in Step 2;
+    # no external route exposes it. Physical correction belongs to Step 3.
+    pose = result.get("pose") or {}
+    if (result.get("status") == "observed" and result.get("episode_id") == episode["id"]
+            and result.get("verified") is True and pose.get("location_ok") is True
+            and pose.get("source") in ("apriltag_componentwise", "apriltag")
+            and (pose.get("confidence") or {}).get("level") == "HIGH"
+            and _load_planned(scanner) == episode["original_target"]
+            and _get_correction_counter(scanner) == 0
+            and all(isinstance(pose.get(f), (float, int)) and math.isfinite(pose[f])
+                    for f in ("x_m", "y_m", "heading_deg"))):
+        _s3_save_true_location(scanner, pose)
+        _update_10s_report(scanner)
+        _set_state(scanner, S5_COMPUTING_CORRECTION, "S8 fresh observation; recheck original target")
+        return run_state_machine(scanner)
+    return _s8_stop(scanner, episode, result.get("reason") or "no verified recovery result")
+
+
 # ===== s4waiting_location_retry =====
 
 def s4waiting_location_retry(scanner: str) -> Dict[str, Any]:
@@ -3014,7 +3161,21 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         correction_count < 0
     )
 
+    ep = _s8_episode(scanner)
+    landing = ep.get("landing")
     macro_context = _load_site_macro_context(scanner)
+    if landing is not None and (
+        _s8_expired(ep) or _load_stop().get("stop") or correction_count not in (0, 1)
+        or not macro_context or macro_context.get("phase") != "post_cross_landing_verified"
+        or macro_context.get("action") != "mobility.in2out" or planned_loc != ep.get("original_target")
+        or not landing_rules.measured(true_loc) or not math.isfinite(dpos)
+    ):
+        return _s5_stop_experiment(scanner, detail="S8: invalid landing evidence or expired", error=err)
+    if landing is not None and correction_count == 1:
+        if (not landing_rules.check_report(_load_report_json(scanner) or {}, landing.get("args"),
+                                           landing.get("crossing_finish"))
+                or dpos > landing_rules.ARRIVAL):
+            return _s5_stop_experiment(scanner, detail="S8: correction not verified within 15 cm", error=err)
     if macro_context and not initial_script_execution:
         macro_cfg = dict(macro_context.get("macro_cfg") or {})
         landing_issue = _site_macro_landing_issue(true_loc, macro_cfg)
@@ -3127,12 +3288,28 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
             )
         )
 
-        if correction_count == 0 and dpos > first_correction_max_m:
+        if landing is not None and correction_count == 0:
+            if (landing.get("args") is not None or not decision.get("go")
+                    or true_loc != ep["suspect_or_landing_pose"] or _load_s0_command_arg_overrides(scanner)):
+                return _s5_stop_experiment(scanner, detail="S8: landing planning veto", error=err)
+            try:
+                landing_xy = landing_rules.endpoint(true_loc, planned_loc, first_correction_max_m)
+            except (ValueError, KeyError, TypeError):
+                return _s5_stop_experiment(scanner, detail="S8: outside correction band", error=err)
+        elif correction_count == 0 and dpos > first_correction_max_m:
             stop_detail = (
                 "first correction too large: "
                 f"dpos={dpos:.3f}m > "
                 f"{first_correction_max_m:.3f}m"
             )
+            if getattr(config, "MOBILITY_S8_ENABLED", False) is True:
+                entry = _s8_prepare(scanner, true_loc, planned_loc, dpos,
+                                    first_correction_max_m, macro_context, stop_detail)
+                if entry is not None:
+                    _trace_followup_decision(scanner, true_loc=true_loc, planned_loc=planned_loc,
+                        error=err, correction_count=correction_count, decision=decision,
+                        outcome="entered_s8_before_first_correction", detail=stop_detail)
+                    return entry
             _trace_followup_decision(
                 scanner,
                 true_loc=true_loc,
@@ -3293,6 +3470,8 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         ),
     }
 
+    if landing is not None:
+        motion_target["x_m"], motion_target["y_m"] = landing_xy
     action, args, correction_detail = (
         _build_command_from_true_to_target(
             scanner,
@@ -3314,6 +3493,13 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
             preferred,
     }
 
+    if landing is not None:
+        d = args.get("distance_m") if args else None
+        if (action != landing_rules.ACTION or not landing_rules.number(d)
+                or abs(d - first_correction_max_m) > 1e-8 or "move_profile" in args):
+            return _s5_stop_experiment(scanner, detail="S8: unexpected planner output", error=err)
+        # Normalise harmless last-bit round-off BEFORE simulating and checking the actual path.
+        args = {**args, "distance_m": min(d, first_correction_max_m)}
     if not action:
         _clear_pending_sequence(scanner)
         _clear_outgoing_command_preview(scanner)
@@ -3393,7 +3579,7 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         # cross the bump core. The active macro transaction owns its crossing
         # and post-cross correction until completion.
         ramp_issues = []
-        if not macro_context:
+        if not macro_context or landing is not None:
             ramp_issues = ramp_restriction_movement_issues(
                 true_loc,
                 simulated_target,
@@ -3411,6 +3597,9 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
             "dynamic_blocked_count": path_debug.get("dynamic_blocked_count"),
         }
 
+        if landing is not None and (not path_ok or blocked or not all(map(math.isfinite, (px, py)))
+                or math.hypot(px - motion_target["x_m"], py - motion_target["y_m"]) > 1e-6):
+            return _s5_stop_experiment(scanner, detail="S8: simulated path or endpoint rejected", error=err)
         if blocked_cells or ramp_issues:
             if not initial_script_execution:
                 _trace_followup_decision(
@@ -3483,6 +3672,9 @@ def _s5_compute_correction(scanner: str) -> Dict[str, Any]:
         path_summary=path_summary,
     )
 
+    if landing is not None:
+        landing["args"] = args.copy()
+        utility._hset_many(key_state(scanner), {"s8_episode_json": ep})
     seq = [
         {
             "action": action,
@@ -3547,6 +3739,17 @@ def s6issuing_correction(scanner: str) -> Dict[str, Any]:
 def _s6_issue_correction(scanner: str) -> Dict[str, Any]:
     seq = _load_pending_sequence(scanner)
 
+    ep = _s8_episode(scanner)
+    landing = ep.get("landing")
+    if landing is not None:
+        good = (not _load_stop().get("stop") and not _s8_expired(ep)
+                and _get_correction_counter(scanner) == 0 and _load_planned(scanner) == ep["original_target"]
+                and _load_true(scanner) == ep["suspect_or_landing_pose"] and not _load_s0_command_arg_overrides(scanner)
+                and len(seq or []) == 1 and seq[0] == {"action": landing_rules.ACTION, "args": landing.get("args")})
+        # A duplicate S6 callback must never issue a second physical command.
+        if not good or not config.r.hsetnx(key_state(scanner), "s8_landing_issue_claim", ep["id"]):
+            return {"status":"stop", "transition_to":S7_STOPPED, "detail":"S8: invalid/duplicate landing issue",
+                    "issued_command":{}}
     if not seq:
         _clear_pending_sequence(scanner)
         _clear_outgoing_command_preview(scanner)
@@ -3788,6 +3991,8 @@ def run_state_machine(scanner: str) -> Dict[str, Any]:
         return s6issuing_correction(scanner)
     if state == S7_STOPPED:
         return s7stopped(scanner)
+    if state == S8_RECOVERY:
+        return s8recovery(scanner)
 
     _set_state(scanner, S0_IDLE, "invalid state reset")
     return s0idle(scanner)

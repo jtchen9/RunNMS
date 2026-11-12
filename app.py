@@ -31,6 +31,8 @@ app.include_router(m0Health.router)
 app.include_router(m1Registry.router)
 app.include_router(m2Bootstrap.router)
 app.include_router(m3Ingest.router)
+from registration_swagger import install_registration_swagger
+install_registration_swagger(app)
 app.include_router(m4Commands.router)
 app.include_router(m5Northbound.router)
 app.include_router(m6AP.router)
