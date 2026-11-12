@@ -3,7 +3,7 @@ from pathlib import Path
 import hashlib,json,math,posixpath,re,zipfile
 import xml.etree.ElementTree as ET
 NS={'s':'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
-VERSION='0.4.2'
+VERSION='0.4.3'
 
 def read_static_map(workbook,sheet='StaticMap',cell_range='C4:DL117',resolution_m=.1):
     """Bottom-left cell covers [0,resolution] on both axes; never execute VBA."""
@@ -66,7 +66,68 @@ def compact_label(prefix, event):
     return f"{prefix}{sep}{event['source_line']}"
 
 
-def render_routes(result,workbook,output_dir,*,sheet='StaticMap',cell_range='C4:DL117',resolution_m=.1,dpi=160,per_robot=True,overview_label_every=5):
+
+def _place_row_labels(ax, pending, nodes, segments):
+    """Place horizontal row labels in points, after the axes have their final limits."""
+    if not pending:
+        return
+    import numpy as np  # Matplotlib's existing dependency
+    from matplotlib.colors import to_rgb
+    from matplotlib.font_manager import FontProperties
+
+    ax.apply_aspect()
+    renderer = ax.figure.canvas.get_renderer()
+    px = renderer.points_to_pixels(1)
+    font = FontProperties(family='DejaVu Sans', size=4.1, weight='medium')
+    # Work in typographic points so offsets do not grow with the PNG resolution.
+    def project(points):
+        return ax.transData.transform(points) / px
+
+    dots = project(nodes)
+    ends = project(np.asarray(segments).reshape(-1, 2)).reshape(-1, 2, 2)
+    midpoint = ends.mean(axis=1)
+    half = (ends[:, 1] - ends[:, 0]) / 2
+    boxes = np.empty((len(pending), 4))
+    directions = [(1,1), (1,-1), (-1,1), (-1,-1), (0,1), (0,-1), (1,0), (-1,0)]
+    # Use the same text artist to measure and draw; includes the actual font descent.
+    for i, (label, xy, color, gap) in enumerate(pending):
+        p = project([xy])[0]
+        ink = tuple(.54 * v for v in to_rgb(color))
+        text = ax.annotate(label, xy, xytext=(0,0), textcoords='offset points',
+                           fontproperties=font, color=ink, zorder=5)
+        extent = text.get_window_extent(renderer)
+        size = np.array([extent.width, extent.height]) / px
+        delta = np.abs(dots - p)
+        nearby = dots[(delta.max(axis=1) < size.sum() + 9) & (delta.max(axis=1) > 1e-6)]
+        best = None
+        for order, (dx, dy) in enumerate(directions):
+            direction = np.array([dx, dy])
+            lo = p + gap * direction - size * (1 - direction) / 2
+            hi = lo + size
+            center = (lo + hi) / 2
+            occupied = np.count_nonzero(np.all(boxes[:i,:2] < hi + .5, axis=1) &
+                                        np.all(boxes[:i,2:] > lo - .5, axis=1))
+            distance = np.linalg.norm(np.maximum(np.maximum(lo-nearby, nearby-hi), 0), axis=1)
+            ownership = max(0., np.linalg.norm(center-p) + .5 -
+                            np.min(np.linalg.norm(center-nearby, axis=1), initial=np.inf))
+            # Segment/rectangle intersection via the two box axes and segment normal.
+            extent = size / 2 + .35
+            v = midpoint - center
+            hits = (np.all(np.abs(v) <= extent + np.abs(half), axis=1) &
+                    (np.abs(v[:,0]*half[:,1] - v[:,1]*half[:,0]) <=
+                     extent[0]*np.abs(half[:,1]) + extent[1]*np.abs(half[:,0])))
+            score = (occupied, np.maximum(0, 2-distance).sum(), ownership,
+                     np.count_nonzero(hits), order)
+            if best is None or score < best[0]:
+                best = score, dx, dy, lo, hi
+        _, dx, dy, lo, hi = best
+        boxes[i] = [*lo, *hi]
+        text.set_position((gap * dx, gap * dy))
+        text.set_ha({1:'left', -1:'right', 0:'center'}[dx])
+        text.set_va({1:'bottom', -1:'top', 0:'center'}[dy])
+
+
+def render_routes(result,workbook,output_dir,*,sheet='StaticMap',cell_range='C4:DL117',resolution_m=.1,dpi=320,per_robot=True,overview_label_every=5):
     """Return manifest; retain interpretation gaps and issue-time semantics."""
     if not isinstance(dpi,int) or dpi<50 or dpi>600:raise ValueError('dpi must be an integer from 50 to 600')
     if not isinstance(overview_label_every,int) or overview_label_every<1:raise ValueError('overview_label_every must be a positive integer')
@@ -95,7 +156,8 @@ def render_routes(result,workbook,output_dir,*,sheet='StaticMap',cell_range='C4:
         bounds.extend((e['x_m'],e['y_m']) for e in robot['points'] if e.get('x_m') is not None)
     if not bounds:bounds=[(0,0),(1,1)]
     def draw(selected,filename,detail):
-        fig=Figure(figsize=(17,14));FigureCanvasAgg(fig);ax=fig.add_subplot(111);fig.subplots_adjust(left=.07,right=.81,bottom=.12,top=.9)
+        pending, nodes, segments = [], [], []
+        fig=Figure(figsize=(17,14), dpi=dpi);FigureCanvasAgg(fig);ax=fig.add_subplot(111);fig.subplots_adjust(left=.07,right=.81,bottom=.12,top=.9)
         if data:
             for kind,color in [('restricted','#dddddd'),('bump','#f6d66b'),('unknown','#e154d4')]:
                 patches=[Rectangle((x,y),data['resolution'],data['resolution']) for x,y,k in data['cells'] if k==kind]
@@ -111,21 +173,27 @@ def render_routes(result,workbook,output_dir,*,sheet='StaticMap',cell_range='C4:
             robot=result['robots'][name];color=colors[name];short=name.removeprefix('twin-scout-');initial=robot['initial_pose']
             handles.append(Line2D([0],[0],color=color,marker='o',label=prefixes[name]+' = '+name))
             if initial:
-                x,y=initial['x_m'],initial['y_m'];ax.scatter(x,y,marker='*',s=160,color=color,edgecolor='black',zorder=6)
-                ax.annotate(short+' initial',(x,y),xytext=(7,-15),textcoords='offset points',fontsize=8,color=color)
+                x,y=initial['x_m'],initial['y_m'];ax.scatter(x,y,marker='*',s=62,color=color,edgecolor='black',zorder=6)
+                nodes.append((x,y))
+                if not detail:
+                    pending.append((short+' initial', (x,y), color, 4.5))
             points=robot['points'];known=[e for e in points if e.get('x_m') is not None]
             for seq,e in enumerate(points,1):
                 if e.get('x_m') is None:continue
                 x,y=e['x_m'],e['y_m']
                 if e['segment_known']:
-                    fx,fy=e['from_x_m'],e['from_y_m'];ax.plot([fx,x],[fy,y],color=color,lw=1.2,linestyle='--' if e['status']=='expected_macro_segment' else '-',zorder=2)
-                    if fx!=x or fy!=y:ax.annotate('',xy=(fx+.75*(x-fx),fy+.75*(y-fy)),xytext=(fx+.4*(x-fx),fy+.4*(y-fy)),arrowprops=dict(arrowstyle='->',color=color,lw=.9),zorder=3)
-                ax.scatter(x,y,s=17,marker='o' if e['segment_known'] else 'x',color=color,zorder=4)
+                    fx,fy=e['from_x_m'],e['from_y_m'];ax.plot([fx,x],[fy,y],color=color,lw=.8,linestyle='--' if e['status']=='expected_macro_segment' else '-',zorder=2)
+                    segments.append(((fx,fy), (x,y)))
+                    if fx!=x or fy!=y:ax.annotate('',xy=(fx+.75*(x-fx),fy+.75*(y-fy)),xytext=(fx+.4*(x-fx),fy+.4*(y-fy)),arrowprops=dict(arrowstyle='->',color=color,lw=.6,mutation_scale=6),zorder=3)
+                nodes.append((x,y))
+                ax.scatter(x,y,s=6,marker='o' if e['segment_known'] else 'x',color=color,zorder=4)
                 if detail or (seq-1)%overview_label_every==0 or e is known[-1]:
                     suffix=' ?' if not e['segment_known'] else ''
-                    horizontal = e['segment_known'] and abs(e['dx_m']) > 2 * abs(e['dy_m'])
-                    ax.annotate(compact_label(prefixes[name],e)+suffix,(x,y),xytext=(0,8) if horizontal else (8,0),textcoords='offset points',ha='left',va='bottom' if horizontal else 'center',rotation=60 if horizontal else 0,rotation_mode='anchor',fontsize=9 if detail else 8,color=color,zorder=5)
-            if known:ax.scatter(known[-1]['x_m'],known[-1]['y_m'],marker='s',s=65,facecolors='none',edgecolors=color,zorder=6)
+                    gap = 2.8 if e is known[-1] else 1.65
+                    if initial and (x,y) == (initial['x_m'],initial['y_m']):
+                        gap = 3.8  # The destination coincides with the start star.
+                    pending.append((compact_label(prefixes[name], e)+suffix, (x,y), color, gap))
+            if known:ax.scatter(known[-1]['x_m'],known[-1]['y_m'],marker='s',s=25,facecolors='none',edgecolors=color,zorder=6)
         view_bounds = bounds
         if detail:
             robot = result['robots'][selected[0]]
@@ -146,6 +214,7 @@ def render_routes(result,workbook,output_dir,*,sheet='StaticMap',cell_range='C4:
             import textwrap
             ax.text(1.01,.6,'Diagnostics (first four):\n'+ '\n'.join(textwrap.fill(line,32) for line in text.splitlines())+'\n\nSee diagnostics JSON files.',transform=ax.transAxes,fontsize=8,color='#b02020',va='top')
         if not selected:ax.text(.5,.5,'No interpretable robot routes',transform=ax.transAxes,ha='center')
+        _place_row_labels(ax, pending, nodes, segments)
         fig.savefig(out/filename,dpi=dpi);fig.clear()
     draw(names,'routes.png',False)
     if per_robot:
