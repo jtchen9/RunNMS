@@ -331,6 +331,9 @@ MOBILITY_REPORT_INTERCEPT_KEY_PREFIX = f"{KEY_PREFIX}debug:mobility_report_inter
 MOBILITY_REPORT_INTERCEPT_ENABLE_KEY = f"{KEY_PREFIX}debug:mobility_report_intercept:enabled"
 MOBILITY_REPORT_INTERCEPT_EVENT_STREAM = f"{KEY_PREFIX}debug:mobility_report_intercept:events"
 
+MOBILITY_S8_ENABLED = False
+MOBILITY_S8_VIEW_ENABLED = False
+
 # ==================
 # Runtime init
 # ==================
