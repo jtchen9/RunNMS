@@ -224,6 +224,12 @@ def _post_upload_scan_batch(
         "ap_traffic_reports": ap_traffic_reports or [],
     }
 
+    body = _upload_json_bytes(payload)
+    cap = int(getattr(config, "AP_UPLOAD_MAX_BYTES", 2_000_000) if ap_traffic_reports
+              else config.UPLOAD_BATCH_MAX_BYTES)
+    if len(body) > cap:
+        return False, f"payload too large: {len(body)} bytes; limit={cap}", 0, 0
+
     try:
         config.r.set(config.KEY_NB_LAST_UPLOAD_PAYLOAD, json.dumps(payload, ensure_ascii=False))
         config.r.expire(config.KEY_NB_LAST_UPLOAD_PAYLOAD, config.NB_DEBUG_TTL_SEC)
@@ -233,22 +239,90 @@ def _post_upload_scan_batch(
     try:
         resp = requests.post(
             config.WEB_NMS_UPLOAD_URL,
-            json=payload,
-            headers=_web_headers(),
+            data=body,
+            headers={**_web_headers(), "Content-Type": "application/json"},
             timeout=10,
             verify=getattr(config, "WEB_VERIFY_TLS", True),
         )
         resp.raise_for_status()
         j = resp.json()
         if isinstance(j, dict) and j.get("status") == "ok":
-            return True, "ok", int(j.get("accepted") or 0), int(j.get("rejected") or 0)
+            rejected = int(j.get("rejected") or 0)
+            return rejected == 0, ("ok" if rejected == 0 else "web rejected records; retained"), int(j.get("accepted") or 0), rejected
         return False, f"web returned {j}", 0, 0
     except Exception as e:
         return False, f"post failed: {e}", 0, 0
 
     
 
+def _upload_json_bytes(payload: Dict[str, Any]) -> bytes:
+    # Exactly the bytes sent over HTTP; preserve null and avoid escaped UTF-8 bloat.
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def _upload_ap_reports_once() -> Dict[str, Any]:
+    """Send whole AP reports separately, bounded per cycle and round-robin.
+
+    Never split an AP measurement or delete oversized / failed entries.
+    The web backend retains ownership of interpreting the raw report.
+    """
+    scanners = sorted(config.r.smembers(config.KEY_REGISTRY))
+    cursor_key = f"{config.KEY_PREFIX}nb:ap_upload_cursor"
+    cursor = config.r.get(cursor_key) or ""
+    if cursor in scanners:
+        i = scanners.index(cursor) + 1
+        scanners = scanners[i:] + scanners[:i]
+    result = {"sent_ap_traffic_reports": 0, "ap_upload_attempts": 0,
+              "ap_upload_oversized": [], "ap_upload_errors": []}
+    cap = int(getattr(config, "AP_UPLOAD_MAX_BYTES", 2_000_000))
+    max_posts = int(getattr(config, "AP_UPLOAD_MAX_POSTS_PER_CYCLE", 12))
+    experiment = _build_experiment_snapshot()
+    for scanner in scanners:
+        if result["ap_upload_attempts"] >= max_posts:
+            break
+        config.r.set(cursor_key, scanner)
+        rows = config.r.xrange(config.key_ap_uplink_stream(scanner), count=200)
+        for xid, fields in rows:
+            if result["ap_upload_attempts"] >= max_posts:
+                break
+            try:
+                raw = json.loads(fields.get("payload_text", ""))
+                if not isinstance(raw, dict):
+                    raise ValueError("AP report must be an object")
+                meta = config.r.hgetall(config.key_scanner_meta(scanner)) or {}
+                item = {"ap_id": meta.get("ap_alias") or scanner,
+                        "ap_real_id": scanner, "scanner": scanner,
+                        "time_format": config.TIME_FMT, "raw": raw}
+                # The sender performs the authoritative full-envelope size check.
+                if len(_upload_json_bytes(item)) > cap:
+                    result["ap_upload_oversized"].append({"scanner": scanner, "id": xid})
+                    continue
+                result["ap_upload_attempts"] += 1
+                ok, detail, _, _ = _post_upload_scan_batch(
+                    [], ap_traffic_reports=[item], experiment=experiment)
+                if not ok:
+                    result["ap_upload_errors"].append({"scanner": scanner, "id": xid, "detail": detail})
+                    break
+                config.r.xdel(config.key_ap_uplink_stream(scanner), xid)
+                result["sent_ap_traffic_reports"] += 1
+            except Exception as exc:
+                result["ap_upload_errors"].append({"scanner": scanner, "id": xid, "detail": str(exc)})
+                # Retain malformed entries for inspection, but try the next entry.
+    config.r.set(f"{config.KEY_PREFIX}nb:ap_upload:last_result", json.dumps(result, ensure_ascii=False))
+    return result
+
+
 def _northbound_upload_once() -> Dict[str, Any]:
+    # Preserve existing scan / iperf3 behavior, then independently drain AP queues.
+    result = _northbound_upload_scans_once()
+    try:
+        result.update(_upload_ap_reports_once())
+    except Exception as exc:
+        result["ap_upload_errors"] = [{"detail": str(exc)}]
+    return result
+
+
+def _northbound_upload_scans_once() -> Dict[str, Any]:
     """
     One cycle: build one 1-minute northbound payload from passive producers.
 
@@ -293,7 +367,7 @@ def _northbound_upload_once() -> Dict[str, Any]:
         "ap_traffic_reports": [],
     }
     base_bytes = utility._json_bytes(envelope_base)
-    budget = max(0, int(config.UPLOAD_BATCH_MAX_BYTES - base_bytes))
+    budget = max(0, int(config.UPLOAD_BATCH_MAX_BYTES - base_bytes - 2048))
 
     # -------------------------
     # 1) Collect robot scan items
@@ -357,18 +431,8 @@ def _northbound_upload_once() -> Dict[str, Any]:
             selected_iperf3_sessions, selected_iperf3_ids, iperf3_bad_json_deleted = [], [], 0
 
     # -------------------------
-    # 3) Collect AP 1-minute traffic reports
-    # -------------------------
-    if budget > 0:
-        try:
-            ap_traffic_reports, selected_ap_ids_by_scanner, ap_bad_json_deleted = _collect_ap_traffic_reports_for_upload(
-                scanners=robots,
-                budget=budget,
-                limit_per_ap=200,
-            )
-        except Exception:
-            ap_traffic_reports, selected_ap_ids_by_scanner, ap_bad_json_deleted = [], {}, 0
-
+    # AP reports use a separate bounded upload path; they do not compete
+    # with scans and iperf3 results for the same payload budget.
     # -------------------------
     # 4) POST assembled 1-minute payload
     # -------------------------
@@ -803,6 +867,8 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
                 "associations": associations,
                 "device_name": meta.get("device_name", ""),
                 "traffic_enabled": meta.get("traffic_enabled", ""),
+                "backhaul_mac": meta.get("backhaul_mac", ""),
+                "wireless_macs": _optional_json_dict(meta.get("wireless_macs_json")) ,
                 "detail": "",
             })
 
@@ -1060,7 +1126,7 @@ def _northbound_status_once(wifi_bssid: Optional[str] = None) -> Dict[str, Any]:
 async def _northbound_loop():
     while True:
         try:
-            _northbound_upload_once()
+            await asyncio.to_thread(_northbound_upload_once)
         except Exception:
             pass
         await asyncio.sleep(config.NORTHBOUND_UPLOAD_EVERY_SEC)
