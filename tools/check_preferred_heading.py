@@ -1,106 +1,161 @@
 #!/usr/bin/env python3
-"""Compare the primary and recovery headings at the same nearest LUT cell.
-
-Run in VS Code after editing the settings at the bottom, or import
-check_preferred_heading(npy_path, x_m, y_m). All tag IDs are predictions.
-"""
 from __future__ import annotations
 
-import hashlib
-import json
-import math
-from pathlib import Path
+"""
+Check preferred heading at one (x_m, y_m) location.
 
+Recommended placement:
+    D:\\Data\\_Action\\_RunNMS\\tools\\check_preferred_heading.py
+
+Usage in VS Code:
+    1. Edit NPY_PATH, X_M, and Y_M under:
+           if __name__ == "__main__":
+    2. Press "Run Python File"
+
+The script automatically reads axis_x_m.npy and axis_y_m.npy
+from the same folder as preferred_heading_deg.npy.
+
+Lookup rule:
+    nearest LUT grid point
+"""
+
+from pathlib import Path
+import math
 import numpy as np
 
 
-def _nearest_index(axis, value, name):
-    if axis.ndim != 1 or not axis.size or not np.isfinite(axis).all() or not (np.diff(axis) > 0).all():
-        raise ValueError(f"Invalid {name} axis: expected finite, strictly increasing values")
-    if not math.isfinite(value) or not float(axis[0])-1e-6 <= value <= float(axis[-1])+1e-6:
-        raise ValueError(f"{name}={value} outside LUT range [{axis[0]:.3f}, {axis[-1]:.3f}]")
-    return int(np.abs(axis.astype(float) - value).argmin())
+def _nearest_index(axis: np.ndarray, value: float) -> int:
+    if axis.ndim != 1 or len(axis) == 0:
+        raise ValueError("LUT axis must be a non-empty 1D array")
+
+    return int(
+        np.abs(axis.astype(float) - float(value)).argmin()
+    )
 
 
-def _read_alternative(path, primary, shape, iy, ix, x, y):
-    with np.load(path, allow_pickle=False) as data:
-        meta = json.loads(data["metadata"].item())
-        if meta["version"] != 1:
-            raise ValueError("Unsupported alternative LUT format")
-        names = ["preferred_heading_deg.npy", "axis_x_m.npy", "axis_y_m.npy", "preferred_direction_meta.json"]
-        for name in names:
-            source = primary if name == names[0] else primary.parent / name
-            if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != meta["primary_files"].get(name):
-                raise ValueError(f"Alternative LUT does not match {name}; rebuild it for this primary LUT.")
-        views = json.loads(data["views"].item())
-        arrays = [data[k] for k in ("heading", "primary_view", "alternative_view")]
-        if any(a.shape != shape for a in arrays):
-            raise ValueError("Alternative LUT shape differs from the primary grid")
-        view_ids = [int(a[iy, ix]) for a in arrays[1:]]
-        if any(not 0 <= i < len(views) for i in view_ids):
-            raise ValueError("Invalid camera view index in alternative LUT")
-        excluded = sorted({tag for z in meta["zones"] if
-                           z["x"][0]-1e-6 <= x <= z["x"][1]+1e-6 and
-                           z["y"][0]-1e-6 <= y <= z["y"][1]+1e-6 for tag in z["tags"]})
-        predictions = [dict(zip(("front", "rear"), views[i], strict=True)) for i in view_ids]
-        return float(arrays[0][iy, ix]), *predictions, excluded
+def check_preferred_heading(
+    npy_path: str | Path,
+    x_m: float,
+    y_m: float,
+) -> dict:
+    heading_path = Path(npy_path)
 
+    if not heading_path.exists():
+        raise FileNotFoundError(
+            f"Preferred-heading NPY file not found:\n  {heading_path}"
+        )
 
-def check_preferred_heading(npy_path: str | Path, x_m: float, y_m: float,
-                            alternative_path: str | Path | None = None) -> dict:
-    primary = Path(npy_path)
-    path = primary.with_name("alternative_heading_v1.npz") if alternative_path is None else Path(alternative_path)
-    heading = np.load(primary, allow_pickle=False)
-    xs, ys = [np.load(primary.parent / f"axis_{d}_m.npy", allow_pickle=False) for d in ("x", "y")]
-    x, y = float(x_m), float(y_m)
-    ix, iy = _nearest_index(xs, x, "x_m"), _nearest_index(ys, y, "y_m")
-    if heading.shape != (len(ys), len(xs)):
-        raise ValueError("Primary LUT shape does not match the supplied axes")
-    gx, gy = float(xs[ix]), float(ys[iy])
-    h = float(heading[iy, ix])
-    alt, turn, pv, av, excluded, novel, shared = math.nan, None, None, None, None, None, None
-    status = "companion_missing"
-    if path.is_file():
-        alt, pv, av, excluded = _read_alternative(path, primary, heading.shape, iy, ix, gx, gy)
-        if not math.isfinite(h):
-            if math.isfinite(alt):
-                raise ValueError("Alternative exists at a cell without a primary heading")
-            status = "no_primary"
-        elif not math.isfinite(alt):
-            status = "no_alternative"
-        else:
-            status = "ok"
-            turn = (alt - h + 180.0) % 360.0 - 180.0
-            p, a = (set(v["front"]) | set(v["rear"]) for v in (pv, av))
-            novel, shared = sorted(a-p), sorted(a&p)
-    elif alternative_path is not None:
-        raise FileNotFoundError(f"Requested alternative LUT not found: {path}")
+    lut_dir = heading_path.parent
+    axis_x_path = lut_dir / "axis_x_m.npy"
+    axis_y_path = lut_dir / "axis_y_m.npy"
 
-    print(f"Requested ({x:.3f}, {y:.3f}) m -> grid ({gx:.3f}, {gy:.3f}) m [ix={ix}, iy={iy}]")
-    for label, value, view in (("Primary", h, pv), ("Alternative", alt, av)):
-        angle = f"{value % 360:.1f} deg" if math.isfinite(value) else "unavailable"
-        tags = f"  predicted tags: front={view['front']} rear={view['rear']}" if view is not None and math.isfinite(value) else ""
-        print(f"{label:11s}: {angle}{tags}")
-    if status == "ok":
-        print(f"Signed heading change: {turn:+.1f} deg; new tag IDs: {novel}; shared: {shared}")
-    elif status == "companion_missing":
-        print(f"Alternative file missing: {path}. Run build_alternative_heading_lut.py once.")
-    elif status == "no_primary":
-        print("No primary heading at this cell.")
+    if not axis_x_path.exists():
+        raise FileNotFoundError(
+            f"Missing x-axis file:\n  {axis_x_path}"
+        )
+
+    if not axis_y_path.exists():
+        raise FileNotFoundError(
+            f"Missing y-axis file:\n  {axis_y_path}"
+        )
+
+    heading = np.load(heading_path)
+    xs = np.load(axis_x_path)
+    ys = np.load(axis_y_path)
+
+    if heading.ndim != 2:
+        raise ValueError(
+            f"Expected 2D LUT, got shape={heading.shape}"
+        )
+
+    expected_shape = (len(ys), len(xs))
+    if heading.shape != expected_shape:
+        raise ValueError(
+            "LUT shape does not match axes:\n"
+            f"  heading.shape = {heading.shape}\n"
+            f"  expected      = {expected_shape}"
+        )
+
+    x = float(x_m)
+    y = float(y_m)
+
+    x_min = float(xs[0])
+    x_max = float(xs[-1])
+    y_min = float(ys[0])
+    y_max = float(ys[-1])
+
+    if not (x_min <= x <= x_max):
+        raise ValueError(
+            f"x_m={x:.3f} outside LUT range "
+            f"[{x_min:.3f}, {x_max:.3f}]"
+        )
+
+    if not (y_min <= y <= y_max):
+        raise ValueError(
+            f"y_m={y:.3f} outside LUT range "
+            f"[{y_min:.3f}, {y_max:.3f}]"
+        )
+
+    ix = _nearest_index(xs, x)
+    iy = _nearest_index(ys, y)
+
+    grid_x = float(xs[ix])
+    grid_y = float(ys[iy])
+    preferred_heading = float(heading[iy, ix])
+
+    print()
+    print("=" * 72)
+    print("PREFERRED HEADING LOOKUP")
+    print("=" * 72)
+    print(f"NPY file              : {heading_path}")
+    print(f"Requested location    : ({x:.3f}, {y:.3f}) m")
+    print(f"Nearest LUT location  : ({grid_x:.3f}, {grid_y:.3f}) m")
+    print(f"LUT indices           : ix={ix}, iy={iy}")
+
+    if math.isfinite(preferred_heading):
+        print(
+            f"Preferred heading     : "
+            f"{preferred_heading % 360.0:.3f} deg"
+        )
     else:
-        print("No alternate view met the configured criteria at this cell.")
-    if excluded:
-        print(f"Locally excluded tag IDs: {excluded}")
-    return dict(requested_x_m=x, requested_y_m=y, grid_x_index=ix, grid_y_index=iy,
-                grid_x_m=gx, grid_y_m=gy, preferred_heading_deg=h, alternative_heading_deg=alt,
-                status=status, turn_deg=turn, primary_tags=pv, alternative_tags=av,
-                new_tag_ids=novel, shared_tag_ids=shared, excluded_tag_ids=excluded)
+        print(
+            "Preferred heading     : NaN "
+            "(no valid heading at this LUT cell)"
+        )
+
+    print("=" * 72)
+    print()
+
+    return {
+        "requested_x_m": x,
+        "requested_y_m": y,
+        "grid_x_index": ix,
+        "grid_y_index": iy,
+        "grid_x_m": grid_x,
+        "grid_y_m": grid_y,
+        "preferred_heading_deg": preferred_heading,
+    }
 
 
 if __name__ == "__main__":
-    # Set the query here and click Run Python File.
-    LUT_DIR = Path(__file__).resolve().parents[1] / "sitemap" / "DemoRoom" / "preferred_direction_lut"
-    NPY_PATH = LUT_DIR / "preferred_heading_deg.npy"
-    ALTERNATIVE_PATH = None  # Auto-detect alternative_heading_v1.npz beside NPY_PATH.
-    X_M, Y_M = 4.0, 3.1
-    check_preferred_heading(NPY_PATH, X_M, Y_M, ALTERNATIVE_PATH)
+    # ==============================================================
+    # EDIT THESE THREE VALUES, THEN PRESS "RUN PYTHON FILE" IN VS CODE
+    # ==============================================================
+
+    NPY_PATH = (
+        r"D:\Data\_Action\_RunNMS"
+        r"\sitemap\DemoRoom"
+        r"\preferred_direction_lut"
+        r"\preferred_heading_deg.npy"
+    )
+
+    X_M = 9.08
+    Y_M = 6.16
+
+    # ==============================================================
+
+    check_preferred_heading(
+        npy_path=NPY_PATH,
+        x_m=X_M,
+        y_m=Y_M,
+    )

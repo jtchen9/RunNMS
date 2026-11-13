@@ -2,7 +2,7 @@ from typing import Optional, List, Dict, Any
 import json
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 import config
 import utility
@@ -32,11 +32,6 @@ class APAssociationItem(BaseModel):
 
 
 class APPollStatus(BaseModel):
-    # Preserve additions without making older APs supply them.
-    model_config = {"extra": "allow"}
-    backhaul_mac: Optional[str] = None
-    wireless_macs: Optional[Dict[str, Any]] = None
-
     mac: str
     ip: Optional[str] = None
     ssids: List[str] = Field(default_factory=list)
@@ -52,8 +47,6 @@ class APPollReq(BaseModel):
 
 
 class APTrafficRecord(BaseModel):
-    model_config = {"extra": "allow"}
-
     sta_mac: str
     ac: str
     avg_frame_duration_us: float
@@ -65,40 +58,10 @@ class APTrafficRecord(BaseModel):
 
 
 class APTrafficReq(BaseModel):
-    # The AP owns the traffic schema; the NMS preserves its contents.
-    model_config = {"extra": "allow"}
     time_start: str
     time_end: str
+    records: List[APTrafficRecord] = Field(default_factory=list)
     device_name: Optional[str] = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def validate_report_shape(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            raise ValueError("AP traffic report must be an object")
-        version = data.get("format_version", 1)
-        if type(version) is not int or version not in (1, 2):
-            raise ValueError("unsupported AP traffic format_version")
-        if version == 2:
-            if not isinstance(data.get("radios"), list) or not isinstance(data.get("peers"), list):
-                raise ValueError("version 2 requires radios and peers arrays")
-            if any(not isinstance(x, dict) for x in data["radios"] + data["peers"]):
-                raise ValueError("radios and peers entries must be objects")
-            for peer in data["peers"]:
-                records = peer.get("records", [])
-                if not isinstance(records, list) or any(not isinstance(x, dict) for x in records):
-                    raise ValueError("peer records must be an array of objects")
-        else:
-            # Keep original record validation while retaining AP-owned additions.
-            records = data.get("records", [])
-            if not isinstance(records, list):
-                raise ValueError("records must be an array")
-            for record in records:
-                APTrafficRecord.model_validate(record)
-        return data
-
-    def report_payload(self) -> Dict[str, Any]:
-        return self.model_dump(exclude_unset=True)
 
 
 @router.post("/ap/poll/{scanner}", tags=["6 AP Control"])
@@ -137,12 +100,6 @@ def ap_poll(
         "device_name": str(req.status.device_name or ""),
     }
 
-    # Absent optional fields do not erase metadata during a mixed-image rollout.
-    if "backhaul_mac" in req.status.model_fields_set:
-        meta_updates["backhaul_mac"] = req.status.backhaul_mac or ""
-    if "wireless_macs" in req.status.model_fields_set:
-        meta_updates["wireless_macs_json"] = json.dumps(req.status.wireless_macs, ensure_ascii=False)
-
     try:
         config.r.hset(config.key_scanner_meta(scanner), mapping=meta_updates)
         config.r.sadd(config.KEY_REGISTRY, scanner)
@@ -174,13 +131,12 @@ def ap_traffic(scanner: str, req: APTrafficReq) -> Dict[str, Any]:
             detail=f"time_start/time_end must be like '{utility.local_ts()}' (format {config.TIME_FMT})"
         )
 
-    payload = req.report_payload()
-    payload.update({"time_start": ts0, "time_end": ts1})
-    if payload.get("format_version", 1) == 2:
-        record_count = sum(len(peer.get("records", [])) for peer in payload["peers"])
-    else:
-        payload.setdefault("records", [])
-        record_count = len(payload["records"])
+    payload = {
+        "time_start": ts0,
+        "time_end": ts1,
+        "records": [x.model_dump() for x in req.records],
+        "device_name": str(req.device_name or ""),
+    }
     payload_text = json.dumps(payload, ensure_ascii=False)
     received_at = utility.local_ts()
 
@@ -191,7 +147,7 @@ def ap_traffic(scanner: str, req: APTrafficReq) -> Dict[str, Any]:
                 "received_at": received_at,
                 "time_start": ts0,
                 "time_end": ts1,
-                "record_count": str(record_count),
+                "record_count": str(len(req.records)),
                 "device_name": str(req.device_name or ""),
                 "payload_text": payload_text,
             },
@@ -207,7 +163,7 @@ def ap_traffic(scanner: str, req: APTrafficReq) -> Dict[str, Any]:
                 "last_ap_traffic": received_at,
                 "last_ap_traffic_time_start": ts0,
                 "last_ap_traffic_time_end": ts1,
-                "last_ap_record_count": str(record_count),
+                "last_ap_record_count": str(len(req.records)),
                 "device_name": str(req.device_name or ""),
             }
         )
@@ -222,6 +178,6 @@ def ap_traffic(scanner: str, req: APTrafficReq) -> Dict[str, Any]:
         "received_at": received_at,
         "time_start": ts0,
         "time_end": ts1,
-        "record_count": record_count,
+        "record_count": len(req.records),
         "queued_in": config.key_ap_uplink_stream(scanner),
     }

@@ -19,15 +19,13 @@ import asyncio
 import config
 import utility
 import m8mobility_link as link
-import m8mobility_state as state_api
-import m8mobility_s8_view as view_rules
 
 from m8mobility_state_store import (
     _clear_outgoing_command_preview, _clear_pending_sequence,  _clear_pose, _load_stop, _save_stop,
     _reset_correction_counter, _set_state, key_state, key_time, key_report, key_pose
 )
 from m8mobility_state import (
-    S0_IDLE, S7_STOPPED, S8_RECOVERY, _s8_episode, _s8_expired, _s8_stop, enter_s0idle_on_command, process_s1_event, _get_state, _cancel_runtime_timers,
+    S0_IDLE, enter_s0idle_on_command, process_s1_event, _get_state, _cancel_runtime_timers,
 )
 from m8mobility_map import _ensure_mobility_assets_ready
 
@@ -137,7 +135,6 @@ def mobility_init() -> Dict[str, Any]:
         _clear_outgoing_command_preview(scanner)
         _clear_pose(scanner)
         _reset_correction_counter(scanner)
-        config.r.hdel(key_state(scanner), "s8_episode_json", "s8_landing_issue_claim")
         _set_state(scanner, S0_IDLE, "mobility_init")
 
         utility._hset_many(
@@ -269,7 +266,6 @@ def manual_resume(scanner: str) -> Dict[str, Any]:
         },
     )
 
-    config.r.hdel(key_state(scanner), "s8_episode_json", "s8_landing_issue_claim")
     _set_state(scanner, S0_IDLE, "manual resume")
 
     return {
@@ -298,7 +294,13 @@ def on_command_issued(scanner: str, action: str, args: Dict[str, Any]) -> Dict[s
     """
     state = _get_state(scanner)
     if state != S0_IDLE:
-        # Holding a new row must not overwrite active-command/stop diagnostics.
+        utility._hset_many(
+            key_state(scanner),
+            {
+                "state_detail": f"blocked: not idle, ({state})",
+                "state_updated_at": utility.local_ts(),
+            },
+        )
         return {
             "status": "blocked",
             "scanner": scanner,
@@ -308,7 +310,7 @@ def on_command_issued(scanner: str, action: str, args: Dict[str, Any]) -> Dict[s
 
     return enter_s0idle_on_command(scanner, action, args)
 
-def on_report_received(scanner: str, report=None) -> Dict[str, Any]:
+def on_report_received(scanner: str) -> Dict[str, Any]:
     """
     Entry point when a mobility report is received from robot.
 
@@ -321,12 +323,6 @@ def on_report_received(scanner: str, report=None) -> Dict[str, Any]:
 
     Starts state machine from S1.
     """    
-    if (_get_state(scanner) == S8_RECOVERY and not _load_stop().get("stop")
-            and getattr(config,"MOBILITY_S8_VIEW_ENABLED",False) is True
-            and _s8_episode(scanner).get("kind") == "check_alternate_view" and report is not None):
-        return state_api.s8recovery(scanner, report=report)
-    if _load_stop().get("stop") or _get_state(scanner) in (S7_STOPPED, S8_RECOVERY):
-        return {"status": "ignored", "detail": "report recorded only; no active S1 transaction"}
     return process_s1_event(scanner, source="report")
 
 def _collect_due_mobility_commands(server_now_str: str):
@@ -390,18 +386,6 @@ def _dispatch_due_mobility_command(xid: str, fields: Dict[str, str]) -> None:
         except Exception:
             pass
 
-def _check_s8_deadlines():
-    # Runs without a robot poll, including after the experiment end time.
-    for scanner in config.r.smembers(config.KEY_REGISTRY):
-        state = _get_state(scanner)
-        if state in (S0_IDLE, S7_STOPPED):
-            continue
-        episode = _s8_episode(scanner)
-        if state == S8_RECOVERY or episode.get("landing"):
-            if _load_stop().get("stop") or _s8_expired(episode):
-                _s8_stop(scanner, episode, "stopped or recovery deadline expired")
-
-
 def _check_participant_links(now):
     if _load_stop().get("stop"):
         return
@@ -427,7 +411,6 @@ async def _mobility_loop() -> None:
             server_now_str = utility.local_ts()
             if time.monotonic() >= next_check:
                 next_check = time.monotonic() + config.MOBILITY_LINK_CHECK_SEC
-                _check_s8_deadlines()
                 _check_participant_links(server_now_str)
             due = _collect_due_mobility_commands(server_now_str)
 
@@ -456,40 +439,6 @@ def should_block_command(category: str) -> bool:
     if not stop.get("stop"):
         return False
     return (category or "").lower() != "av"
-
-
-def movement_delivery_blocked(scanner: str, fields: Dict[str, Any]) -> bool:
-    """Final delivery gate; called only for physical/mobility rows."""
-    if should_block_command("mobility"):
-        return True
-    state = _get_state(scanner)
-    if state == S7_STOPPED:
-        return True
-    ep = _s8_episode(scanner)
-    if ep.get("landing") and state not in (S0_IDLE, S8_RECOVERY):
-        # S6 uses the normal S1-managed queue. Do not deliver leftover moves.
-        try:
-            args = json.loads(fields.get("args_json") or "{}")
-        except (TypeError, ValueError):
-            return True
-        return not (state in ("s6issuing_correction", "s1waiting_report")
-                    and utility._hget(key_state(scanner), "s8_landing_issue_claim", "") == ep.get("id")
-                    and fields.get("mobility_s1_managed") == "1" and not _s8_expired(ep)
-                    and fields.get("action") == "mobility.turn_move_turn.forward"
-                    and args == ep["landing"].get("args"))
-    child = fields.get("s8_episode_id")
-    if state == S8_RECOVERY:
-        episode = _s8_episode(scanner)
-        if (getattr(config,"MOBILITY_S8_ENABLED",False) is not True or
-                getattr(config,"MOBILITY_S8_VIEW_ENABLED",False) is not True or not child or
-                child != episode.get("id") or episode.get("kind") != "check_alternate_view" or _s8_expired(episode)):
-            return True
-        try:
-            return not view_rules.admit(state_api,scanner,episode,fields)
-        except Exception as exc:
-            _s8_stop(scanner,episode,f"alternate-view delivery veto: {type(exc).__name__}: {str(exc)[:160]}")
-            return True
-    return bool(child)  # a child from a closed episode cannot be released
 
 
 # ===== B4) API endpoint block for visibility =====

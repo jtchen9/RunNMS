@@ -6,7 +6,6 @@ Angular samples require robot evidence of executed legs. Unknown, recovered
 and mixed-direction legs never fit stop margins. A composite pre-turn is usable
 for alignment if final tag heading observes travel heading (no post-turn).
 """
-from datetime import datetime
 import json
 import math
 import os
@@ -105,10 +104,6 @@ def observations(paths, scanner, train, max_move_yaw=2.0):
             if not math.isfinite(ratio):
                 continue
             samples.append(('distance:'+profile, ratio))
-            along = c.get('along_track_displacement_m')
-            cross = c.get('cross_track_displacement_m')
-            if along is not None and cross is not None and math.hypot(along, cross) > 0:
-                samples.append(('travel_error_deg', math.degrees(math.atan2(cross, along))))
             used.add(i)
             if not ev or ev.get('max_move_yaw_deg') is None or not 0 <= ev['max_move_yaw_deg'] <= max_move_yaw:
                 continue  # old traces have no trustworthy composite/retry evidence
@@ -137,7 +132,7 @@ def wrap(deg):
     return (deg + 180) % 360 - 180
 
 
-def run(path, traces, robot, mode, policy, trend_file):
+def run(path, traces, robot, mode, policy):
     if mode not in ('analysis', 'calibration'):
         raise ValueError('MODE must be analysis or calibration')
     if min(policy['min_moves'], policy['min_angles']) < 1 or not 0 <= policy['distance_tolerance'] < 1 or policy['angle_tolerance_deg'] < 0:
@@ -154,10 +149,6 @@ def run(path, traces, robot, mode, policy, trend_file):
     distances = [v for k, seq in groups.items() if k.startswith('distance:') for v in seq]
     print(robot, {k: len(v) for k,v in groups.items()})
     changes = []
-    metrics = [f"distance_ratio={MED(distances):.4f} n={len(distances)}" if distances else "distance_ratio=NA n=0"]
-    travel = groups['travel_error_deg']
-    if travel:
-        metrics.append(f"travel_error_deg median={MED(travel):+.3f} median_abs={MED(map(abs, travel)):.3f} n={len(travel)}")
     if len(distances) >= policy['min_moves']:
         ratio = MED(distances)
         print(f'Distance: n={len(distances)}, median actual/requested={ratio:.4f}')
@@ -186,7 +177,6 @@ def run(path, traces, robot, mode, policy, trend_file):
         values = groups[group]
         paired = group == 'alignment' and paired_offset is not None
         if not paired and len(values) < policy['min_angles']:
-            metrics.append(f"{key}={old:g} insufficient n={len(values)}")
             print(f'{key}: hold {old:g} deg; {len(values)} eligible observations.')
             continue
         # bearing minus observed camera heading measures the absolute offset.
@@ -196,8 +186,6 @@ def run(path, traces, robot, mode, policy, trend_file):
             print(f'Alignment estimated from {len(estimates)} matched CW/CCW pre-turn bins.')
         else:
             delta = MED([wrap(v-old) for v in values]) if group == 'alignment' else MED(values)
-        evidence = f"matched_bins={len(estimates)} direct_n={len(values)}" if paired else f"n={len(values)}"
-        metrics.append(f"{key} baseline={old:g} residual={delta:+.3f}deg {evidence}")
         candidate = wrap(old+delta) if group == 'alignment' else old+delta
         print(f'{key}: n={len(values)}, residual={delta:+.3f} deg')
         if group != 'alignment' and abs(candidate) > 30:
@@ -206,55 +194,34 @@ def run(path, traces, robot, mode, policy, trend_file):
             changes.append((group, obj, key, candidate))
     for label, obj, key, new in changes:
         print(f'{label}.{key}: {obj.get(key,0):.6f} -> {new:.6f}')
-    if mode == 'analysis':
+    if not changes or mode == 'analysis':
         print('No file write.')
         return
-    if changes and input(f'Type {robot} to apply all listed changes: ') != robot:
+    if input(f'Type {robot} to apply all listed changes: ') != robot:
         print('Cancelled.')
         return
-    details = [f"{label}.{key}: {obj.get(key,0):.6f} -> {new:.6f} (delta {new-obj.get(key,0):+.6f})"
-               for label, obj, key, new in changes]
-    trend_file = Path(trend_file)
-    if trend_file.resolve() in {p.resolve() for p in [path, *traces]}:
-        raise ValueError("Trend file must be separate from calibration and traces")
-    trend_file.parent.mkdir(parents=True, exist_ok=True)
-    # Open before changing the registry; mark applied only after replacement succeeds.
-    with trend_file.open('a', encoding='utf-8') as log:
-        if changes:
-            for _, obj, key, new in changes:
-                obj[key] = new
-            with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as f:
-                tmp = Path(f.name)
-            try:
-                tmp.write_text(json.dumps(doc, indent=2, sort_keys=True)+'\n', encoding='utf-8')
-                tmp.chmod(path.stat().st_mode & 0o777)
-                if path.read_bytes() != raw:
-                    raise ValueError('registry changed since review; rerun')
-                os.replace(tmp,path)
-            finally:
-                tmp.unlink(missing_ok=True)
-            print(f'Updated {path}; review the Git diff before committing.')
-        line = ' | '.join([datetime.now().strftime('%Y-%m-%d-%H:%M:%S'), robot,
-                          'APPLIED' if changes else 'HOLD',
-                          'trace=' + ', '.join(t.name for t in traces), *metrics, *details])
-        try:
-            log.write(line + '\n')
-            log.flush()
-            os.fsync(log.fileno())
-        except OSError as exc:
-            raise RuntimeError(f"Trend append failed; do not repeat calibration. Record manually: {line}") from exc
-    print(f'Trend appended: {trend_file}')
-
+    for _, obj, key, new in changes:
+        obj[key] = new
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as f:
+        tmp = Path(f.name)
+    try:
+        tmp.write_text(json.dumps(doc, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+        tmp.chmod(path.stat().st_mode & 0o777)
+        if path.read_bytes() != raw:
+            raise ValueError('registry changed since review; rerun')
+        os.replace(tmp,path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    print(f'Updated {path}; review the Git diff before committing.')
 
 
 if __name__ == '__main__':
     # VS Code: edit these settings, then Run Python File.
     CALIBRATION_FILE = Path(r"D:\Data\_Action\_RunScanner\robot_mobility_calibration.json")
-    TREND_FILE = Path(r"D:\Data\_Action\_RunNMS\mobilityTrace\calibration_trend.txt")
     HISTORY_FILES = [Path(r"D:\Data\_Action\_RunNMS\mobilityTrace\output\mobility_trace.jsonl")]
-    ROBOT = "twin-scout-delta"
+    ROBOT = "twin-scout-bravo"
     # MODE = "analysis"  # analysis or calibration: both calculate every proposal
     MODE = "calibration"  # analysis or calibration: both calculate every proposal
     POLICY = dict(min_moves=16, distance_tolerance=0.03,
                   min_angles=5, angle_tolerance_deg=1.0, max_move_yaw_deg=2.0)
-    run(CALIBRATION_FILE, HISTORY_FILES, ROBOT, MODE, POLICY, TREND_FILE)
+    run(CALIBRATION_FILE, HISTORY_FILES, ROBOT, MODE, POLICY)

@@ -390,7 +390,6 @@ def eval_pose_heading(
     h: float,
     tags: List[Tag],
     cameras: List[CameraCfg],
-    visibility: dict | None = None,
 ) -> Dict[str, float | int | str]:
     room = classify_room(x, y)
 
@@ -424,9 +423,6 @@ def eval_pose_heading(
                 cam.confidence
                 * float(metrics["distance_weight"])
             )
-
-            if visibility is not None:
-                visibility[cam.name][tag.tag_id] = contribution
 
             if cam.name == "front":
                 front_count += 1
