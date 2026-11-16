@@ -269,6 +269,10 @@ MOBILITY_FIRST_CORRECTION_MAX_M = 0.30
 # experiment. This intentionally matches the first-result hard limit.
 MOBILITY_POST_CORRECTION_FAIL_THRESH_M = 0.30
 
+# Opt in with MOBILITY_S8_ENABLED=True for supervised testing. Supersedes
+# the legacy view and landing switches when active; keep off until qualified.
+MOBILITY_S8_V2_ENABLED = False
+
 
 # -------- Site-specific mobility macros --------
 # NMS-only macro actions. These are never sent directly to robots.
@@ -335,9 +339,6 @@ MOBILITY_REPORT_INTERCEPT_AVAILABLE = True
 MOBILITY_REPORT_INTERCEPT_KEY_PREFIX = f"{KEY_PREFIX}debug:mobility_report_intercept:"
 MOBILITY_REPORT_INTERCEPT_ENABLE_KEY = f"{KEY_PREFIX}debug:mobility_report_intercept:enabled"
 MOBILITY_REPORT_INTERCEPT_EVENT_STREAM = f"{KEY_PREFIX}debug:mobility_report_intercept:events"
-
-MOBILITY_S8_ENABLED = False
-MOBILITY_S8_VIEW_ENABLED = False
 
 # ==================
 # Runtime init

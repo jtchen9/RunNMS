@@ -1646,14 +1646,7 @@ def _collect_due_commands(scanner: str, limit: int, server_now_str: str) -> Dict
             # Legacy manual and non-mobility commands retain ACK-based delivery.
             if not config.r.xdel(config.key_cmd_stream(scanner), xid):
                 continue
-            if age_sec > config.MOBILITY_POLL_STALE_SEC or m8mobility.movement_delivery_blocked(scanner, f2):
-                continue
-        elif (str(fields.get("category", "")).lower() == "mobility" or
-              str(fields.get("action", "")).startswith("mobility.")):
-            if m8mobility.movement_delivery_blocked(scanner, fields):
-                # Direct/manual movement has no active-episode owner. Discard it;
-                # never release it on a later poll after reset/resume.
-                config.r.xdel(config.key_cmd_stream(scanner), xid)
+            if age_sec > config.MOBILITY_POLL_STALE_SEC or m8mobility.should_block_command("mobility"):
                 continue
         due_cmds.append((xid, f2))
         if len(due_cmds) >= limit:
@@ -1929,7 +1922,7 @@ def cmd_poll(
 
         if mobility_report_ok:
             try:
-                mobility_report_process_result = m8mobility.on_report_received(scanner, report=final_report)
+                mobility_report_process_result = m8mobility.on_report_received(scanner)
             except Exception as e:
                 mobility_report_process_result = {
                     "status": "error",
@@ -2548,7 +2541,7 @@ def _run_public_script_validation(
 
 @router.post("/cmd/_load_csv_file", tags=["4 Commands (Polling)"])
 async def cmd_load_csv_file(
-    t0: str = Form(..., description=f"NMS local start time ({config.TIME_FMT}). Try it out suggests a fresh, editable whole minute."),
+    t0: str = Form(..., description=f"Absolute local time, format: {config.TIME_FMT}"),
     session_id: Optional[str] = Form(
         None,
         description="Optional session id under the experiment id. If omitted, stored as null.",
