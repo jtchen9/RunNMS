@@ -5,6 +5,8 @@ import redis
 # Unique identity of this NMS/lab instance.
 # Used as lab_id in experiment registration and northbound reports.
 NMS_NAME = "DemoRoom"
+# Fixed NMS coordinates in metres in the site map frame; None means unknown.
+NMS_LOCATION = {"mode": "fixed", "x": 5.9, "y": 2.8, "z": None}
 
 # ======================
 # Constants / Config  (NO getenv; lab-only hardcoded)

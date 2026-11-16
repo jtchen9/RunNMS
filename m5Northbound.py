@@ -924,6 +924,7 @@ def _build_status_snapshot(traffic_events: Optional[List[Dict[str, Any]]] = None
         traffic_events = []
 
     return {
+        "nms_location": dict(config.NMS_LOCATION),
         "schema_version": 2,
         "report_type": "nms_status",
         "nms_id": config.NMS_ID,
