@@ -12,7 +12,8 @@ def _key(kind, value=''):
 
 
 def remote_enabled(scanner):
-    return bool(str(getattr(config, 'TRAFFIC_SERVER_HOST', '')).strip()) and scanner in getattr(config, 'TRAFFIC_REMOTE_SCANNERS', [])
+    return (bool(getattr(config, 'TRAFFIC_LOCAL_SERVER_ENABLED', False)) or
+            bool(str(getattr(config, 'TRAFFIC_SERVER_HOST', '')).strip())) and scanner in getattr(config, 'TRAFFIC_REMOTE_SCANNERS', [])
 
 
 def has_remote_session(scanner, fields):
@@ -55,14 +56,19 @@ def dispatch_due(xid, fields):
     running_key = config.key_traffic_temp_running(scanner, session)
     context_json = active_json = ''
     if action == 'traffic.session.start':
-        ports = list(getattr(config, 'TRAFFIC_SERVER_PORTS', []))
+        if getattr(config, 'TRAFFIC_LOCAL_SERVER_ENABLED', False):
+            from m7TrafficServer import pool
+            host, ports = pool.endpoint()
+        else:
+            host = str(config.TRAFFIC_SERVER_HOST).strip()
+            ports = list(getattr(config, 'TRAFFIC_SERVER_PORTS', []))
         if not ports or len(ports) > 100 or any(type(p) is not int or not 1 <= p <= 65535 for p in ports):
             raise ValueError('TRAFFIC_SERVER_PORTS must contain 1..100 valid ports')
         # Start at different ports for concurrent jobs. Server admission plus
-        # busy-only retries arbitrate public ports; this is not a reservation.
+        # busy-only retries arbitrate shared ports; this is not a reservation.
         offset = (int(config.r.incr(_key('port_cursor'))) - 1) % len(ports)
         ports = ports[offset:] + ports[:offset]
-        args.update(server_host=str(config.TRAFFIC_SERVER_HOST).strip(),
+        args.update(server_host=host,
                     server_port=ports[0], server_ports=ports)
         execution = 'remote-' + hashlib.sha256((scanner + ':' + xid).encode()).hexdigest()
         context = {'scanner': scanner, 'session_id': session, 'execution_id': execution,

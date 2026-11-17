@@ -146,8 +146,18 @@ def key_ap_uplink_stream(scanner: str) -> str:
 # Robot-side passive reflector ports:
 # NMS allocates from the free-port FIFO queue of each robot.
 # Internet mode is opt-in per robot; blank host preserves original execution.
-TRAFFIC_SERVER_HOST: str = "ping.online.net"
-TRAFFIC_SERVER_PORTS = list(range(5200, 5210))
+# Local managed servers use the upstream Ethernet address discovered at runtime.
+# To use an external/public server, disable local management and set HOST below.
+TRAFFIC_SERVER_HOST: str = ""
+TRAFFIC_SERVER_PORTS = list(range(5200, 5240))  # shared pool for all robots
+TRAFFIC_LOCAL_SERVER_ENABLED: bool = True
+TRAFFIC_LOCAL_IPERF3_BIN = r"D:\Data\Software\iperf3\iperf3.exe"
+TRAFFIC_LOCAL_INTERFACE_ALIAS = "乙太網路"
+TRAFFIC_LOCAL_BIND_IP = ""  # optional override; must exist on the interface above
+TRAFFIC_LOCAL_EXCLUDED_SUBNET = "192.168.11.0/24"  # never bind to mesh LAN
+TRAFFIC_LOCAL_LOG_DIR = Path(__file__).resolve().parent / "iperf3_server_logs"
+TRAFFIC_LOCAL_CHECK_SECONDS = 5
+TRAFFIC_LOCAL_LOCK_PORT = 51999  # local-only manager ownership guard
 TRAFFIC_REMOTE_SCANNERS = [
     "twin-scout-alpha",
     "twin-scout-bravo",
