@@ -23,7 +23,7 @@ ORIGINAL_LISTENER_OWNERS=M.listener_owners
 class Proc:
     counter=100
     def __init__(self,*args,**kwargs):
-        Proc.counter+=1;self.pid=Proc.counter;self.returncode=None;self.terminated=False;self.args=args[0]
+        Proc.counter+=1;self.pid=Proc.counter;self.returncode=None;self.terminated=False;self.args=args[0];self.stdout=io.BytesIO()
     def poll(self):return self.returncode
     def terminate(self):self.terminated=True;self.returncode=0
     def kill(self):self.returncode=-9

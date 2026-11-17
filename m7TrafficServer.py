@@ -121,6 +121,48 @@ def validated_ports(ports):
     return list(ports)
 
 
+class PortLog:
+    """Drain each child continuously; create its file only on first output."""
+    def __init__(self, path):
+        self.path = Path(path)
+        self.thread = None
+        self.closed = False
+        self.error = ''
+
+    def start(self, stream):
+        self.thread = threading.Thread(target=self._copy, args=(stream,),
+                                       name='iperf-log-' + self.path.stem, daemon=True)
+        self.thread.start()
+
+    def _copy(self, stream):
+        output = None
+        try:
+            read = getattr(stream, 'read1', stream.read)
+            while True:
+                chunk = read(65536)
+                if not chunk:
+                    break
+                if output is None:
+                    output = self.path.open('ab', buffering=0)
+                output.write(chunk)
+        except Exception as exc:
+            self.error = str(exc)
+            print('[IPERF3 LOG ERROR]', self.path, exc, flush=True)
+        finally:
+            if output is not None:
+                output.close()
+            stream.close()
+            self.closed = True
+
+    def close(self):
+        if self.thread:
+            self.thread.join(timeout=3)
+            if self.thread.is_alive():
+                self.error = 'log drain pending after server shutdown'
+        else:
+            self.closed = True
+
+
 class Pool:
     def __init__(self):
         self.lock = threading.RLock()
@@ -206,20 +248,23 @@ class Pool:
                     if any(p == port and h in (host, '0.0.0.0', '::') for h, p in owners):
                         self.errors[str(port)] = 'port already occupied; stop manual server or choose another port'
                         continue
-                    log = (self.log_dir / ('port-' + str(port) + '.jsonl')).open('ab', buffering=0)
+                    log = PortLog(self.log_dir / ('port-' + str(port) + '.jsonl'))
                     proc = None
                     try:
                         cmd = [str(config.TRAFFIC_LOCAL_IPERF3_BIN), '-s', '-B', host, '-p', str(port),
                                '-i', '60', '--json-stream', '--json-stream-full', '--forceflush']
-                        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                                 creationflags=_NO_WINDOW, close_fds=True)
                         self.job.attach(proc)
+                        log.start(proc.stdout)
                         self.processes[port] = (proc, log)
                         self.errors.pop(str(port), None)
                     except Exception as exc:
                         if proc:
                             proc.kill()
                             proc.wait(timeout=3)
+                            if proc.stdout is not None and log.thread is None:
+                                proc.stdout.close()
                         log.close()
                         self.errors[str(port)] = str(exc)
                     continue  # Readiness requires the next listener-owner observation.
@@ -274,7 +319,10 @@ class Pool:
         with self.lock:
             return {'enabled': bool(config.TRAFFIC_LOCAL_SERVER_ENABLED), 'host': self.host,
                     'configured_ports': list(config.TRAFFIC_SERVER_PORTS), 'ready_ports': list(self.ready),
-                    'ready_count': len(self.ready), 'errors': dict(self.errors), 'error': self.error,
+                    'ready_count': len(self.ready),
+                    'errors': {**self.errors, **{str(p): 'log: ' + log.error
+                               for p, (proc, log) in self.processes.items() if log.error}},
+                    'error': self.error,
                     'updated_at': self.updated_at, 'log_dir': str(self.log_dir) if self.log_dir else None,
                     'running': bool(self.thread and self.thread.is_alive())}
 
