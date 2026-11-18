@@ -252,7 +252,7 @@ if __name__ == '__main__':
     CALIBRATION_FILE = Path(r"D:\Data\_Action\_RunScanner\robot_mobility_calibration.json")
     TREND_FILE = Path(r"D:\Data\_Action\_RunNMS\mobilityTrace\calibration_trend.txt")
     HISTORY_FILES = [Path(r"D:\Data\_Action\_RunNMS\mobilityTrace\output\mobility_trace.jsonl")]
-    ROBOT = "twin-scout-delta"
+    ROBOT = "twin-scout-charlie"
     # MODE = "analysis"  # analysis or calibration: both calculate every proposal
     MODE = "calibration"  # analysis or calibration: both calculate every proposal
     POLICY = dict(min_moves=16, distance_tolerance=0.03,
