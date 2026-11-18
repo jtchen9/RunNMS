@@ -54,7 +54,14 @@
   },
   "argument_rules_by_category": {
     "system": {
-      "system.shutdown": {"allowed_keys": [], "required_keys": [], "numeric_ranges": {}}
+      "system.shutdown": {
+        "allowed_keys": ["time_to_wait"],
+        "required_keys": [],
+        "numeric_ranges": {},
+        "integer_ranges": {
+          "time_to_wait": {"min_exclusive": 0}
+        }
+      }
     },
     "mobility": {
       "mobility.report.location": {
