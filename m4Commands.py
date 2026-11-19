@@ -2541,7 +2541,7 @@ def _run_public_script_validation(
 
 @router.post("/cmd/_load_csv_file", tags=["4 Commands (Polling)"])
 async def cmd_load_csv_file(
-    t0: str = Form(..., description=f"Absolute local time, format: {config.TIME_FMT}"),
+    t0: str = Form(..., description=f"NMS local start time ({config.TIME_FMT}). Try it out suggests a fresh, editable whole minute."),
     session_id: Optional[str] = Form(
         None,
         description="Optional session id under the experiment id. If omitted, stored as null.",
