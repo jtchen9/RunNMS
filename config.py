@@ -16,8 +16,8 @@ NMS_LOCATION = {"mode": "fixed", "x": 5.9, "y": 2.8, "z": None}
 # with incomplete certificate chain.
 # MUST set WEB_VERIFY_TLS = True before production deployment.
 # ======================
-# WEB_BASE: str = "http://localhost:80"
-WEB_BASE: str = "https://6g-private.com:80"
+WEB_BASE: str = "http://localhost:80"
+# WEB_BASE: str = "https://6g-private.com:80"
 WEB_VERIFY_TLS = False
 
 REDIS_URL: str = "redis://localhost:6379/0"
@@ -148,9 +148,17 @@ def key_ap_uplink_stream(scanner: str) -> str:
 # Internet mode is opt-in per robot; blank host preserves original execution.
 # Local managed servers use the upstream Ethernet address discovered at runtime.
 # To use an external/public server, disable local management and set HOST below.
+
+# Local iperf3 server
 TRAFFIC_SERVER_HOST: str = ""
 TRAFFIC_SERVER_PORTS = list(range(5200, 5240))  # shared pool for all robots
 TRAFFIC_LOCAL_SERVER_ENABLED: bool = True
+#
+# Public iperf3 server
+TRAFFIC_LOCAL_SERVER_ENABLED = False
+# TRAFFIC_SERVER_HOST = "ping.online.net"
+# TRAFFIC_SERVER_PORTS = list(range(5200, 5210))
+
 TRAFFIC_LOCAL_IPERF3_BIN = r"D:\Data\Software\iperf3\iperf3.exe"
 TRAFFIC_LOCAL_INTERFACE_ALIAS = "乙太網路"
 TRAFFIC_LOCAL_BIND_IP = ""  # optional override; must exist on the interface above
