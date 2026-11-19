@@ -12,7 +12,7 @@ import m8mobility
 from m8mobility_state_store import (
     key_report, key_time, key_state,
     _save_true, _save_planned,
-    _set_state, _save_stop,
+    _set_state, _load_stop,
     _clear_pending_sequence, _clear_outgoing_command_preview,
     _reset_correction_counter,
 )
@@ -130,6 +130,14 @@ def _pose_is_in_free_space(scanner: str, loc: Dict[str, Any]) -> tuple[bool, str
 
 
 def _activate_mobility_after_registration(scanner: str, loc: Dict[str, Any], now: str) -> None:
+    # A returning robot must never release a stop raised by any participant.
+    stop = _load_stop()
+    if stop.get("stop"):
+        _mark_mobility_not_ready(scanner, str(stop.get("reason") or "experiment stopped"))
+        return
+
+    m8mobility._cancel_runtime_timers(scanner)
+    config.r.hdel(key_time(scanner), "communication_deadline")
     planned = {
         "location_ok": True,
         "x_m": float(loc["x_m"]),
@@ -167,7 +175,6 @@ def _activate_mobility_after_registration(scanner: str, loc: Dict[str, Any], now
         },
     )
 
-    _save_stop(False, "")
     _set_state(scanner, S0_IDLE, "registration pose solved")
 
 
@@ -242,10 +249,11 @@ def _process_registration_mobility(scanner: str, wmeta: Dict[str, Any], req: Reg
 
     _activate_mobility_after_registration(scanner, loc, now)
 
+    state = m8mobility._get_state(scanner)
     return {
-        "mobility_ready": True,
-        "mobility_state": S0_IDLE,
-        "mobility_detail": "pose solved at registration",
+        "mobility_ready": state == S0_IDLE and not _load_stop().get("stop"),
+        "mobility_state": state,
+        "mobility_detail": "pose solved at registration" if state == S0_IDLE else "experiment remains stopped",
         "pose_required": True,
         "pose": loc,
     }    
@@ -446,6 +454,35 @@ def register(req: RegisterReq) -> Dict[str, Any]:
     if not scanner:
         raise HTTPException(status_code=403, detail=f"MAC '{mac}' not in whitelist")
 
+    if "ap" in (req.capabilities or "").lower():
+        return _register_device(req, scanner, mac)
+
+    lock = m8mobility.registration_command_lock(scanner)
+    if not lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="robot command/registration in progress; retry")
+    try:
+        state = m8mobility._get_state(scanner)
+        if state not in (S0_IDLE, S7_STOPPED):
+            # Do not erase an issued movement, its reports, or its timeout.
+            raise HTTPException(status_code=409, detail=f"robot still in {state}; registration cannot reset active movement")
+        meta_key = config.key_scanner_meta(scanner)
+        config.r.hset(meta_key, "registration_status", "pending")
+        config.r.hdel(meta_key, "last_poll")
+        try:
+            result = _register_device(req, scanner, mac)
+            if not lock.owned():
+                raise HTTPException(status_code=503, detail="registration lock expired; retry")
+            config.r.hset(meta_key, "registration_status", "ready")
+            return result
+        except Exception:
+            config.r.hset(meta_key, "registration_status", "failed")
+            raise
+    finally:
+        if lock.owned():
+            lock.release()
+
+
+def _register_device(req: RegisterReq, scanner: str, mac: str) -> Dict[str, Any]:
     wmeta = whitelist_meta_get(scanner)
     llm = (wmeta.get("llm_weblink") or "").strip() or config.DEFAULT_LLM_WEBLINK
     tailscaled_state_b64 = (wmeta.get("tailscaled_state_b64") or "").strip()
@@ -493,11 +530,8 @@ def register(req: RegisterReq) -> Dict[str, Any]:
     }
 
     if not is_ap:
-        # Fresh robot registration is a scanner-level mobility reset boundary.
-        # Reuse the existing single-scanner reset path so stale timers, queues,
-        # and pre-boot pose cannot survive into the new robot session.
-        m8mobility.manual_resume(scanner)
-
+        # Registration refreshes this robot's pose; it does not own command queues.
+        # Experiment initialization/deletion and explicit manual reset retain cleanup.
         mobility_result = _process_registration_mobility(
             scanner=scanner,
             wmeta=wmeta,

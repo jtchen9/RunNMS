@@ -1620,6 +1620,20 @@ def cmd_enqueue(scanner: str, cmd: Cmd) -> Dict[str, Any]:
 
 
 def _collect_due_commands(scanner: str, limit: int, server_now_str: str) -> Dict[str, Any]:
+    held = {"commands": [], "skipped": {"not_due": 0, "expired": 0, "bad_time": 0},
+            "held_for_registration": True}
+    lock = m8mobility.registration_command_lock(scanner)
+    if not lock.acquire(blocking=False):
+        return held
+    try:
+        if m8mobility.registration_blocks_commands(scanner):
+            return held
+        return _collect_due_commands_registered(scanner, limit, server_now_str)
+    finally:
+        lock.release()
+
+
+def _collect_due_commands_registered(scanner: str, limit: int, server_now_str: str) -> Dict[str, Any]:
     server_now = utility.parse_local_dt(server_now_str)
     raw = config.r.xrange(config.key_cmd_stream(scanner), count=5000)
 

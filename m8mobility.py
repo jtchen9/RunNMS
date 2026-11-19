@@ -281,7 +281,31 @@ def manual_resume(scanner: str) -> Dict[str, Any]:
 
 # ===== B2) input hook block =====
 
+def registration_command_lock(scanner: str):
+    """Serialize registration with command admission/delivery for this robot only."""
+    return config.r.lock(
+        f"{config.key_scanner_meta(scanner)}:registration_command_lock",
+        timeout=300, blocking=False,
+    )
+
+
+def registration_blocks_commands(scanner: str) -> bool:
+    # Missing field keeps already-registered robots and APs compatible.
+    status = config.r.hget(config.key_scanner_meta(scanner), "registration_status")
+    return status in ("pending", "failed")
+
+
 def on_command_issued(scanner: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    lock = registration_command_lock(scanner)
+    if not lock.acquire(blocking=False):
+        return {"status": "blocked", "detail": "robot registration/delivery in progress"}
+    try:
+        return _on_command_issued_locked(scanner, action, args)
+    finally:
+        lock.release()
+
+
+def _on_command_issued_locked(scanner: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """
     Entry point for mobility commands from NMS.
 
@@ -292,6 +316,8 @@ def on_command_issued(scanner: str, action: str, args: Dict[str, Any]) -> Dict[s
     Future:
     - will also be called by script / CSV loaders
     """
+    if registration_blocks_commands(scanner) or _load_stop().get("stop"):
+        return {"status": "blocked", "detail": "registration incomplete or experiment stopped"}
     state = _get_state(scanner)
     if state != S0_IDLE:
         utility._hset_many(
@@ -330,6 +356,7 @@ def _collect_due_mobility_commands(server_now_str: str):
     raw = config.r.xrange(config.KEY_MOBILITY_CMD_STREAM, count=5000)
 
     due = []
+    seen = set()
 
     for xid, fields in raw:
         exec_at_s = fields.get("execute_at", "")
@@ -344,6 +371,10 @@ def _collect_due_mobility_commands(server_now_str: str):
         if exec_at > server_now:
             continue
 
+        scanner = fields.get("scanner")
+        if scanner in seen:
+            continue
+        seen.add(scanner)
         f2 = dict(fields)
         f2["cmd_id"] = xid
         due.append((xid, f2))
@@ -355,6 +386,17 @@ def _collect_due_mobility_commands(server_now_str: str):
 
 def _dispatch_due_mobility_command(xid: str, fields: Dict[str, str]) -> None:
     scanner = (fields.get("scanner") or "").strip()
+    lock = registration_command_lock(scanner)
+    if not lock.acquire(blocking=False):
+        return
+    try:
+        _dispatch_due_mobility_command_locked(xid, fields)
+    finally:
+        lock.release()
+
+
+def _dispatch_due_mobility_command_locked(xid: str, fields: Dict[str, str]) -> None:
+    scanner = (fields.get("scanner") or "").strip()
     action = (fields.get("action") or "").strip()
 
     try:
@@ -364,17 +406,14 @@ def _dispatch_due_mobility_command(xid: str, fields: Dict[str, str]) -> None:
     except Exception:
         args = {}
 
-    if _get_state(scanner) == S0_IDLE and not _load_stop().get("stop"):
-        gate = link.disposition(scanner, key_time(scanner), "communication_deadline")
-        if gate == "wait":
-            return  # Original row stays in the NMS stream; no robot command or retry.
-        if gate == "expired":
-            from m8mobility_state import S7_STOPPED, s7stopped
-            _set_state(scanner, S7_STOPPED, "communication_timeout before dispatch")
-            s7stopped(scanner)
-            config.r.xdel(config.KEY_MOBILITY_CMD_STREAM, xid)
-            return
-    result = on_command_issued(scanner, action, args)
+    if registration_blocks_commands(scanner) or _load_stop().get("stop"):
+        return
+    if _get_state(scanner) == S0_IDLE:
+        if not link.poll_fresh(scanner):
+            return  # Idle absence is allowed; keep the original row and its order.
+        # An idle robot has no issued movement whose link deadline is running.
+        config.r.hdel(key_time(scanner), "communication_deadline")
+    result = _on_command_issued_locked(scanner, action, args)
 
     status = str(result.get("status") or "").strip().lower()
 
@@ -394,6 +433,10 @@ def _check_participant_links(now):
                 not record["start_at"] <= now <= record["end_at"]):
             continue
         for scanner in json.loads(record.get("mobility_scanners_json", "[]")):
+            # Preserve bounded link/report handling only for work already admitted.
+            # Registration and idle absence do not start a failure countdown.
+            if _get_state(scanner) in (S0_IDLE, "s7stopped"):
+                continue
             key = key_time(scanner)
             status = link.disposition(scanner, key, "communication_deadline")
             if status == "expired":
