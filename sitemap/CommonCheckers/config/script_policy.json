@@ -21,7 +21,9 @@
     "system"
   ],
   "allowed_actions_by_category": {
-    "system": ["system.shutdown"],
+    "system": [
+      "system.shutdown"
+    ],
     "mobility": [
       "mobility.report.location",
       "mobility.move",
@@ -38,7 +40,8 @@
       "ap.sta.disassociate",
       "ap.txpower.set",
       "ap.traffic.enable",
-      "ap.traffic.disable"
+      "ap.traffic.disable",
+      "ap.backhaul.steer"
     ],
     "traffic": [
       "traffic.session.start",
@@ -55,11 +58,15 @@
   "argument_rules_by_category": {
     "system": {
       "system.shutdown": {
-        "allowed_keys": ["time_to_wait"],
+        "allowed_keys": [
+          "time_to_wait"
+        ],
         "required_keys": [],
         "numeric_ranges": {},
         "integer_ranges": {
-          "time_to_wait": {"min_exclusive": 0}
+          "time_to_wait": {
+            "min_exclusive": 0
+          }
         }
       }
     },
@@ -176,6 +183,14 @@
         "allowed_keys": [],
         "required_keys": [],
         "numeric_ranges": {}
+      },
+      "ap.backhaul.steer": {
+        "allowed_keys": [
+          "target_ap",
+          "band",
+          "backhaul_mac"
+        ],
+        "required_keys": []
       }
     },
     "traffic": {
@@ -316,5 +331,37 @@
   "min_seconds_after_report_location_before_first_move": 60,
   "global_min_seconds_between_moving_mobility_commands": 60,
   "concurrent_movement_min_path_separation_m": 1.0,
-  "max_single_mobility_move_distance_m": 3.0
+  "max_single_mobility_move_distance_m": 3.0,
+  "backhaul_mac_by_ap_band": {
+    "AP1": {
+      "6G": "ac:91:9b:ff:f8:c0",
+      "5G": "ae:91:9b:ff:fa:bf",
+      "2.4G": "ae:91:9b:ff:fb:be"
+    },
+    "AP2": {
+      "6G": "ac:91:9b:ff:f8:d0",
+      "5G": "ae:91:9b:ff:fa:cf",
+      "2.4G": "ae:91:9b:ff:fb:ce"
+    },
+    "AP3": {
+      "6G": "ac:91:9b:ff:f9:60",
+      "5G": "ae:91:9b:ff:fb:5f",
+      "2.4G": "ae:91:9b:ff:fc:5e"
+    },
+    "AP4": {
+      "6G": "b8:82:f2:45:f4:98",
+      "5G": "ba:82:f2:45:f6:97",
+      "2.4G": "ba:82:f2:45:f7:96"
+    },
+    "AP5": {
+      "6G": "b8:82:f2:45:f3:a8",
+      "5G": "ba:82:f2:45:f5:a7",
+      "2.4G": "ba:82:f2:45:f6:a6"
+    },
+    "AP6": {
+      "6G": "b8:82:f2:45:f5:b8",
+      "5G": "ba:82:f2:45:f7:b7",
+      "2.4G": "ba:82:f2:45:f8:b6"
+    }
+  }
 }

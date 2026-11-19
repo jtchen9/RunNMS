@@ -747,6 +747,24 @@ def _resolve_ap_sta_alias(action: str, args: Any) -> Any:
     return resolved
 
 
+def _resolve_operator_args(scanner: str, action: str, args: Any) -> Any:
+    """Use the same operator argument contract as the offline script checker."""
+    if action not in ("ap.backhaul.steer", "system.shutdown"):
+        return args
+    common_dir = Path(__file__).resolve().parent / "sitemap" / "CommonCheckers"
+    if str(common_dir) not in sys.path:
+        sys.path.insert(0, str(common_dir))
+    try:
+        from checker.operator_args import normalize_operator_args
+        policy = json.loads((common_dir / "config" / "script_policy.json").read_text(encoding="utf-8-sig"))
+    except (ImportError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail="unable to load shared operator command policy") from exc
+    try:
+        return normalize_operator_args(scanner, action, args, policy)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
     m1Registry.require_whitelisted(scanner)
 
@@ -776,7 +794,7 @@ def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
     category_n = (cmd.category or "").strip().lower()
     action_n = (cmd.action or "").strip()
     args_obj = json.loads(args_json)
-    resolved_args = _resolve_ap_sta_alias(action_n, args_obj)
+    resolved_args = _resolve_operator_args(scanner, action_n, _resolve_ap_sta_alias(action_n, args_obj))
     if resolved_args is not args_obj:
         args_obj = resolved_args
         args_json = json.dumps(args_obj, ensure_ascii=False)
@@ -1096,6 +1114,7 @@ def _analyze_csv_rows_for_experiment(
 
         args_s = (row.get("args_json") or "").strip()
         args = json.loads(args_s) if args_s else {}
+        args = _resolve_operator_args(scanner, action, args)
 
         execute_at_dt = t0_dt + timedelta(seconds=offset)
         execute_at = execute_at_dt.strftime(config.TIME_FMT)
@@ -1416,7 +1435,7 @@ def _enqueue_script_or_csv_item(
     # Keep experiment metadata both as stream fields and inside args_json.
     # Stream fields are for Redis-side deletion/filtering.
     # args_json metadata is useful for downstream consumers/debugging.
-    args2 = dict(_resolve_ap_sta_alias(action_n, args or {}))
+    args2 = dict(_resolve_operator_args(scanner, action_n, _resolve_ap_sta_alias(action_n, args or {})))
     args2.setdefault("_experiment", {})
     if isinstance(args2["_experiment"], dict):
         args2["_experiment"].update(

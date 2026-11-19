@@ -5,6 +5,7 @@ import re
 from typing import Any, Dict, List
 
 from .script_model import ScriptRow
+from .operator_args import normalize_operator_args
 
 
 _MAC_ADDRESS_RE = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
@@ -83,6 +84,16 @@ def check_command_arguments(
             continue
 
         args = row.args or {}
+        if row.action in ("ap.backhaul.steer", "system.shutdown"):
+            try:
+                normalize_operator_args(row.scanner, row.action, row.args, policy)
+            except ValueError as exc:
+                issues.append(_row_issue(
+                    row, code="COMMAND_OPERATOR_ARGS_INVALID",
+                    message=str(exc),
+                    suggestion="Use target_ap + band or a backhaul_mac for steering; use an optional positive integer time_to_wait for shutdown.",
+                ))
+                continue
         allowed_keys = set(rule.get("allowed_keys", []) or [])
         required_keys = set(rule.get("required_keys", []) or [])
         numeric_ranges = rule.get("numeric_ranges", {}) or {}
