@@ -16,8 +16,8 @@ NMS_LOCATION = {"mode": "fixed", "x": 5.9, "y": 2.8, "z": None}
 # with incomplete certificate chain.
 # MUST set WEB_VERIFY_TLS = True before production deployment.
 # ======================
-WEB_BASE: str = "http://localhost:80"
-# WEB_BASE: str = "https://6g-private.com:80"
+# WEB_BASE: str = "http://localhost:80"
+WEB_BASE: str = "https://6g-private.com:80"
 WEB_VERIFY_TLS = False
 
 REDIS_URL: str = "redis://localhost:6379/0"
