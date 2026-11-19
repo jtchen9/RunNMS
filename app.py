@@ -8,6 +8,7 @@ import m2Bootstrap
 import m3Ingest
 import m4Commands
 import m5Northbound
+import nms_experiment_completion
 import m6AP
 import m7Traffic
 import m7TrafficServer
@@ -47,6 +48,7 @@ app.include_router(m9Admin.router)
 # =============================
 @app.on_event("startup")
 async def _startup():
+    await asyncio.to_thread(nms_experiment_completion.restore_pending)
     m7TrafficServer.pool.start()
     asyncio.create_task(m5Northbound._northbound_loop())
     asyncio.create_task(m5Northbound._status_loop())
@@ -56,6 +58,7 @@ async def _startup():
 
 @app.on_event("shutdown")
 async def _shutdown():
+    await asyncio.to_thread(nms_experiment_completion.stop)
     await asyncio.to_thread(m7TrafficServer.pool.stop)
 
 

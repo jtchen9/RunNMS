@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 import config
 import utility
+import nms_experiment_completion
 import m1Registry
 import m7Traffic
 import m8mobility
@@ -1037,6 +1038,8 @@ def _register_experiment_status(
         approximate=True,
     )
 
+    nms_experiment_completion.start_registration(xid, fields)
+
     result = {
         **fields,
     }
@@ -1961,7 +1964,8 @@ def cmd_poll(
     from m7TrafficRemote import ingest_records
     traffic_ack_ids, traffic_rejections = ingest_records(scanner, req.traffic_records)
     collected = _collect_due_commands(scanner=scanner, limit=limit, server_now_str=server_now_str)
-    experiment_finalize_result = _finalize_due_experiments_from_poll(server_now_str)
+    # Completion runs independently of robot polling. Keep response compatibility.
+    experiment_finalize_result = {"status": "background_task"}
 
     return {
         "scanner": scanner,
@@ -2314,127 +2318,6 @@ def _notify_web_experiment_finalize(fields: Dict[str, Any]) -> Dict[str, Any]:
     return _post_multipart_to_webserver("/nms/experiment/finalize", post_fields, {})
 
 
-def _finalize_due_experiments_from_poll(server_now_str: str) -> Dict[str, Any]:
-    """
-    Opportunistically finalize finished experiments from the robot polling path.
-
-    Robots poll every 10 seconds during normal operation.  The first poll after
-    end_at + NORTHBOUND_EXPERIMENT_WRAPUP_SEC sends the finalize notification.
-    If the webserver call fails, keep the local row as registered so a later
-    poll can retry.
-    """
-    try:
-        rows = config.r.xrange(config.KEY_EXPERIMENT_REGISTRY, min="-", max="+")
-    except Exception as e:
-        return {
-            "status": "error",
-            "detail": f"unable to inspect experiment registry: {type(e).__name__}: {e}",
-        }
-
-    if not rows:
-        return {"status": "idle", "detail": "no registered experiment"}
-
-    now_dt = utility.parse_local_dt(server_now_str)
-    wrapup_sec = int(getattr(config, "NORTHBOUND_EXPERIMENT_WRAPUP_SEC", 120) or 0)
-    results = []
-
-    for xid, raw_fields in rows:
-        fields = {
-            _redis_text(k): _redis_text(v)
-            for k, v in dict(raw_fields).items()
-        }
-
-        state = fields.get("state", "").strip().lower()
-        if state in {"completed", "finalized", "deleted", "cancelled", "canceled", "failed", "stopped"}:
-            continue
-
-        experiment_id = fields.get("experiment_id", "").strip()
-        end_s = fields.get("end_at", "").strip()
-        if not experiment_id or not end_s:
-            continue
-
-        try:
-            finalize_dt = utility.parse_local_dt(end_s) + timedelta(seconds=wrapup_sec)
-        except Exception as e:
-            results.append({
-                "experiment_id": experiment_id,
-                "status": "error",
-                "detail": f"end_at parse failed: {type(e).__name__}: {e}",
-            })
-            continue
-
-        if now_dt < finalize_dt:
-            results.append({
-                "experiment_id": experiment_id,
-                "session_id": fields.get("session_id") or "default",
-                "status": "not_due",
-                "end_at": end_s,
-                "wrapup_sec": wrapup_sec,
-            })
-            continue
-
-        notify_result = _notify_web_experiment_finalize(fields)
-        notify_status = str(notify_result.get("status", "")).lower()
-
-        # Do not mark local registry completed unless the webserver explicitly
-        # accepted the lifecycle finalization. This prevents a half-applied
-        # state when the endpoint is missing, unauthenticated, or cannot find
-        # the session. Leaving the row registered allows a later poll to retry.
-        if notify_status != "ok":
-            results.append({
-                "experiment_id": experiment_id,
-                "session_id": fields.get("session_id") or "default",
-                "status": "notify_not_accepted",
-                "web_status": notify_status or "<empty>",
-                "web_datalake_notify": notify_result,
-            })
-            continue
-
-        finalized_at = utility.local_ts()
-        completed_fields = {
-            **fields,
-            "state": "completed",
-            "final_result": "success",
-            "final_reason": "planned_experiment_finished_after_wrapup",
-            "finalized_at": finalized_at,
-            "finalize_notified_at": finalized_at,
-            "web_finalize_notify_json": json.dumps(notify_result, ensure_ascii=False),
-        }
-
-        try:
-            config.r.xdel(config.KEY_EXPERIMENT_REGISTRY, xid)
-            new_xid = config.r.xadd(
-                config.KEY_EXPERIMENT_REGISTRY,
-                completed_fields,
-                maxlen=200,
-                approximate=True,
-            )
-            results.append({
-                "experiment_id": experiment_id,
-                "session_id": fields.get("session_id") or "default",
-                "status": "finalized",
-                "old_stream_id": _redis_text(xid),
-                "new_stream_id": _redis_text(new_xid),
-                "web_datalake_notify": notify_result,
-            })
-        except Exception as e:
-            results.append({
-                "experiment_id": experiment_id,
-                "session_id": fields.get("session_id") or "default",
-                "status": "local_registry_update_failed",
-                "detail": f"{type(e).__name__}: {e}",
-                "web_datalake_notify": notify_result,
-            })
-
-    if not results:
-        return {"status": "noop", "detail": "no due registered experiment"}
-
-    if any(r.get("status") == "finalized" for r in results):
-        return {"status": "finalized", "results": results}
-
-    return {"status": "checked", "results": results}
-
-
 @router.post("/cmd/_delete_experiment", tags=["4 Commands (Polling)"])
 def cmd_delete_experiment() -> Dict[str, Any]:
     """
@@ -2447,6 +2330,16 @@ def cmd_delete_experiment() -> Dict[str, Any]:
     - collected results/history, scanner registry, whitelist, AP metadata,
       robot pose, and mobility runtime state are preserved
     """
+    lock = nms_experiment_completion.lifecycle_lock()
+    if not lock.acquire(blocking=True, blocking_timeout=15):
+        raise HTTPException(409, "Experiment completion/registration is in progress; retry deletion.")
+    try:
+        return _delete_experiment_locked()
+    finally:
+        lock.release()
+
+
+def _delete_experiment_locked() -> Dict[str, Any]:
     try:
         registered_count = int(config.r.xlen(config.KEY_EXPERIMENT_REGISTRY))
         registry_rows_for_web = config.r.xrange(config.KEY_EXPERIMENT_REGISTRY, min="-", max="+")
@@ -2464,6 +2357,7 @@ def cmd_delete_experiment() -> Dict[str, Any]:
             detail=f"Unable to delete experiment registry: {type(e).__name__}: {e}",
         )
 
+    nms_experiment_completion.cancel_registration()
     queue_cleanup = m8mobility._clear_all_command_queues()
     web_datalake_notify = _notify_web_experiment_delete_from_rows(registry_rows_for_web)
 
@@ -2479,7 +2373,6 @@ def cmd_delete_experiment() -> Dict[str, Any]:
         "mobility_state_preserved": True,
         "time": utility.local_ts(),
     }
-
 
 def _run_public_script_validation(
     *,
@@ -2780,29 +2673,29 @@ async def cmd_load_csv_file(
                 replace_existing=replace_existing,
             )
 
+        preflight = {
+            **analysis["preflight"],
+            "t0_gate": t0_preflight,
+            "single_experiment_gate": single_experiment_gate,
+            "startup_health": startup_health,
+            "mobility_reset": mobility_reset,
+        }
+
+        web_datalake_notify = _notify_web_experiment_register(
+            experiment_id=experiment_id,
+            session_id=session_id,
+            exp=exp,
+            replace_existing=replace_existing,
+            raw_bytes=raw_bytes,
+            initial_poses_raw_bytes=initial_poses_raw_bytes,
+            csv_filename=csv_file.filename or "",
+            initial_poses_filename=initial_poses_file.filename or "",
+            public_validation=public_validation,
+            preflight=preflight,
+        )
+
     finally:
         startup_lock.release()
-
-    preflight = {
-        **analysis["preflight"],
-        "t0_gate": t0_preflight,
-        "single_experiment_gate": single_experiment_gate,
-        "startup_health": startup_health,
-        "mobility_reset": mobility_reset,
-    }
-
-    web_datalake_notify = _notify_web_experiment_register(
-        experiment_id=experiment_id,
-        session_id=session_id,
-        exp=exp,
-        replace_existing=replace_existing,
-        raw_bytes=raw_bytes,
-        initial_poses_raw_bytes=initial_poses_raw_bytes,
-        csv_filename=csv_file.filename or "",
-        initial_poses_filename=initial_poses_file.filename or "",
-        public_validation=public_validation,
-        preflight=preflight,
-    )
 
     return {
         "status": "ok",

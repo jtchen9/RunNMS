@@ -100,6 +100,8 @@ NORTHBOUND_UPLOAD_EVERY_SEC: int = 60
 # This is not sent to the web server; it only controls which experiment identity
 # NMS attaches to 10-second and 1-minute northbound reports.
 NORTHBOUND_EXPERIMENT_WRAPUP_SEC: int = 120
+# Per-registration completion task; absent when no experiment is pending.
+EXPERIMENT_COMPLETION_CHECK_SEC: int = 10
 UPLOAD_BATCH_MAX_BYTES: int = 100_000  # scan/iperf3 POST cap
 # Whole AP measurements are sent independently; verify web/proxy limits in live tests.
 AP_UPLOAD_MAX_BYTES: int = 2_000_000
