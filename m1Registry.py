@@ -5,6 +5,7 @@ import base64
 from fastapi import APIRouter, HTTPException, File, UploadFile
 from pydantic import BaseModel, Field
 
+from nms_preparation_gate import serialized as preparation_serialized, active as preparation_active
 import config
 import utility
 import m8mobility
@@ -448,6 +449,7 @@ def registry_whitelist_delete(scanner: str) -> Dict[str, Any]:
 
 
 @router.post("/registry/register", tags=["1 Registry & Whitelist"])
+@preparation_serialized
 def register(req: RegisterReq) -> Dict[str, Any]:
     mac = utility.normalize_mac(req.mac)
     scanner = find_scanner_by_mac(mac)
@@ -457,6 +459,9 @@ def register(req: RegisterReq) -> Dict[str, Any]:
     if "ap" in (req.capabilities or "").lower():
         return _register_device(req, scanner, mac)
 
+    preparation = preparation_active()
+    if preparation and not preparation["runtime"]["released"] and preparation["runtime"]["phase"] in {"health", "preparing", "ready", "resetting"}:
+        raise HTTPException(409, "Preparation attempt is active; robot registration may retry during the adjustment period")
     lock = m8mobility.registration_command_lock(scanner)
     if not lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail="robot command/registration in progress; retry")

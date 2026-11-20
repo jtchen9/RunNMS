@@ -16,6 +16,9 @@ from fastapi import APIRouter
 import json
 import asyncio
 
+from nms_preparation_gate import (serialized as preparation_serialized,
+    guarded_mobility as preparation_guarded, held as preparation_held,
+    require_manual_admission as preparation_require_manual, queued_row_current)
 import config
 import utility
 import m8mobility_link as link
@@ -295,6 +298,7 @@ def registration_blocks_commands(scanner: str) -> bool:
     return status in ("pending", "failed")
 
 
+@preparation_serialized
 def on_command_issued(scanner: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
     lock = registration_command_lock(scanner)
     if not lock.acquire(blocking=False):
@@ -305,6 +309,7 @@ def on_command_issued(scanner: str, action: str, args: Dict[str, Any]) -> Dict[s
         lock.release()
 
 
+@preparation_guarded
 def _on_command_issued_locked(scanner: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """
     Entry point for mobility commands from NMS.
@@ -384,7 +389,10 @@ def _collect_due_mobility_commands(server_now_str: str):
 
     return due
 
+@preparation_serialized
 def _dispatch_due_mobility_command(xid: str, fields: Dict[str, str]) -> None:
+    if preparation_held() or not queued_row_current(config.KEY_MOBILITY_CMD_STREAM,xid,fields):
+        return
     scanner = (fields.get("scanner") or "").strip()
     lock = registration_command_lock(scanner)
     if not lock.acquire(blocking=False):
@@ -488,11 +496,13 @@ def should_block_command(category: str) -> bool:
 
 @router.post("/mobility/init", tags=["8 Mobility"])
 def api_mobility_init() -> Dict[str, Any]:
+    preparation_require_manual()
     return mobility_init()
 
 
 @router.post("/mobility/manual_resume/{scanner}", tags=["8 Mobility"])
 def api_mobility_manual_resume(scanner: str) -> Dict[str, Any]:
+    preparation_require_manual()
     return manual_resume(scanner)
 
 

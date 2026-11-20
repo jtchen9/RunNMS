@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 import config
 import utility
 import nms_experiment_completion
+from nms_preparation_gate import serialized, require_manual_admission, row_allowed
 import m1Registry
 import m7Traffic
 import m8mobility
@@ -765,7 +766,9 @@ def _resolve_operator_args(scanner: str, action: str, args: Any) -> Any:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@serialized
 def _cmd_enqueue_core(scanner: str, cmd: "Cmd") -> Dict[str, Any]:
+    require_manual_admission()
     m1Registry.require_whitelisted(scanner)
 
     created_at = utility.local_ts()
@@ -1619,6 +1622,7 @@ def cmd_enqueue(scanner: str, cmd: Cmd) -> Dict[str, Any]:
     return _cmd_enqueue_core(scanner, cmd)
 
 
+@serialized
 def _collect_due_commands(scanner: str, limit: int, server_now_str: str) -> Dict[str, Any]:
     held = {"commands": [], "skipped": {"not_due": 0, "expired": 0, "bad_time": 0},
             "held_for_registration": True}
@@ -1643,6 +1647,8 @@ def _collect_due_commands_registered(scanner: str, limit: int, server_now_str: s
     skipped_bad_time = 0
 
     for xid, fields in raw:
+        if not row_allowed(scanner, fields):
+            continue
         exec_at_s = fields.get("execute_at", "")
         if not exec_at_s:
             skipped_bad_time += 1
@@ -2318,6 +2324,15 @@ def _notify_web_experiment_delete_from_rows(registry_rows: List[Any]) -> Dict[st
             "deleted_at": utility.local_ts(),
             "reason": "nms_delete_experiment",
         }
+        if fields.get("registration_uid"):
+            from nms_preparation_runtime import store, wake
+            doc = store().load(fields["registration_uid"])
+            if doc and doc.get("delete_request"):
+                wake()
+                results.append({"status":"queued", "registration_uid":fields["registration_uid"],
+                                "detail":"Durable deletion notification will retry independently"})
+                continue
+            post_fields["registration_uid"] = fields["registration_uid"]
         results.append(_post_multipart_to_webserver("/nms/experiment/delete", post_fields, {}))
 
     return {
@@ -2335,6 +2350,9 @@ def _notify_web_experiment_finalize(fields: Dict[str, Any]) -> Dict[str, Any]:
     webserver can move the permanent Experiment-level session from future to
     history.
     """
+    from nms_preparation_runtime import before_finalize
+    if not before_finalize(fields):
+        return {"status": "pending", "detail": "Preparation lifecycle uploads are still pending"}
     post_fields = {
         "nms_id": _nms_lab_id(),
         "lab_id": fields.get("lab_id") or _nms_lab_id(),
@@ -2348,6 +2366,8 @@ def _notify_web_experiment_finalize(fields: Dict[str, Any]) -> Dict[str, Any]:
         "end_at": fields.get("end_at") or "",
         "wrapup_sec": str(int(getattr(config, "NORTHBOUND_EXPERIMENT_WRAPUP_SEC", 120) or 0)),
     }
+    if fields.get("registration_uid"):
+        post_fields["registration_uid"] = fields["registration_uid"]
     return _post_multipart_to_webserver("/nms/experiment/finalize", post_fields, {})
 
 
@@ -2382,6 +2402,8 @@ def _delete_experiment_locked() -> Dict[str, Any]:
             detail=f"Unable to inspect experiment registry: {type(e).__name__}: {e}",
         )
 
+    from nms_preparation_runtime import cancel_active
+    preparation_cleanup_pending = cancel_active(registry_rows_for_web)
     try:
         deleted_registry_keys = int(config.r.delete(config.KEY_EXPERIMENT_REGISTRY))
     except Exception as e:
@@ -2398,6 +2420,7 @@ def _delete_experiment_locked() -> Dict[str, Any]:
         "status": "ok",
         "detail": "registered experiment deleted and pending command queues cleared",
         "registered_experiment_count_before": registered_count,
+        "preparation_cleanup_pending": preparation_cleanup_pending,
         "deleted_registry_keys": deleted_registry_keys,
         "queue_cleanup": queue_cleanup,
         "web_datalake_notify": web_datalake_notify,
@@ -2465,285 +2488,56 @@ def _run_public_script_validation(
     return report
 
 
-@router.post("/cmd/_load_csv_file", tags=["4 Commands (Polling)"])
-async def cmd_load_csv_file(
-    t0: str = Form(..., description=f"NMS local start time ({config.TIME_FMT}). Try it out suggests a fresh, editable whole minute."),
-    session_id: Optional[str] = Form(
-        None,
-        description="Optional session id under the experiment id. If omitted, stored as null.",
-    ),
-    replace_existing: bool = Form(
-        False,
-        description=(
-            "If true, clear existing queued commands and reset mobility state after "
-            "the same-lab time-conflict check passes. Default false preserves "
-            "previously registered future experiments."
-        ),
-    ),
+@router.post("/cmd/_preview_registration_csv", tags=["4 Commands (Polling)"])
+async def cmd_preview_registration_csv(
     csv_file: UploadFile = File(
-        ...,
-        description="Upload a CSV file with columns: scanner,t_offset_sec,category,action,args_json",
+        ..., description="Read-only format preview. A-E commands; F-G initial positions and re-entry reminders; H display time."
     ),
-    initial_poses_file: UploadFile = File(
-        ...,
-        description=(
-            "Upload initial_poses.csv with columns: scanner,intended_x_m,"
-            "intended_y_m,intended_heading_deg,position_tolerance_m,"
-            "heading_tolerance_deg"
-        ),
+    initial_poses_file: Optional[UploadFile] = File(
+        None, description="Optional legacy initial-poses CSV. Omit when F-G contain positions."
     ),
 ) -> Dict[str, Any]:
+    """Step 1: parse only. No registration, preflight, Redis changes or commands.
+
+    Success does NOT authorize execution. Actual one-file registration is enabled
+    only after preparation and shared-checker support have been implemented.
+    Use /cmd/_load_csv_file for actual preparation registration.
     """
-    Register and load one CSV-backed experiment.
+    from experiment_csv import CsvFormatError, parse_registration_csv
 
-    Final settled experiment-registration contract:
-
-    - Only this endpoint, /cmd/_load_csv_file, registers experiments.
-      The older /cmd/_load_script and /cmd/_load_csv APIs are deprecated/removed
-      to avoid multiple inconsistent registration paths.
-
-    - experiment_id is derived from the uploaded CSV filename stem.
-      Example:
-          M2_test.csv -> experiment_id = "M2_test"
-
-    - session_id is optional input below experiment_id.
-      If omitted, session_id is stored as null in the API response and as an
-      empty string in the Redis stream.
-      The web server uses experiment_id, not session_id, to decide whether data
-      belongs to a long-term experiment database.
-
-    - lab_id is config.NMS_NAME.
-      This identifies which NMS/lab instance registered the experiment, because
-      multiple NMSs may report to the same web server.
-
-    - registered_at is the NMS local time when this endpoint accepts the CSV.
-
-    - start_at is the parsed t0 input.
-
-    - end_at is derived as:
-          start_at + maximum valid t_offset_sec in the accepted CSV rows
-
-    - guard_sec is the required preparation gap between experiments in the same
-      lab. Current value: 3600 seconds.
-
-    - command_count is the number of accepted/enqueued CSV rows.
-      If command_count would be zero, the endpoint rejects the request and does
-      not register an experiment.
-
-    - replace_existing controls queue cleanup only after conflict checking:
-          false: preserve existing queued commands and append this experiment
-          true:  after the time-conflict check passes, clear old queues/state
-                 before enqueueing this experiment
-      It does not bypass same-lab time-conflict checking.
-
-    - state is initially "registered".
-      Later states may be derived or updated as: "running", "completed",
-      or "cancelled".
-
-    - Same-lab experiment registration rejects time conflicts:
-          existing.start_at < new.end_at + guard_sec
-          AND
-          existing.end_at   > new.start_at - guard_sec
-
-    - The registry stream is:
-          config.KEY_EXPERIMENT_REGISTRY = "nms:experiment:registry"
-
-    Safe mutation order:
-        1. read both uploaded CSV files
-        2. run the shared public CommonCheckers validate_script()
-        3. stop with HTTP 422 and no mutation if public validation fails
-        4. parse t0 and require it to be in the future
-        5. dry-analyze accepted rows and compute end_at
-        6. reject if command_count == 0
-        7. check single-experiment registration gate
-        8. reset lab mobility state
-        9. enqueue accepted commands
-       10. write registry record
-
-    Registry fields written by this endpoint:
-        experiment_id
-        session_id
-        lab_id
-        registered_at
-        start_at
-        end_at
-        guard_sec
-        command_count
-        replace_existing
-        state
-        time_format
-    """
-    original_filename = (csv_file.filename or "").strip()
-    filename_lower = original_filename.lower()
-
-    if not filename_lower.endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Uploaded file must be a .csv file")
-
-    experiment_id = original_filename.rsplit(".", 1)[0].strip()
-    if not experiment_id:
-        raise HTTPException(status_code=400, detail="CSV filename must provide a non-empty experiment_id")
-
-    initial_poses_filename = (initial_poses_file.filename or "").strip()
-    if not initial_poses_filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Uploaded initial poses file must be a .csv file",
-        )
-
+    for upload in (csv_file, initial_poses_file):
+        if upload is not None and not (upload.filename or "").lower().endswith(".csv"):
+            raise HTTPException(400, "Preview uploads must be .csv files.")
     try:
-        raw_bytes = await csv_file.read()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read uploaded CSV file: {e}")
-
+        raw = await csv_file.read()
+        poses_raw = await initial_poses_file.read() if initial_poses_file is not None else None
+    except Exception as exc:
+        raise HTTPException(400, f"Could not read preview upload: {exc}") from exc
     try:
-        initial_poses_raw_bytes = await initial_poses_file.read()
-    except Exception as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Failed to read uploaded initial poses CSV file: {e}",
-        )
+        manifest = parse_registration_csv(raw, poses_raw)
+    except CsvFormatError as exc:
+        raise HTTPException(422, {"error": "registration_csv_format_error", **exc.as_dict()}) from exc
+    return {"status": "ok", "preview_only": True, "registered": False,
+            "commands_enqueued": 0, "manifest": manifest}
 
-    try:
-        public_validation = _run_public_script_validation(
-            script_csv_bytes=raw_bytes,
-            initial_poses_csv_bytes=initial_poses_raw_bytes,
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "public_validator_error",
-                "message": f"{type(e).__name__}: {e}",
-            },
-        )
 
-    if not public_validation.get("ok"):
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error": "public_validation_failed",
-                "public_validation": public_validation,
-            },
-        )
+@router.post("/cmd/_load_csv_file", tags=["4 Commands (Polling)"])
+async def cmd_load_csv_file(
+    csv_file: UploadFile = File(..., description="Commands A-E, initial robot/xy F-G; H is display-only. NMS assigns t0 after preparation."),
+    initial_poses_file: Optional[UploadFile] = File(None, description="Optional legacy poses file; omit with inline F/G positions."),
+    session_id: Optional[str] = Form(None),
+) -> Dict[str, Any]:
+    from nms_preparation_registration import register
+    return await register(csv_file, initial_poses_file, session_id)
 
-    try:
-        t0_dt = utility.parse_local_dt(t0)
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid t0; expected like '{utility.local_ts()}' (format {config.TIME_FMT})"
-        )
 
-    t0_preflight = _require_experiment_t0_future(t0_dt)
-
-    # Try UTF-8 first, then UTF-8 with BOM, then a common Windows fallback.
-    text = None
-    for enc in ("utf-8-sig", "utf-8", "cp950"):
-        try:
-            text = raw_bytes.decode(enc)
-            break
-        except Exception:
-            continue
-
-    if text is None:
-        raise HTTPException(status_code=400, detail="Unable to decode CSV file as text")
-
-    f = io.StringIO(text)
-    reader = csv.DictReader(f)
-    # Column structure and row contents have already passed the shared public
-    # validator. This second read only constructs registration/enqueue items.
-    rows = list(reader)
-
-    analysis = _analyze_csv_rows_for_experiment(
-        rows,
-        t0_dt=t0_dt,
-    )
-
-    added = int(analysis["added"])
-    skipped_not_whitelisted = int(analysis["skipped_not_whitelisted"])
-    bad_rows = int(analysis["bad_rows"])
-    last_execute_at = analysis["last_execute_at"]
-    accepted_items = analysis["accepted_items"]
-
-    # Serialize competing registrations while allowing all robot poll/ACK traffic.
-    startup_lock = config.r.lock(config.KEY_EXPERIMENT_REGISTRY + ":startup_lock", timeout=300)
-    if not startup_lock.acquire(blocking=False):
-        raise HTTPException(409, "Experiment registration is already in progress.")
-    try:
-        single_experiment_gate = _require_empty_experiment_registry()
-
-        from nms_static_readiness import check_targets
-        if skipped_not_whitelisted:
-            raise HTTPException(409, "Startup refused: script contains non-whitelisted targets.")
-        startup_health = await check_targets(analysis["scanners"], t0_dt)
-        _require_experiment_t0_future(t0_dt)
-
-        # Registration occurs immediately before experiment execution.
-        # Reset the whole lab once, after all CSV validation/gating succeeds and
-        # before any accepted experiment command is enqueued.
-        with experiment_trace_boundary():
-            mobility_reset = m8mobility.mobility_init()
-
-            for item in accepted_items:
-                _enqueue_script_or_csv_item(
-                    scanner=item["scanner"],
-                    category=item["category"],
-                    action=item["action"],
-                    execute_at=item["execute_at"],
-                    args=item["args"],
-                    lab_id=_nms_lab_id(),
-                    experiment_id=experiment_id,
-                    session_id=session_id,
-                )
-
-            exp = _register_experiment_status(
-                experiment_id=experiment_id,
-                session_id=session_id,
-                start_at_str=t0_dt.strftime(config.TIME_FMT),
-                end_at_str=last_execute_at.strftime(config.TIME_FMT),
-                command_count=added,
-                mobility_scanners=analysis["mobility_scanners"],
-                replace_existing=replace_existing,
-            )
-
-        preflight = {
-            **analysis["preflight"],
-            "t0_gate": t0_preflight,
-            "single_experiment_gate": single_experiment_gate,
-            "startup_health": startup_health,
-            "mobility_reset": mobility_reset,
-        }
-
-        web_datalake_notify = _notify_web_experiment_register(
-            experiment_id=experiment_id,
-            session_id=session_id,
-            exp=exp,
-            replace_existing=replace_existing,
-            raw_bytes=raw_bytes,
-            initial_poses_raw_bytes=initial_poses_raw_bytes,
-            csv_filename=csv_file.filename or "",
-            initial_poses_filename=initial_poses_file.filename or "",
-            public_validation=public_validation,
-            preflight=preflight,
-        )
-
-    finally:
-        startup_lock.release()
-
-    return {
-        "status": "ok",
-        "t0": t0_dt.strftime(config.TIME_FMT),
-        "time_format": config.TIME_FMT,
-        "filename": csv_file.filename or "",
-        "experiment_id": experiment_id,
-        "session_id": (session_id or "").strip() or None,
-        "lab_id": _nms_lab_id(),
-        "replace_existing": bool(replace_existing),
-        "added": added,
-        "skipped_not_whitelisted": skipped_not_whitelisted,
-        "bad_rows": bad_rows,
-        "public_validation": public_validation,
-        "preflight": preflight,
-        "experiment": exp,
-        "web_datalake_notify": web_datalake_notify,
-    }
+@router.get("/cmd/_preparation", tags=["4 Commands (Polling)"])
+def cmd_preparation_status() -> Dict[str, Any]:
+    from nms_preparation_gate import active
+    d = active()
+    if not d:
+        return {"status": "idle"}
+    return {"status": "ok", "experiment": d["snapshot"],
+            "phase": d["runtime"]["phase"], "released": d["runtime"]["released"],
+            "cancel_requested": d["runtime"]["cancel_requested"],
+            "delivery_blocked": d["blocked"], "last_delivery": d["last_delivery"]}

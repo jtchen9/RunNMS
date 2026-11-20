@@ -1,0 +1,258 @@
+{
+  "record": {
+    "blocked": {},
+    "event_batch": null,
+    "events": {
+      "d6aa63eb02dd408384f8a2b0761538eb:attempt1": {
+        "attempt": 1,
+        "details": {
+          "protocol_test_only": true
+        },
+        "event_id": "d6aa63eb02dd408384f8a2b0761538eb:attempt1",
+        "event_type": "attempt_started",
+        "time_local": "2026-11-20-18:15:28",
+        "update_seq": 1
+      },
+      "d6aa63eb02dd408384f8a2b0761538eb:attempt_failed": {
+        "attempt": 1,
+        "details": {
+          "protocol_test_only": true
+        },
+        "event_id": "d6aa63eb02dd408384f8a2b0761538eb:attempt_failed",
+        "event_type": "attempt_failed",
+        "time_local": "2026-11-20-18:15:28",
+        "update_seq": 2
+      },
+      "d6aa63eb02dd408384f8a2b0761538eb:retry_scheduled": {
+        "attempt": 1,
+        "details": {
+          "protocol_test_only": true
+        },
+        "event_id": "d6aa63eb02dd408384f8a2b0761538eb:retry_scheduled",
+        "event_type": "retry_scheduled",
+        "time_local": "2026-11-20-18:15:28",
+        "update_seq": 2
+      }
+    },
+    "last_delivery": {
+      "channel": "events",
+      "http_status": 200,
+      "response": {
+        "accepted_event_ids": [
+          "d6aa63eb02dd408384f8a2b0761538eb:attempt_failed",
+          "d6aa63eb02dd408384f8a2b0761538eb:retry_scheduled"
+        ],
+        "acknowledged_event_ids": [
+          "d6aa63eb02dd408384f8a2b0761538eb:attempt_failed",
+          "d6aa63eb02dd408384f8a2b0761538eb:retry_scheduled"
+        ],
+        "duplicate_event_ids": [],
+        "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+        "session_uid": "default__v000001",
+        "status": "ok"
+      },
+      "status": "acknowledged"
+    },
+    "locally_closed": false,
+    "package": {
+      "fields": {
+        "command_count": 0,
+        "experiment_id": "PreparationProtocol_20261120_181527_d6aa63",
+        "extra_metadata_json": "{\"no_robot_commands\":true,\"protocol_test_only\":true}",
+        "lab_id": "DemoRoom",
+        "nms_id": "DemoRoom",
+        "preparation_json": "{\"attempt\":0,\"phase\":\"awaiting_attempt\",\"updated_at\":\"2026-11-20-18:15:27\"}",
+        "registered_at": "2026-11-20-18:15:27",
+        "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+        "session_id": "default",
+        "update_seq": 0
+      },
+      "files": [
+        [
+          "command_sheet_file",
+          [
+            "ProtocolOnly.csv",
+            "c2Nhbm5lcix0X29mZnNldF9zZWMsY2F0ZWdvcnksYWN0aW9uLGFyZ3NfanNvbixpbml0aWFsX3JvYm90LGluaXRpYWxfeHkNCg==",
+            "text/csv"
+          ]
+        ]
+      ]
+    },
+    "pending_events": [],
+    "registered": true,
+    "remote_inactive": false,
+    "session_uid": "default__v000001",
+    "snapshot": {
+      "end_at": null,
+      "experiment_id": "PreparationProtocol_20261120_181527_d6aa63",
+      "lab_id": "DemoRoom",
+      "nms_id": "DemoRoom",
+      "preparation": {
+        "attempt": 1,
+        "phase": "retry_wait",
+        "reason": "Protocol probe: simulated preparation failure; no robot commands issued",
+        "reset_required": false,
+        "retry_at": "2026-11-20-18:18:28",
+        "updated_at": "2026-11-20-18:15:28"
+      },
+      "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+      "session_id": "default",
+      "start_at": null,
+      "state": "preparing",
+      "update_seq": 2
+    },
+    "state_queue": []
+  },
+  "calls": [
+    {
+      "status": "acknowledged",
+      "channel": "registration",
+      "http_status": 200,
+      "response": {
+        "status": "ok",
+        "detail": "experiment registration saved in Data Lake",
+        "route_preview_warnings": [],
+        "experiment": {
+          "site_id": "DemoRoom",
+          "experiment_id": "PreparationProtocol_20261120_181527_d6aa63",
+          "session_id": "default",
+          "session_uid": "default__v000001",
+          "registration_version": 1,
+          "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+          "update_seq": "0",
+          "state": "preparing",
+          "start_at": null,
+          "end_at": null,
+          "branch": "future"
+        },
+        "time": "2026-11-20-18:15:28",
+        "time_format": "%Y-%m-%d-%H:%M:%S"
+      }
+    },
+    {
+      "status": "idle",
+      "blocked": {}
+    },
+    {
+      "status": "acknowledged",
+      "channel": "state",
+      "http_status": 200,
+      "response": {
+        "status": "ok",
+        "decision": "accepted",
+        "session_uid": "default__v000001",
+        "experiment": {
+          "lab_id": "DemoRoom",
+          "experiment_id": "PreparationProtocol_20261120_181527_d6aa63",
+          "session_id": "default",
+          "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+          "update_seq": 1,
+          "state": "preparing",
+          "start_at": null,
+          "end_at": null,
+          "preparation": {
+            "attempt": 1,
+            "phase": "preparing",
+            "updated_at": "2026-11-20-18:15:28"
+          }
+        },
+        "time": "2026-11-20-18:15:29",
+        "time_format": "%Y-%m-%d-%H:%M:%S"
+      }
+    },
+    {
+      "status": "acknowledged",
+      "channel": "events",
+      "http_status": 200,
+      "response": {
+        "status": "ok",
+        "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+        "session_uid": "default__v000001",
+        "accepted_event_ids": [
+          "d6aa63eb02dd408384f8a2b0761538eb:attempt1"
+        ],
+        "duplicate_event_ids": [],
+        "acknowledged_event_ids": [
+          "d6aa63eb02dd408384f8a2b0761538eb:attempt1"
+        ]
+      }
+    },
+    {
+      "status": "idle",
+      "blocked": {}
+    },
+    {
+      "status": "acknowledged",
+      "channel": "state",
+      "http_status": 200,
+      "response": {
+        "status": "ok",
+        "decision": "accepted",
+        "session_uid": "default__v000001",
+        "experiment": {
+          "lab_id": "DemoRoom",
+          "experiment_id": "PreparationProtocol_20261120_181527_d6aa63",
+          "session_id": "default",
+          "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+          "update_seq": 2,
+          "state": "preparing",
+          "start_at": null,
+          "end_at": null,
+          "preparation": {
+            "attempt": 1,
+            "phase": "retry_wait",
+            "reason": "Protocol probe: simulated preparation failure; no robot commands issued",
+            "reset_required": false,
+            "retry_at": "2026-11-20-18:18:28",
+            "updated_at": "2026-11-20-18:15:28"
+          }
+        },
+        "time": "2026-11-20-18:15:29",
+        "time_format": "%Y-%m-%d-%H:%M:%S"
+      }
+    },
+    {
+      "status": "acknowledged",
+      "channel": "events",
+      "http_status": 200,
+      "response": {
+        "status": "ok",
+        "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+        "session_uid": "default__v000001",
+        "accepted_event_ids": [
+          "d6aa63eb02dd408384f8a2b0761538eb:attempt_failed",
+          "d6aa63eb02dd408384f8a2b0761538eb:retry_scheduled"
+        ],
+        "duplicate_event_ids": [],
+        "acknowledged_event_ids": [
+          "d6aa63eb02dd408384f8a2b0761538eb:attempt_failed",
+          "d6aa63eb02dd408384f8a2b0761538eb:retry_scheduled"
+        ]
+      }
+    },
+    {
+      "status": "idle",
+      "blocked": {}
+    },
+    {
+      "probe": "duplicate_events",
+      "http_status": 200,
+      "response": {
+        "status": "ok",
+        "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+        "session_uid": "default__v000001",
+        "accepted_event_ids": [],
+        "duplicate_event_ids": [
+          "d6aa63eb02dd408384f8a2b0761538eb:attempt1",
+          "d6aa63eb02dd408384f8a2b0761538eb:attempt_failed",
+          "d6aa63eb02dd408384f8a2b0761538eb:retry_scheduled"
+        ],
+        "acknowledged_event_ids": [
+          "d6aa63eb02dd408384f8a2b0761538eb:attempt1",
+          "d6aa63eb02dd408384f8a2b0761538eb:attempt_failed",
+          "d6aa63eb02dd408384f8a2b0761538eb:retry_scheduled"
+        ]
+      }
+    }
+  ]
+}

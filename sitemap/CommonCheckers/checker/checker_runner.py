@@ -84,6 +84,7 @@ def validate_script(
     common_dir: str | Path,
     report_json: Optional[str | Path] = None,
     normalized_script_csv: Optional[str | Path] = None,
+    prepared_manifest: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     script_csv = Path(script_csv)
     initial_poses_csv = Path(initial_poses_csv)
@@ -99,8 +100,16 @@ def validate_script(
     safety_policy = _load_json(site_dir / "script_authoring" / "config" / "safety_policy.json")
     ap_roster = _load_json(site_dir / "script_authoring" / "config" / "ap_roster.json")
 
-    source_rows, issues = load_script_csv(script_csv)
-    initial_poses, pose_issues = load_initial_poses_csv(initial_poses_csv)
+    if prepared_manifest is None:
+        source_rows, issues = load_script_csv(script_csv)
+        initial_poses, pose_issues = load_initial_poses_csv(initial_poses_csv)
+    else:
+        from .script_model import ScriptRow, InitialPose
+        source_rows = [ScriptRow(c["row_number"],c["scanner"],c["t_offset_sec"],c["category"].lower(),c["action"],c["args"])
+                       for c in prepared_manifest["commands"]]
+        initial_poses = {p["scanner"]: InitialPose(p["row_number"],p["scanner"],p["x_m"],p["y_m"],p["heading_deg"],.3,10)
+                         for p in prepared_manifest["initial_positions"]}
+        issues, pose_issues = [], []
     issues.extend(pose_issues)
 
     rows, reserved_issues, resolved_constant_count = resolve_reserved_launch_locations(
@@ -145,6 +154,9 @@ def validate_script(
         common_checkers_version=common_version,
     )
 
+    if prepared_manifest is not None:
+        report["validated_commands"] = [dict(row_number=r.row_number,scanner=r.scanner,t_offset_sec=r.t_offset_sec,
+                                             category=r.category,action=r.action,args=r.args) for r in rows]
     report["resolved_launch_constant_count"] = resolved_constant_count
     report["normalized_script_path"] = str(normalized_script_csv or "")
 

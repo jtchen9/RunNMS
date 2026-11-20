@@ -1,0 +1,165 @@
+{
+  "record": {
+    "blocked": {},
+    "event_batch": null,
+    "events": {
+      "d6aa63eb02dd408384f8a2b0761538eb:attempt1": {
+        "attempt": 1,
+        "details": {
+          "protocol_test_only": true
+        },
+        "event_id": "d6aa63eb02dd408384f8a2b0761538eb:attempt1",
+        "event_type": "attempt_started",
+        "time_local": "2026-11-20-18:15:28",
+        "update_seq": 1
+      },
+      "d6aa63eb02dd408384f8a2b0761538eb:attempt_failed": {
+        "attempt": 1,
+        "details": {
+          "protocol_test_only": true
+        },
+        "event_id": "d6aa63eb02dd408384f8a2b0761538eb:attempt_failed",
+        "event_type": "attempt_failed",
+        "time_local": "2026-11-20-18:15:28",
+        "update_seq": 2
+      },
+      "d6aa63eb02dd408384f8a2b0761538eb:cancelled": {
+        "attempt": 1,
+        "details": {
+          "protocol_test_only": true
+        },
+        "event_id": "d6aa63eb02dd408384f8a2b0761538eb:cancelled",
+        "event_type": "cancelled",
+        "time_local": "2026-11-20-18:17:06",
+        "update_seq": 2
+      },
+      "d6aa63eb02dd408384f8a2b0761538eb:retry_scheduled": {
+        "attempt": 1,
+        "details": {
+          "protocol_test_only": true
+        },
+        "event_id": "d6aa63eb02dd408384f8a2b0761538eb:retry_scheduled",
+        "event_type": "retry_scheduled",
+        "time_local": "2026-11-20-18:15:28",
+        "update_seq": 2
+      }
+    },
+    "last_delivery": {
+      "channel": "events",
+      "http_status": 200,
+      "response": {
+        "accepted_event_ids": [
+          "d6aa63eb02dd408384f8a2b0761538eb:cancelled"
+        ],
+        "acknowledged_event_ids": [
+          "d6aa63eb02dd408384f8a2b0761538eb:cancelled"
+        ],
+        "duplicate_event_ids": [],
+        "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+        "session_uid": "default__v000001",
+        "status": "ok"
+      },
+      "status": "acknowledged"
+    },
+    "locally_closed": true,
+    "package": {
+      "fields": {
+        "command_count": 0,
+        "experiment_id": "PreparationProtocol_20261120_181527_d6aa63",
+        "extra_metadata_json": "{\"no_robot_commands\":true,\"protocol_test_only\":true}",
+        "lab_id": "DemoRoom",
+        "nms_id": "DemoRoom",
+        "preparation_json": "{\"attempt\":0,\"phase\":\"awaiting_attempt\",\"updated_at\":\"2026-11-20-18:15:27\"}",
+        "registered_at": "2026-11-20-18:15:27",
+        "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+        "session_id": "default",
+        "update_seq": 0
+      },
+      "files": [
+        [
+          "command_sheet_file",
+          [
+            "ProtocolOnly.csv",
+            "c2Nhbm5lcix0X29mZnNldF9zZWMsY2F0ZWdvcnksYWN0aW9uLGFyZ3NfanNvbixpbml0aWFsX3JvYm90LGluaXRpYWxfeHkNCg==",
+            "text/csv"
+          ]
+        ]
+      ]
+    },
+    "pending_events": [],
+    "probe_delete_fields": {
+      "deleted_at": "2026-11-20-18:17:06",
+      "experiment_id": "PreparationProtocol_20261120_181527_d6aa63",
+      "lab_id": "DemoRoom",
+      "nms_id": "DemoRoom",
+      "reason": "protocol_probe_cleanup",
+      "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+      "session_id": "default"
+    },
+    "probe_deleted": true,
+    "registered": true,
+    "remote_inactive": false,
+    "session_uid": "default__v000001",
+    "snapshot": {
+      "end_at": null,
+      "experiment_id": "PreparationProtocol_20261120_181527_d6aa63",
+      "lab_id": "DemoRoom",
+      "nms_id": "DemoRoom",
+      "preparation": {
+        "attempt": 1,
+        "phase": "retry_wait",
+        "reason": "Protocol probe: simulated preparation failure; no robot commands issued",
+        "reset_required": false,
+        "retry_at": "2026-11-20-18:18:28",
+        "updated_at": "2026-11-20-18:15:28"
+      },
+      "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+      "session_id": "default",
+      "start_at": null,
+      "state": "preparing",
+      "update_seq": 2
+    },
+    "state_queue": []
+  },
+  "calls": [
+    {
+      "probe": "delete",
+      "http_status": 200,
+      "response": {
+        "status": "ok",
+        "site_id": "DemoRoom",
+        "experiment_id": "PreparationProtocol_20261120_181527_d6aa63",
+        "session_id": "default",
+        "session_uid": "default__v000001",
+        "branch": "deleted",
+        "updated_at": "2026-11-20-18:17:07",
+        "state": "deleted",
+        "deleted_at": "2026-11-20-18:17:06",
+        "delete_reason": "protocol_probe_cleanup",
+        "time": "2026-11-20-18:17:07",
+        "time_format": "%Y-%m-%d-%H:%M:%S"
+      }
+    },
+    {
+      "status": "acknowledged",
+      "channel": "events",
+      "http_status": 200,
+      "response": {
+        "status": "ok",
+        "registration_uid": "d6aa63eb02dd408384f8a2b0761538eb",
+        "session_uid": "default__v000001",
+        "accepted_event_ids": [
+          "d6aa63eb02dd408384f8a2b0761538eb:cancelled"
+        ],
+        "duplicate_event_ids": [],
+        "acknowledged_event_ids": [
+          "d6aa63eb02dd408384f8a2b0761538eb:cancelled"
+        ]
+      }
+    },
+    {
+      "status": "idle",
+      "blocked": {}
+    }
+  ]
+}

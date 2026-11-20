@@ -717,6 +717,10 @@ def _build_experiment_snapshot(mobility_stops=None) -> Dict[str, Any]:
     - scheduled:   nearest future experiment
     - idle:        no current/guard/future experiment
     """
+    from nms_preparation_runtime import current_snapshot
+    preparation = current_snapshot(mobility_stops)
+    if preparation is not None:
+        return preparation
     try:
         rows = config.r.xrange(config.KEY_EXPERIMENT_REGISTRY, count=200)
     except Exception:

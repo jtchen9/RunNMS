@@ -13,6 +13,7 @@ import csv
 import io
 import subprocess
 import threading
+from nms_preparation_gate import serialized, require_manual_admission, held, queued_row_current
 import os
 import signal
 import asyncio
@@ -334,6 +335,7 @@ def _parse_args_json(args: Dict[str, Any], args_json_text: Optional[str]) -> str
     return json.dumps(args or {}, ensure_ascii=False)
 
 
+@serialized
 def _traffic_enqueue_core(
     *,
     scanner: str,
@@ -344,6 +346,7 @@ def _traffic_enqueue_core(
     experiment_id: str = "",
     session_id: str = "",
 ) -> Dict[str, Any]:
+    require_manual_admission()
     m1Registry.require_whitelisted(scanner)
 
     if action not in ("traffic.session.start", "traffic.session.stop"):
@@ -799,7 +802,10 @@ def _event_duration_sec_from_args(args: Dict[str, Any]) -> int:
         return 60
 
 
+@serialized
 def _execute_due_command(xid: str, fields: Dict[str, str]) -> None:
+    if held() or not queued_row_current(config.KEY_TRAFFIC_CMD_STREAM,xid,fields):
+        return
     scanner = (fields.get("scanner") or "").strip()
     action = (fields.get("action") or "").strip()
 

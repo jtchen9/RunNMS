@@ -9,6 +9,7 @@ Division rule:
 import json
 from typing import Dict, Any, Optional
 import math
+from nms_preparation_gate import guarded_mobility as preparation_guarded
 import threading
 import uuid
 import re
@@ -1103,6 +1104,7 @@ def s1waiting_report(scanner: str) -> Dict[str, Any]:
         "detail": "waiting for expected mobility report",
     }
 
+@preparation_guarded
 def process_s1_event(scanner: str, source: str, timer_token: Optional[str] = None) -> Dict[str, Any]:
     """
     Unified S1 event resolver.
@@ -1345,6 +1347,19 @@ def _s1_report_matches_expected_command(scanner: str) -> tuple[bool, str]:
 
     if expected_args_n != report_args_n:
         return False, "normalized command args mismatch"
+
+    preparation_scope = utility._hget(key_state(scanner), "preparation_scope", "")
+    if preparation_scope:
+        # Preparation must not accept a robot's repeatedly polled old report.
+        # This extra freshness gate is inactive in ordinary experiments.
+        from nms_preparation_positioning import preparation_report_fresh
+        evidence = utility._hget_json(key_pose(scanner), "preparation_evidence_json")
+        baseline = utility._hget_json(key_state(scanner), "preparation_baseline_report_json")
+        return preparation_report_fresh(
+            report,
+            utility._hget(key_time(scanner), "last_planned_command_issued_at", ""),
+            (evidence.get("report") if evidence.get("scope") == preparation_scope else baseline) or {},
+        )
 
     return True, ""
 
@@ -1853,6 +1868,7 @@ def _cancel_runtime_timers(scanner: str) -> None:
     _cancel_busy_retry_timer(scanner)
 
 
+@preparation_guarded
 def _busy_retry_timeout_callback(scanner: str, token: str) -> None:
     """
     Busy-retry timer callback.
@@ -2116,7 +2132,15 @@ def s3solving_true_location(scanner: str) -> Dict[str, Any]:
         # overwritten by a location refresh.
         issued_source = _last_issued_source(scanner)
 
-        if _is_location_precondition_source(issued_source):
+        # A timeout recovery may change the issued source to recovery_report
+        # or recovery_visibility_turn. It does not turn a report-only request
+        # into a movement intent. Preserve its return-to-idle behavior.
+        report_only_recovery = (
+            _is_location_recovery_source(issued_source)
+            and utility._hget(key_state(scanner), "last_s0_command_action", "")
+            == "mobility.report.location"
+        )
+        if _is_location_precondition_source(issued_source) or report_only_recovery:
             planned_before = _load_planned(scanner)
             planned_initialized = False
 
@@ -2690,6 +2714,26 @@ def _s3_save_true_location(scanner: str, loc: Dict[str, Any]) -> None:
             "true_location_updated_at": utility.local_ts(),
         },
     )
+    # Evidence for the separate preparation adapter only. Ordinary operation
+    # has no scope and remains unchanged. Never let diagnostics change S3 flow.
+    try:
+        scope = utility._hget(key_state(scanner), "preparation_scope", "")
+        if scope:
+            report = _load_report_json(scanner)
+            utility._hset_many(key_pose(scanner), {
+                "preparation_evidence_json": {
+                    "scope": scope,
+                    "solve_id": uuid.uuid4().hex,
+                    "pose": loc,
+                    "report": report,
+                    "issued_at": utility._hget(key_time(scanner), "last_planned_command_issued_at", ""),
+                    "solved_at": utility.local_ts(),
+                },
+            })
+    except Exception:
+        # Missing evidence makes preparation fail closed, never fall back
+        # to an old or predicted pose in the preparation adapter.
+        pass
 
 def _propagation_allowed(scanner: str) -> bool:
     state_hash = key_state(scanner)
@@ -3769,6 +3813,7 @@ def s7stopped(scanner: str) -> Dict[str, Any]:
 
 # ===== state machine =====
 
+@preparation_guarded
 def run_state_machine(scanner: str) -> Dict[str, Any]:
     state = _get_state(scanner)
 

@@ -41,6 +41,10 @@ def reconstruct(commands,initial_poses,policy=None, *, macro_policy=None):
                 if len(row)!=len(header):
                     issue('CSV_WIDTH','Row column count differs from header',path,start)
                 entry={col:row[j] for j,col in fields if j<len(row)};entry['_line']=start;entry['_end']=reader.line_num;entry['_bad_width']=len(row)!=len(header)
+                # F/G-only initial roster rows are metadata, not commands.
+                # Keep original physical line numbers for all remaining labels.
+                if command_sheet and not any(str(entry.get(k, '')).strip() for k in required):
+                    continue
                 result.append(entry)
             return result
         except (OSError,UnicodeError,csv.Error) as exc:

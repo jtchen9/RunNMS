@@ -9,11 +9,16 @@ import utility
 from fastapi import HTTPException
 
 
-async def check_targets(names, t0):
+async def check_targets(names, t0=None, *, preparation_uid=None, owns_attempt=None):
+    """Check all targets; no t0 means an independent 150-second health budget.
+
+    Existing callers supplying t0 retain their lead-time checks. Preparation
+    callers can omit t0 and choose the experiment start only after readiness.
+    """
     r = config.r
     now = utility.parse_local_dt(utility.local_ts())
     # Keep time for the existing registration/reset/enqueue steps.
-    budget = min(150.0, (t0 - now).total_seconds() - 5)
+    budget = 150.0 if t0 is None else min(150.0, (t0 - now).total_seconds() - 5)
     if budget <= 0:
         raise HTTPException(409, "Insufficient lead time for startup checks; choose a later t0.")
     deadline = time.monotonic() + budget
@@ -35,19 +40,25 @@ async def check_targets(names, t0):
             statuses[name] = 'connected'
     try:
         for name in robots:
+            if owns_attempt is not None and not owns_attempt():
+                raise HTTPException(409,"Preparation cancelled")
             nonce = uuid.uuid4().hex
             tail = r.xrevrange(config.key_cmdack_stream(name), count=1)
             stamp = utility.local_ts()
             xid = r.xadd(config.key_cmd_stream(name), {
                 'category':'health', 'action':'health.check.static',
+                **({'preparation_uid':preparation_uid} if preparation_uid else {}),
                 'execute_at':stamp, 'created_at':stamp,
                 'args_json':json.dumps({'request_id':nonce,
                                         'expires_ts':time.time()+max(0,deadline-time.monotonic())})})
             pending[name] = [xid, nonce, tail[0][0] if tail else '0-0']
         while pending:
+            if owns_attempt is not None and not owns_attempt():
+                raise HTTPException(409,"Preparation cancelled")
             if time.monotonic() >= deadline:
-                raise HTTPException(409, "Startup check timed out: " + ', '.join(pending)
-                                    + ". Experiment not registered; choose a later t0.")
+                suffix = (". Experiment not registered; choose a later t0."
+                          if t0 is not None else ". Health checks did not pass.")
+                raise HTTPException(409, "Startup check timed out: " + ', '.join(pending) + suffix)
             for name, item in list(pending.items()):
                 xid, nonce, cursor = item
                 for ack_id, fields in r.xrange(config.key_cmdack_stream(name), min='('+cursor, count=200):
@@ -71,6 +82,6 @@ async def check_targets(names, t0):
     finally:
         for name,(xid,_,_) in pending.items():
             r.xdel(config.key_cmd_stream(name), xid)
-    if (t0 - utility.parse_local_dt(utility.local_ts())).total_seconds() < 5:
+    if t0 is not None and (t0 - utility.parse_local_dt(utility.local_ts())).total_seconds() < 5:
         raise HTTPException(409, "Startup finished too close to t0; choose a later t0.")
     return statuses

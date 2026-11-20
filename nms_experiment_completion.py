@@ -13,7 +13,7 @@ import utility
 
 _LOG = logging.getLogger(__name__)
 _TERMINAL = {"completed", "finalized", "deleted", "cancelled", "canceled", "failed", "stopped"}
-_IDENTITY = ("lab_id", "experiment_id", "session_id", "registered_at", "start_at", "end_at")
+_IDENTITY = ("lab_id", "experiment_id", "session_id", "registered_at", "start_at", "end_at", "registration_uid")
 _guard = threading.RLock()
 _worker = None
 _stopping = False
@@ -187,7 +187,8 @@ def restore_pending():
         raise RuntimeError("Experiment lifecycle busy during NMS startup; retry startup")
     try:
         pending = [(xid, _fields(raw)) for xid, raw in config.r.xrange(config.KEY_EXPERIMENT_REGISTRY)
-                   if _fields(raw).get("state", "").strip().lower() not in _TERMINAL]
+                   if _fields(raw).get("state", "").strip().lower() not in _TERMINAL
+                   and _fields(raw).get("state") != "preparing"]
         if len(pending) > 1:
             raise RuntimeError("Multiple pending experiment registrations; refusing ambiguous recovery")
         if pending:
