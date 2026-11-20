@@ -45,7 +45,7 @@ def execution_allowed(scanner):
     lease = config.r.get(prefix() + ":worker_lock")
     if isinstance(lease, bytes): lease = lease.decode()
     return (rt.get("owner") == OWNER == lease and rt["phase"] == "preparing"
-            and rt.get("active_robot") == scanner)
+            and scanner in (rt.get("active_robots") or ([rt["active_robot"]] if rt.get("active_robot") else [])))
 
 
 def row_allowed(scanner, fields):

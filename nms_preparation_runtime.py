@@ -144,6 +144,7 @@ async def _attempt(uid,d):
     import config
     from nms_static_readiness import check_targets
     from nms_preparation_positioning import NmsPositioningPort,position_once
+    from nms_preparation_batch import run_batch,PathBarrier,BatchFailure
     from nms_preparation_registration import compile_operations
     import nms_experiment_completion as completion
     from m8mobility_trace import experiment_trace_boundary
@@ -160,17 +161,39 @@ async def _attempt(uid,d):
         d=st.stage(uid,OWNER,token,"preparing",now(),health=health);wake()
         port=NmsPositioningPort()
         positions=d["runtime"]["manifest"]["initial_positions"]
-        # Populate ALL participating robots' measured locations before any move.
+        # Measure all robots before any move; both passes run concurrently.
+        # Per-robot scope/admission locks remain in the positioning adapter.
+        members=[p["scanner"] for p in positions]
         for measure_only in (True,False):
-            for target in positions:
-                robot=target["scanner"]
-                d=st.stage(uid,OWNER,token,"preparing",now(),robot=robot);wake()
-                result=await position_once(scanner=robot,target=target,port=port,
-                    owns_attempt=lambda:owns(uid,token),measure_only=measure_only)
-                if result["status"] not in {"measured","ready"}:
-                    raise RuntimeError(result.get("reason","Preparation failed"))
-                if not measure_only:
-                    d=st.stage(uid,OWNER,token,"preparing",now(),ready=robot);wake()
+            d=st.stage(uid,OWNER,token,"preparing",now(),robots=members);wake()
+            barrier=None if measure_only or not members else PathBarrier(
+                members,port,config.MOBILITY_ROBOT_RESTRICT_RADIUS_M)
+            async def job(target):
+                scanner=target["scanner"]
+                def progress(step):
+                    st.progress(uid,OWNER,token,scanner,step,now());wake()
+                try:
+                    if not owns(uid,token):raise Conflict("Preparation ownership changed")
+                    result=await position_once(scanner=scanner,target=target,port=port,
+                        owns_attempt=lambda:owns(uid,token),measure_only=measure_only,
+                        on_progress=progress,before_move=barrier.wait if barrier else None)
+                    if result["status"] not in {"measured","ready"}:
+                        raise BatchFailure(scanner,result.get("reason","Preparation failed"))
+                    if not measure_only:progress("ready")
+                    return result
+                except asyncio.CancelledError:
+                    raise
+                except Conflict:
+                    raise
+                except BatchFailure:
+                    raise
+                except Exception as exc:
+                    raise BatchFailure(scanner,str(exc)) from exc
+            try:
+                await run_batch(positions,job)
+            except BatchFailure as exc:
+                robot=exc.scanner
+                raise
         d=st.stage(uid,OWNER,token,"ready",now());wake()
         lock=completion.lifecycle_lock()
         if not lock.acquire(blocking=False):raise RuntimeError("Lifecycle busy at schedule commit")

@@ -49,7 +49,7 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.r=fakeredis.FakeRedis(decode_responses=True)
         self.config=module("config",r=self.r,KEY_EXPERIMENT_REGISTRY="test:experiments",KEY_REGISTRY="test:robots",
-            TIME_FMT=FMT,KEY_MOBILITY_CMD_STREAM="test:mobility",KEY_TRAFFIC_CMD_STREAM="test:traffic",
+            MOBILITY_ROBOT_RESTRICT_RADIUS_M=.5,TIME_FMT=FMT,KEY_MOBILITY_CMD_STREAM="test:mobility",KEY_TRAFFIC_CMD_STREAM="test:traffic",
             key_cmd_stream=lambda s:"cmd:"+s,key_scanner_meta=lambda s:"meta:"+s)
         self.utility=module("utility",local_ts=lambda:NOW,parse_local_dt=lambda s:datetime.strptime(s,FMT))
         self.mods=patch.dict(sys.modules,{"config":self.config,"utility":self.utility});self.mods.start();self.addCleanup(self.mods.stop)
@@ -201,7 +201,7 @@ class Worker(Base):
             return dict(status="measured" if kw["measure_only"] else "ready")
         import contextlib
         modules={"nms_static_readiness":module("nms_static_readiness",check_targets=health),
-                 "nms_preparation_positioning":module("nms_preparation_positioning",NmsPositioningPort=lambda:object(),position_once=position),
+                 "nms_preparation_positioning":module("nms_preparation_positioning",NmsPositioningPort=lambda:object(),position_once=position,PositioningError=ValueError),
                  "nms_experiment_completion":module("nms_experiment_completion",lifecycle_lock=Lock,start_registration=lambda *a:self.calls.append("timer")),
                  "m8mobility_trace":module("m8mobility_trace",experiment_trace_boundary=contextlib.nullcontext)}
         import nms_preparation_registration as registration
@@ -215,7 +215,7 @@ class Worker(Base):
     def test_s7_during_preparation_schedules_retry_without_releasing(self):
         d=self.invoke(failure=(A,False))
         self.assertEqual(d["runtime"]["phase"],"retry_wait");self.assertEqual(d["runtime"]["retry_at"],"2026-11-20-18:03:00")
-        self.assertEqual(self.r.xlen("cmd:"+A),0);self.assertNotIn((B,False),self.calls)
+        self.assertEqual(self.r.xlen("cmd:"+A),0);self.assertFalse(d["runtime"]["released"])
     def test_delete_during_measurement_cannot_issue_followup_or_release(self):
         d=self.invoke(cancel_at=(A,True))
         self.assertTrue(d["runtime"]["cancel_requested"]);self.assertEqual(self.r.xlen("cmd:"+A),0)

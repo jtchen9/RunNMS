@@ -1,0 +1,996 @@
+{
+  "report": {
+    "last_command": "mobility.report.location",
+    "last_command_args": {},
+    "last_command_received_ts": 1795176326.0519893,
+    "last_command_finished_ts": 1795176334.3916452,
+    "last_exec_status": "completed",
+    "last_error_code": "",
+    "last_error_detail": "",
+    "last_location_result": {
+      "ok": true,
+      "capture_mode": "dual_camera",
+      "camera_roles": [
+        "front",
+        "rear"
+      ],
+      "av_was_active": false,
+      "av_restarted": false,
+      "snapshots": {
+        "front": "/tmp/location_front_1795176326149.jpg",
+        "rear": "/tmp/location_rear_1795176330799.jpg"
+      },
+      "front": {
+        "ok": true,
+        "camera_role": "front",
+        "snapshot": {
+          "ok": true,
+          "stage": "snapshot",
+          "camera_role": "front",
+          "snapshot_path": "/tmp/location_front_1795176326149.jpg",
+          "video_dev": "/dev/v4l/by-id/usb-webcamvendor_webcamproduct_YGR80PU1200.23071717-video-index0",
+          "width": 1280,
+          "height": 720,
+          "attempt": 1,
+          "detail": {
+            "ok": true,
+            "error": "",
+            "output_path": "/tmp/location_front_1795176326149.jpg",
+            "width": 1280,
+            "height": 720
+          },
+          "error": ""
+        },
+        "apriltag": {
+          "ok": true,
+          "error": "",
+          "image_path": "/tmp/location_front_1795176326149.jpg",
+          "camera_role": "front",
+          "image_width": 1280,
+          "image_height": 720,
+          "count": 5,
+          "tags": [
+            {
+              "id": 47,
+              "library_pose": {
+                "distance_m": 4.6126,
+                "angle_deg": 29.3804,
+                "yaw_deg": -42.5563
+              },
+              "calibrated_pose": {
+                "distance_m": 4.0214,
+                "angle_deg": 34.2989,
+                "yaw_deg": -42.2833
+              }
+            },
+            {
+              "id": 48,
+              "library_pose": {
+                "distance_m": 3.8411,
+                "angle_deg": 19.6393,
+                "yaw_deg": 26.9741
+              },
+              "calibrated_pose": {
+                "distance_m": 3.5719,
+                "angle_deg": 21.5491,
+                "yaw_deg": 22.6842
+              }
+            },
+            {
+              "id": 49,
+              "library_pose": {
+                "distance_m": 3.4327,
+                "angle_deg": 5.2305,
+                "yaw_deg": 7.6375
+              },
+              "calibrated_pose": {
+                "distance_m": 3.3398,
+                "angle_deg": 4.5391,
+                "yaw_deg": 4.8532
+              }
+            },
+            {
+              "id": 50,
+              "library_pose": {
+                "distance_m": 3.4421,
+                "angle_deg": -10.9088,
+                "yaw_deg": -13.5752
+              },
+              "calibrated_pose": {
+                "distance_m": 3.3081,
+                "angle_deg": -11.8939,
+                "yaw_deg": -14.7032
+              }
+            },
+            {
+              "id": 51,
+              "library_pose": {
+                "distance_m": 3.75,
+                "angle_deg": -25.3567,
+                "yaw_deg": -32.5788
+              },
+              "calibrated_pose": {
+                "distance_m": 3.3643,
+                "angle_deg": -24.2563,
+                "yaw_deg": -32.2233
+              }
+            }
+          ],
+          "camera_params": {
+            "fx": 857.2,
+            "fy": 851.8,
+            "cx": 640.0,
+            "cy": 360.0,
+            "tag_size_m": 0.1
+          },
+          "snapshot_path": "/tmp/location_front_1795176326149.jpg"
+        },
+        "snapshot_path": "/tmp/location_front_1795176326149.jpg",
+        "tags": [
+          {
+            "id": 47,
+            "library_pose": {
+              "distance_m": 4.6126,
+              "angle_deg": 29.3804,
+              "yaw_deg": -42.5563
+            },
+            "calibrated_pose": {
+              "distance_m": 4.0214,
+              "angle_deg": 34.2989,
+              "yaw_deg": -42.2833
+            }
+          },
+          {
+            "id": 48,
+            "library_pose": {
+              "distance_m": 3.8411,
+              "angle_deg": 19.6393,
+              "yaw_deg": 26.9741
+            },
+            "calibrated_pose": {
+              "distance_m": 3.5719,
+              "angle_deg": 21.5491,
+              "yaw_deg": 22.6842
+            }
+          },
+          {
+            "id": 49,
+            "library_pose": {
+              "distance_m": 3.4327,
+              "angle_deg": 5.2305,
+              "yaw_deg": 7.6375
+            },
+            "calibrated_pose": {
+              "distance_m": 3.3398,
+              "angle_deg": 4.5391,
+              "yaw_deg": 4.8532
+            }
+          },
+          {
+            "id": 50,
+            "library_pose": {
+              "distance_m": 3.4421,
+              "angle_deg": -10.9088,
+              "yaw_deg": -13.5752
+            },
+            "calibrated_pose": {
+              "distance_m": 3.3081,
+              "angle_deg": -11.8939,
+              "yaw_deg": -14.7032
+            }
+          },
+          {
+            "id": 51,
+            "library_pose": {
+              "distance_m": 3.75,
+              "angle_deg": -25.3567,
+              "yaw_deg": -32.5788
+            },
+            "calibrated_pose": {
+              "distance_m": 3.3643,
+              "angle_deg": -24.2563,
+              "yaw_deg": -32.2233
+            }
+          }
+        ],
+        "count": 5,
+        "error": ""
+      },
+      "rear": {
+        "ok": true,
+        "camera_role": "rear",
+        "snapshot": {
+          "ok": true,
+          "stage": "snapshot",
+          "camera_role": "rear",
+          "snapshot_path": "/tmp/location_rear_1795176330799.jpg",
+          "video_dev": "/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_200901010001-video-index0",
+          "width": 640,
+          "height": 480,
+          "attempt": 1,
+          "detail": {
+            "ok": true,
+            "error": "",
+            "output_path": "/tmp/location_rear_1795176330799.jpg",
+            "width": 640,
+            "height": 480
+          },
+          "error": ""
+        },
+        "apriltag": {
+          "ok": true,
+          "error": "",
+          "image_path": "/tmp/location_rear_1795176330799.jpg",
+          "camera_role": "rear",
+          "image_width": 640,
+          "image_height": 480,
+          "count": 2,
+          "tags": [
+            {
+              "id": 36,
+              "library_pose": {
+                "distance_m": 1.4343,
+                "angle_deg": 20.1,
+                "yaw_deg": -0.0
+              },
+              "calibrated_pose": {
+                "distance_m": 1.7026,
+                "angle_deg": 17.7487,
+                "yaw_deg": -2.3419
+              }
+            },
+            {
+              "id": 37,
+              "library_pose": {
+                "distance_m": 1.0455,
+                "angle_deg": -27.4117,
+                "yaw_deg": 0.0
+              },
+              "calibrated_pose": {
+                "distance_m": 1.2247,
+                "angle_deg": -22.3405,
+                "yaw_deg": -2.3419
+              }
+            }
+          ],
+          "camera_params": {
+            "fx": 554.0,
+            "fy": 554.0,
+            "cx": 320.0,
+            "cy": 240.0,
+            "tag_size_m": 0.1
+          },
+          "snapshot_path": "/tmp/location_rear_1795176330799.jpg"
+        },
+        "snapshot_path": "/tmp/location_rear_1795176330799.jpg",
+        "tags": [
+          {
+            "id": 36,
+            "library_pose": {
+              "distance_m": 1.4343,
+              "angle_deg": 20.1,
+              "yaw_deg": -0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 1.7026,
+              "angle_deg": 17.7487,
+              "yaw_deg": -2.3419
+            }
+          },
+          {
+            "id": 37,
+            "library_pose": {
+              "distance_m": 1.0455,
+              "angle_deg": -27.4117,
+              "yaw_deg": 0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 1.2247,
+              "angle_deg": -22.3405,
+              "yaw_deg": -2.3419
+            }
+          }
+        ],
+        "count": 2,
+        "error": ""
+      },
+      "apriltag": {
+        "ok": true,
+        "capture_mode": "dual_camera",
+        "count": 7,
+        "unique_count": 7,
+        "unique_tag_ids": [
+          36,
+          37,
+          47,
+          48,
+          49,
+          50,
+          51
+        ],
+        "tags": [
+          {
+            "id": 47,
+            "library_pose": {
+              "distance_m": 4.6126,
+              "angle_deg": 29.3804,
+              "yaw_deg": -42.5563
+            },
+            "calibrated_pose": {
+              "distance_m": 4.0214,
+              "angle_deg": 34.2989,
+              "yaw_deg": -42.2833
+            },
+            "camera_role": "front",
+            "snapshot_path": "/tmp/location_front_1795176326149.jpg"
+          },
+          {
+            "id": 48,
+            "library_pose": {
+              "distance_m": 3.8411,
+              "angle_deg": 19.6393,
+              "yaw_deg": 26.9741
+            },
+            "calibrated_pose": {
+              "distance_m": 3.5719,
+              "angle_deg": 21.5491,
+              "yaw_deg": 22.6842
+            },
+            "camera_role": "front",
+            "snapshot_path": "/tmp/location_front_1795176326149.jpg"
+          },
+          {
+            "id": 49,
+            "library_pose": {
+              "distance_m": 3.4327,
+              "angle_deg": 5.2305,
+              "yaw_deg": 7.6375
+            },
+            "calibrated_pose": {
+              "distance_m": 3.3398,
+              "angle_deg": 4.5391,
+              "yaw_deg": 4.8532
+            },
+            "camera_role": "front",
+            "snapshot_path": "/tmp/location_front_1795176326149.jpg"
+          },
+          {
+            "id": 50,
+            "library_pose": {
+              "distance_m": 3.4421,
+              "angle_deg": -10.9088,
+              "yaw_deg": -13.5752
+            },
+            "calibrated_pose": {
+              "distance_m": 3.3081,
+              "angle_deg": -11.8939,
+              "yaw_deg": -14.7032
+            },
+            "camera_role": "front",
+            "snapshot_path": "/tmp/location_front_1795176326149.jpg"
+          },
+          {
+            "id": 51,
+            "library_pose": {
+              "distance_m": 3.75,
+              "angle_deg": -25.3567,
+              "yaw_deg": -32.5788
+            },
+            "calibrated_pose": {
+              "distance_m": 3.3643,
+              "angle_deg": -24.2563,
+              "yaw_deg": -32.2233
+            },
+            "camera_role": "front",
+            "snapshot_path": "/tmp/location_front_1795176326149.jpg"
+          },
+          {
+            "id": 36,
+            "library_pose": {
+              "distance_m": 1.4343,
+              "angle_deg": 20.1,
+              "yaw_deg": -0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 1.7026,
+              "angle_deg": 17.7487,
+              "yaw_deg": -2.3419
+            },
+            "camera_role": "rear",
+            "snapshot_path": "/tmp/location_rear_1795176330799.jpg"
+          },
+          {
+            "id": 37,
+            "library_pose": {
+              "distance_m": 1.0455,
+              "angle_deg": -27.4117,
+              "yaw_deg": 0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 1.2247,
+              "angle_deg": -22.3405,
+              "yaw_deg": -2.3419
+            },
+            "camera_role": "rear",
+            "snapshot_path": "/tmp/location_rear_1795176330799.jpg"
+          }
+        ],
+        "front": {
+          "ok": true,
+          "error": "",
+          "image_path": "/tmp/location_front_1795176326149.jpg",
+          "camera_role": "front",
+          "image_width": 1280,
+          "image_height": 720,
+          "count": 5,
+          "tags": [
+            {
+              "id": 47,
+              "library_pose": {
+                "distance_m": 4.6126,
+                "angle_deg": 29.3804,
+                "yaw_deg": -42.5563
+              },
+              "calibrated_pose": {
+                "distance_m": 4.0214,
+                "angle_deg": 34.2989,
+                "yaw_deg": -42.2833
+              }
+            },
+            {
+              "id": 48,
+              "library_pose": {
+                "distance_m": 3.8411,
+                "angle_deg": 19.6393,
+                "yaw_deg": 26.9741
+              },
+              "calibrated_pose": {
+                "distance_m": 3.5719,
+                "angle_deg": 21.5491,
+                "yaw_deg": 22.6842
+              }
+            },
+            {
+              "id": 49,
+              "library_pose": {
+                "distance_m": 3.4327,
+                "angle_deg": 5.2305,
+                "yaw_deg": 7.6375
+              },
+              "calibrated_pose": {
+                "distance_m": 3.3398,
+                "angle_deg": 4.5391,
+                "yaw_deg": 4.8532
+              }
+            },
+            {
+              "id": 50,
+              "library_pose": {
+                "distance_m": 3.4421,
+                "angle_deg": -10.9088,
+                "yaw_deg": -13.5752
+              },
+              "calibrated_pose": {
+                "distance_m": 3.3081,
+                "angle_deg": -11.8939,
+                "yaw_deg": -14.7032
+              }
+            },
+            {
+              "id": 51,
+              "library_pose": {
+                "distance_m": 3.75,
+                "angle_deg": -25.3567,
+                "yaw_deg": -32.5788
+              },
+              "calibrated_pose": {
+                "distance_m": 3.3643,
+                "angle_deg": -24.2563,
+                "yaw_deg": -32.2233
+              }
+            }
+          ],
+          "camera_params": {
+            "fx": 857.2,
+            "fy": 851.8,
+            "cx": 640.0,
+            "cy": 360.0,
+            "tag_size_m": 0.1
+          },
+          "snapshot_path": "/tmp/location_front_1795176326149.jpg"
+        },
+        "rear": {
+          "ok": true,
+          "error": "",
+          "image_path": "/tmp/location_rear_1795176330799.jpg",
+          "camera_role": "rear",
+          "image_width": 640,
+          "image_height": 480,
+          "count": 2,
+          "tags": [
+            {
+              "id": 36,
+              "library_pose": {
+                "distance_m": 1.4343,
+                "angle_deg": 20.1,
+                "yaw_deg": -0.0
+              },
+              "calibrated_pose": {
+                "distance_m": 1.7026,
+                "angle_deg": 17.7487,
+                "yaw_deg": -2.3419
+              }
+            },
+            {
+              "id": 37,
+              "library_pose": {
+                "distance_m": 1.0455,
+                "angle_deg": -27.4117,
+                "yaw_deg": 0.0
+              },
+              "calibrated_pose": {
+                "distance_m": 1.2247,
+                "angle_deg": -22.3405,
+                "yaw_deg": -2.3419
+              }
+            }
+          ],
+          "camera_params": {
+            "fx": 554.0,
+            "fy": 554.0,
+            "cx": 320.0,
+            "cy": 240.0,
+            "tag_size_m": 0.1
+          },
+          "snapshot_path": "/tmp/location_rear_1795176330799.jpg"
+        },
+        "front_count": 5,
+        "rear_count": 2
+      },
+      "error": ""
+    }
+  },
+  "previous_report": {
+    "last_command": "mobility.report.location",
+    "last_command_args": {},
+    "last_command_received_ts": 1795175939.9266763,
+    "last_command_finished_ts": 1795175948.2636998,
+    "last_exec_status": "completed",
+    "last_error_code": "",
+    "last_error_detail": "",
+    "last_location_result": {
+      "ok": true,
+      "capture_mode": "dual_camera",
+      "camera_roles": [
+        "front",
+        "rear"
+      ],
+      "av_was_active": false,
+      "av_restarted": false,
+      "snapshots": {
+        "front": "/tmp/location_front_1795175940024.jpg",
+        "rear": "/tmp/location_rear_1795175944678.jpg"
+      },
+      "front": {
+        "ok": true,
+        "camera_role": "front",
+        "snapshot": {
+          "ok": true,
+          "stage": "snapshot",
+          "camera_role": "front",
+          "snapshot_path": "/tmp/location_front_1795175940024.jpg",
+          "video_dev": "/dev/v4l/by-id/usb-webcamvendor_webcamproduct_YGR80PU1200.23071717-video-index0",
+          "width": 1280,
+          "height": 720,
+          "attempt": 1,
+          "detail": {
+            "ok": true,
+            "error": "",
+            "output_path": "/tmp/location_front_1795175940024.jpg",
+            "width": 1280,
+            "height": 720
+          },
+          "error": ""
+        },
+        "apriltag": {
+          "ok": true,
+          "error": "",
+          "image_path": "/tmp/location_front_1795175940024.jpg",
+          "camera_role": "front",
+          "image_width": 1280,
+          "image_height": 720,
+          "count": 4,
+          "tags": [
+            {
+              "id": 48,
+              "library_pose": {
+                "distance_m": 3.0759,
+                "angle_deg": 28.3487,
+                "yaw_deg": 38.7303
+              },
+              "calibrated_pose": {
+                "distance_m": 2.723,
+                "angle_deg": 32.9008,
+                "yaw_deg": 33.5259
+              }
+            },
+            {
+              "id": 49,
+              "library_pose": {
+                "distance_m": 2.4522,
+                "angle_deg": 11.1135,
+                "yaw_deg": 13.1373
+              },
+              "calibrated_pose": {
+                "distance_m": 2.3763,
+                "angle_deg": 11.2176,
+                "yaw_deg": 9.9002
+              }
+            },
+            {
+              "id": 50,
+              "library_pose": {
+                "distance_m": 2.4753,
+                "angle_deg": -11.3988,
+                "yaw_deg": 14.421
+              },
+              "calibrated_pose": {
+                "distance_m": 2.3926,
+                "angle_deg": -12.3495,
+                "yaw_deg": 11.4084
+              }
+            },
+            {
+              "id": 51,
+              "library_pose": {
+                "distance_m": 2.9412,
+                "angle_deg": -29.8607,
+                "yaw_deg": -42.9333
+              },
+              "calibrated_pose": {
+                "distance_m": 2.5649,
+                "angle_deg": -27.6566,
+                "yaw_deg": -41.8159
+              }
+            }
+          ],
+          "camera_params": {
+            "fx": 857.2,
+            "fy": 851.8,
+            "cx": 640.0,
+            "cy": 360.0,
+            "tag_size_m": 0.1
+          },
+          "snapshot_path": "/tmp/location_front_1795175940024.jpg"
+        },
+        "snapshot_path": "/tmp/location_front_1795175940024.jpg",
+        "tags": [
+          {
+            "id": 48,
+            "library_pose": {
+              "distance_m": 3.0759,
+              "angle_deg": 28.3487,
+              "yaw_deg": 38.7303
+            },
+            "calibrated_pose": {
+              "distance_m": 2.723,
+              "angle_deg": 32.9008,
+              "yaw_deg": 33.5259
+            }
+          },
+          {
+            "id": 49,
+            "library_pose": {
+              "distance_m": 2.4522,
+              "angle_deg": 11.1135,
+              "yaw_deg": 13.1373
+            },
+            "calibrated_pose": {
+              "distance_m": 2.3763,
+              "angle_deg": 11.2176,
+              "yaw_deg": 9.9002
+            }
+          },
+          {
+            "id": 50,
+            "library_pose": {
+              "distance_m": 2.4753,
+              "angle_deg": -11.3988,
+              "yaw_deg": 14.421
+            },
+            "calibrated_pose": {
+              "distance_m": 2.3926,
+              "angle_deg": -12.3495,
+              "yaw_deg": 11.4084
+            }
+          },
+          {
+            "id": 51,
+            "library_pose": {
+              "distance_m": 2.9412,
+              "angle_deg": -29.8607,
+              "yaw_deg": -42.9333
+            },
+            "calibrated_pose": {
+              "distance_m": 2.5649,
+              "angle_deg": -27.6566,
+              "yaw_deg": -41.8159
+            }
+          }
+        ],
+        "count": 4,
+        "error": ""
+      },
+      "rear": {
+        "ok": true,
+        "camera_role": "rear",
+        "snapshot": {
+          "ok": true,
+          "stage": "snapshot",
+          "camera_role": "rear",
+          "snapshot_path": "/tmp/location_rear_1795175944678.jpg",
+          "video_dev": "/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_200901010001-video-index0",
+          "width": 640,
+          "height": 480,
+          "attempt": 1,
+          "detail": {
+            "ok": true,
+            "error": "",
+            "output_path": "/tmp/location_rear_1795175944678.jpg",
+            "width": 640,
+            "height": 480
+          },
+          "error": ""
+        },
+        "apriltag": {
+          "ok": true,
+          "error": "",
+          "image_path": "/tmp/location_rear_1795175944678.jpg",
+          "camera_role": "rear",
+          "image_width": 640,
+          "image_height": 480,
+          "count": 1,
+          "tags": [
+            {
+              "id": 36,
+              "library_pose": {
+                "distance_m": 2.2191,
+                "angle_deg": 16.8301,
+                "yaw_deg": -0.0
+              },
+              "calibrated_pose": {
+                "distance_m": 2.7004,
+                "angle_deg": 15.1632,
+                "yaw_deg": -2.3419
+              }
+            }
+          ],
+          "camera_params": {
+            "fx": 554.0,
+            "fy": 554.0,
+            "cx": 320.0,
+            "cy": 240.0,
+            "tag_size_m": 0.1
+          },
+          "snapshot_path": "/tmp/location_rear_1795175944678.jpg"
+        },
+        "snapshot_path": "/tmp/location_rear_1795175944678.jpg",
+        "tags": [
+          {
+            "id": 36,
+            "library_pose": {
+              "distance_m": 2.2191,
+              "angle_deg": 16.8301,
+              "yaw_deg": -0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 2.7004,
+              "angle_deg": 15.1632,
+              "yaw_deg": -2.3419
+            }
+          }
+        ],
+        "count": 1,
+        "error": ""
+      },
+      "apriltag": {
+        "ok": true,
+        "capture_mode": "dual_camera",
+        "count": 5,
+        "unique_count": 5,
+        "unique_tag_ids": [
+          36,
+          48,
+          49,
+          50,
+          51
+        ],
+        "tags": [
+          {
+            "id": 48,
+            "library_pose": {
+              "distance_m": 3.0759,
+              "angle_deg": 28.3487,
+              "yaw_deg": 38.7303
+            },
+            "calibrated_pose": {
+              "distance_m": 2.723,
+              "angle_deg": 32.9008,
+              "yaw_deg": 33.5259
+            },
+            "camera_role": "front",
+            "snapshot_path": "/tmp/location_front_1795175940024.jpg"
+          },
+          {
+            "id": 49,
+            "library_pose": {
+              "distance_m": 2.4522,
+              "angle_deg": 11.1135,
+              "yaw_deg": 13.1373
+            },
+            "calibrated_pose": {
+              "distance_m": 2.3763,
+              "angle_deg": 11.2176,
+              "yaw_deg": 9.9002
+            },
+            "camera_role": "front",
+            "snapshot_path": "/tmp/location_front_1795175940024.jpg"
+          },
+          {
+            "id": 50,
+            "library_pose": {
+              "distance_m": 2.4753,
+              "angle_deg": -11.3988,
+              "yaw_deg": 14.421
+            },
+            "calibrated_pose": {
+              "distance_m": 2.3926,
+              "angle_deg": -12.3495,
+              "yaw_deg": 11.4084
+            },
+            "camera_role": "front",
+            "snapshot_path": "/tmp/location_front_1795175940024.jpg"
+          },
+          {
+            "id": 51,
+            "library_pose": {
+              "distance_m": 2.9412,
+              "angle_deg": -29.8607,
+              "yaw_deg": -42.9333
+            },
+            "calibrated_pose": {
+              "distance_m": 2.5649,
+              "angle_deg": -27.6566,
+              "yaw_deg": -41.8159
+            },
+            "camera_role": "front",
+            "snapshot_path": "/tmp/location_front_1795175940024.jpg"
+          },
+          {
+            "id": 36,
+            "library_pose": {
+              "distance_m": 2.2191,
+              "angle_deg": 16.8301,
+              "yaw_deg": -0.0
+            },
+            "calibrated_pose": {
+              "distance_m": 2.7004,
+              "angle_deg": 15.1632,
+              "yaw_deg": -2.3419
+            },
+            "camera_role": "rear",
+            "snapshot_path": "/tmp/location_rear_1795175944678.jpg"
+          }
+        ],
+        "front": {
+          "ok": true,
+          "error": "",
+          "image_path": "/tmp/location_front_1795175940024.jpg",
+          "camera_role": "front",
+          "image_width": 1280,
+          "image_height": 720,
+          "count": 4,
+          "tags": [
+            {
+              "id": 48,
+              "library_pose": {
+                "distance_m": 3.0759,
+                "angle_deg": 28.3487,
+                "yaw_deg": 38.7303
+              },
+              "calibrated_pose": {
+                "distance_m": 2.723,
+                "angle_deg": 32.9008,
+                "yaw_deg": 33.5259
+              }
+            },
+            {
+              "id": 49,
+              "library_pose": {
+                "distance_m": 2.4522,
+                "angle_deg": 11.1135,
+                "yaw_deg": 13.1373
+              },
+              "calibrated_pose": {
+                "distance_m": 2.3763,
+                "angle_deg": 11.2176,
+                "yaw_deg": 9.9002
+              }
+            },
+            {
+              "id": 50,
+              "library_pose": {
+                "distance_m": 2.4753,
+                "angle_deg": -11.3988,
+                "yaw_deg": 14.421
+              },
+              "calibrated_pose": {
+                "distance_m": 2.3926,
+                "angle_deg": -12.3495,
+                "yaw_deg": 11.4084
+              }
+            },
+            {
+              "id": 51,
+              "library_pose": {
+                "distance_m": 2.9412,
+                "angle_deg": -29.8607,
+                "yaw_deg": -42.9333
+              },
+              "calibrated_pose": {
+                "distance_m": 2.5649,
+                "angle_deg": -27.6566,
+                "yaw_deg": -41.8159
+              }
+            }
+          ],
+          "camera_params": {
+            "fx": 857.2,
+            "fy": 851.8,
+            "cx": 640.0,
+            "cy": 360.0,
+            "tag_size_m": 0.1
+          },
+          "snapshot_path": "/tmp/location_front_1795175940024.jpg"
+        },
+        "rear": {
+          "ok": true,
+          "error": "",
+          "image_path": "/tmp/location_rear_1795175944678.jpg",
+          "camera_role": "rear",
+          "image_width": 640,
+          "image_height": 480,
+          "count": 1,
+          "tags": [
+            {
+              "id": 36,
+              "library_pose": {
+                "distance_m": 2.2191,
+                "angle_deg": 16.8301,
+                "yaw_deg": -0.0
+              },
+              "calibrated_pose": {
+                "distance_m": 2.7004,
+                "angle_deg": 15.1632,
+                "yaw_deg": -2.3419
+              }
+            }
+          ],
+          "camera_params": {
+            "fx": 554.0,
+            "fy": 554.0,
+            "cx": 320.0,
+            "cy": 240.0,
+            "tag_size_m": 0.1
+          },
+          "snapshot_path": "/tmp/location_rear_1795175944678.jpg"
+        },
+        "front_count": 4,
+        "rear_count": 1
+      },
+      "error": ""
+    }
+  },
+  "issued_at_taipei": "2026-11-20-20:05:17",
+  "received_by_nms_taipei": "2026-11-20-20:05:45"
+}

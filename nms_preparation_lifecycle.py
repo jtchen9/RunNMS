@@ -8,6 +8,7 @@ import json
 import uuid
 from datetime import datetime, timedelta
 from nms_preparation_delivery import Store, Conflict, packed, validate_snapshot
+from nms_preparation_progress import describe, entry
 
 FMT = "%Y-%m-%d-%H:%M:%S"
 
@@ -63,6 +64,7 @@ class Lifecycle(Store):
                   subphase=rt["phase"], ready_robots=list(rt["ready"]),
                   pending_robots=[x["scanner"] for x in rt["manifest"]["initial_positions"] if x["scanner"] not in rt["ready"]],
                   reason=reason, failed_robot=rt.get("failed_robot"), reset_required=phase=="retry_wait")
+        prep.update(describe(rt,doc["snapshot"].get("preparation") or {},now))
         if phase == "retry_wait": prep["retry_at"]=rt["retry_at"]
         new=dict(doc["snapshot"], update_seq=doc["snapshot"]["update_seq"]+1, preparation=prep)
         validate_snapshot(new)
@@ -89,7 +91,7 @@ class Lifecycle(Store):
         if rt["released"] or rt["cancel_requested"]:
             raise Conflict("Cannot retry an ended preparation")
         rt.update(phase="retry_wait",freeze_at=now,retry_at=(datetime.strptime(now,FMT)+timedelta(seconds=180)).strftime(FMT),
-                  ready=[],active_robot=None,failed_robot=scanner,token=uuid.uuid4().hex)
+                  ready=[],active_robot=None,active_robots=[],failed_robot=scanner,token=uuid.uuid4().hex)
         return self.publish(doc,now,[("attempt_failed",scanner,{}),("retry_scheduled",None,{"retry_at":rt["retry_at"],"reset_required":True})],reason)
 
     def fail(self,uid,owner,token,now,reason,scanner=None):
@@ -101,15 +103,18 @@ class Lifecycle(Store):
             if rt["phase"] not in {"awaiting_attempt","retry_wait"} or rt["cancel_requested"]:
                 raise Conflict("Cannot begin this attempt")
             if rt["retry_at"] and now<rt["retry_at"]:raise Conflict("180-second adjustment period unfinished")
-            rt.update(phase="resetting",attempt=rt["attempt"]+1,token=uuid.uuid4().hex,ready=[],failed_robot=None)
+            rt.update(phase="resetting",attempt=rt["attempt"]+1,token=uuid.uuid4().hex,ready=[],failed_robot=None,active_robot=None,active_robots=[],robot_progress={})
             return self.publish(doc,now,[("attempt_started",None,{}),("reset_started",None,{})])
         return self.owned_edit(uid,edit,owner)
 
-    def stage(self,uid,owner,token,phase,now,robot=None,ready=None,health=None):
+    def stage(self,uid,owner,token,phase,now,robot=None,ready=None,health=None,robots=None):
         def edit(doc):
             rt=doc["runtime"]
             if rt["cancel_requested"] or rt["released"]:raise Conflict("Preparation ended")
-            rt.update(phase=phase,active_robot=robot)
+            members = list(robots) if robots is not None else ([robot] if robot else [])
+            roster = {p["scanner"] for p in rt["manifest"]["initial_positions"]}
+            if not set(members) <= roster: raise Conflict("Unknown preparation robot")
+            rt.update(phase=phase,active_robot=robot,active_robots=members)
             events=[]
             if phase=="health":events.append(("reset_completed",None,{}))
             if health is not None:rt["health"]=health
@@ -119,11 +124,32 @@ class Lifecycle(Store):
             return self.publish(doc,now,events)
         return self.owned_edit(uid,edit,owner,token)
 
+    def progress(self,uid,owner,token,robot,step,now):
+        def edit(doc):
+            rt=doc["runtime"]
+            members=rt.get("active_robots") or ([rt["active_robot"]] if rt.get("active_robot") else [])
+            if rt["cancel_requested"] or rt["released"] or rt["phase"]!="preparing" or robot not in members:
+                raise Conflict("Progress belongs to an inactive preparation robot")
+            rows=rt.setdefault("robot_progress",{})
+            old=rows.get(robot,{})
+            events=[]
+            if step=="ready":
+                if robot in rt["ready"]:return doc
+                rt["ready"].append(robot)
+                rows[robot]=dict(step=None,step_number=None,step_label="Ready",status="ready",step_started_at=now)
+                events=[("robot_ready",robot,{})]
+            else:
+                new=entry(step,now,old)
+                if new==old:return doc
+                rows[robot]=new
+            return self.publish(doc,now,events)
+        return self.owned_edit(uid,edit,owner,token)
+
     def request_cancel(self,uid,now):
         def edit(doc):
             rt=doc["runtime"]
             if rt["cancel_requested"]:return doc
-            rt.update(cancel_requested=True,phase="cancelling",active_robot=None,freeze_at=now,token=uuid.uuid4().hex)
+            rt.update(cancel_requested=True,phase="cancelling",active_robot=None,active_robots=[],freeze_at=now,token=uuid.uuid4().hex)
             doc["locally_closed"]=True;doc["state_queue"]=[]
             doc["delete_request"] = dict({k:doc["snapshot"][k] for k in ("nms_id","lab_id","experiment_id","session_id","registration_uid")},
                                          deleted_at=now,reason="nms_delete_experiment")
@@ -188,7 +214,9 @@ class Lifecycle(Store):
                 stamp=now.strftime(FMT)
                 snap=dict(d["snapshot"],update_seq=d["snapshot"]["update_seq"]+1,state="scheduled",
                           start_at=start.strftime(FMT),end_at=end.strftime(FMT))
-                snap["preparation"]=dict(snap["preparation"],phase="ready",subphase="ready",updated_at=stamp)
+                snap["preparation"]=dict(snap["preparation"],phase="ready",subphase="ready",updated_at=stamp,
+                                         step="ready",step_number=None,step_label="Preparation complete",
+                                         step_started_at=stamp,active_robots=[])
                 validate_snapshot(snap);d["snapshot"]=snap;d["state_queue"].append(snap)
                 self._add_event(d,dict(event_type="schedule_assigned",attempt=rt["attempt"],time_local=stamp,
                                       details={"start_at":snap["start_at"],"end_at":snap["end_at"]}),snap["update_seq"])

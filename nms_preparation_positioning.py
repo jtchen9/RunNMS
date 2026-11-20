@@ -7,7 +7,7 @@ No experiment queue, t0, global reset, shutdown, automatic retry or S8 here.
 """
 import asyncio
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 import math
 import time
 import uuid
@@ -40,12 +40,33 @@ def _captures(report):
     return {str(k): str(v) for k, v in snaps.items() if v} if isinstance(snaps, dict) else {}
 
 
+def _execution_datetime(value):
+    """Robot execution times are Unix seconds; NMS times are local strings.
+
+    fromtimestamp uses the same NMS host timezone as utility.local_ts().
+    Retain fractional seconds and support the original formatted fixtures.
+    Do not accept booleans, nonfinite values, or millisecond epochs.
+    """
+    if isinstance(value, bool):
+        raise ValueError("Boolean execution timestamp")
+    if isinstance(value, (int, float)):
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("Invalid Unix execution timestamp")
+        try:
+            return datetime.fromtimestamp(value)
+        except (OverflowError, OSError, ValueError) as exc:
+            raise ValueError("Unix execution timestamp is out of range") from exc
+    if isinstance(value, str):
+        return datetime.strptime(value, TIME_FMT)
+    raise ValueError("Unsupported execution timestamp type")
+
+
 def preparation_report_fresh(report, issued_at, previous_report):
     """S1-only scoped freshness check, before S3/S5 can act on this report."""
     try:
         issued = datetime.strptime(issued_at, TIME_FMT)
-        received = datetime.strptime(report["last_command_received_ts"], TIME_FMT)
-        finished = datetime.strptime(report["last_command_finished_ts"], TIME_FMT)
+        received = _execution_datetime(report["last_command_received_ts"])
+        finished = _execution_datetime(report["last_command_finished_ts"])
         if not issued <= received <= finished:
             return False, "preparation report predates this issued command"
     except (KeyError, TypeError, ValueError):
@@ -83,13 +104,16 @@ def measured_evidence(snapshot, *, scope, since, previous=None):
         raise PositioningError("Location capture failed")
     try:
         issued = datetime.strptime(evidence["issued_at"], TIME_FMT)
-        received = datetime.strptime(report["last_command_received_ts"], TIME_FMT)
-        finished = datetime.strptime(report["last_command_finished_ts"], TIME_FMT)
+        received = _execution_datetime(report["last_command_received_ts"])
+        finished = _execution_datetime(report["last_command_finished_ts"])
         solved = datetime.strptime(evidence["solved_at"], TIME_FMT)
         earliest = datetime.strptime(since, TIME_FMT)
     except (KeyError, TypeError, ValueError) as exc:
         raise PositioningError("Missing or invalid command/capture timestamps") from exc
-    if not earliest <= issued <= received <= finished <= solved:
+    # solved_at is formatted to whole seconds. A finish at .391 within that
+    # same second is valid; do not mistake formatting precision for clock skew.
+    if not (earliest <= issued <= received <= finished
+            and finished < solved + timedelta(seconds=1)):
         raise PositioningError("Stale or inconsistent location timestamps")
     captures = _captures(report)
     if not captures:
@@ -101,7 +125,7 @@ def measured_evidence(snapshot, *, scope, since, previous=None):
 
 
 async def position_once(*, scanner, target, port, owns_attempt,
-                        timeout_seconds=240, measure_only=False, monotonic=time.monotonic,
+                        timeout_seconds=240, measure_only=False, on_progress=None, before_move=None, monotonic=time.monotonic,
                         sleep=asyncio.sleep):
     """Report -> <=1m/path gate -> ordinary move -> fresh confirmation.
 
@@ -127,6 +151,10 @@ async def position_once(*, scanner, target, port, owns_attempt,
         if not owns_attempt(): raise PositioningError("Preparation ownership changed or was cancelled")
         if monotonic() >= deadline: raise PositioningError("Preparation attempt timed out")
 
+    def progress(step):
+        guard()
+        if on_progress is not None: on_progress(step)
+
     def admission_current():
         return owns_attempt() and monotonic() < deadline
 
@@ -150,6 +178,7 @@ async def position_once(*, scanner, target, port, owns_attempt,
         opened = True
         before = port.snapshot(scanner).get("evidence") or {}
         phase = "initial_location"
+        progress("measuring_location")
         snap, since = await issue_and_wait("mobility.report.location", {})
         start_pose, initial_evidence = measured_evidence(snap, scope=scope, since=since, previous=before)
         distance = math.hypot(start_pose["x_m"]-xy["x_m"], start_pose["y_m"]-xy["y_m"])
@@ -159,9 +188,16 @@ async def position_once(*, scanner, target, port, owns_attempt,
         if measure_only:
             return {"status": "measured", "scanner": scanner, "evidence": initial_evidence, **diagnostics}
         phase = "path_check"
+        progress("checking_path")
         guard()
         diagnostics["path_check"] = port.check_path(scanner, start_pose, xy)
+        if before_move is not None:
+            try:
+                await asyncio.wait_for(before_move(scanner,start_pose,xy),timeout=max(0.,deadline-monotonic()))
+            except asyncio.TimeoutError as exc:
+                raise PositioningError("Timed out waiting for preparation path checks") from exc
         phase = "move"
+        progress("moving_to_start")
         # Recheck ownership, measured pose and path under the per-robot admission
         # lock just before S0. Planned start is aligned to MEASURED start only.
         guard()
@@ -180,6 +216,7 @@ async def position_once(*, scanner, target, port, owns_attempt,
         # report even when S5 suppressed a negligible movement.
         before = snap.get("evidence") or initial_evidence
         phase = "confirmation"
+        progress("confirming_location")
         snap, since = await issue_and_wait("mobility.report.location", {})
         final_pose, evidence = measured_evidence(snap, scope=scope, since=since, previous=before)
         residual = math.hypot(final_pose["x_m"]-xy["x_m"], final_pose["y_m"]-xy["y_m"])
