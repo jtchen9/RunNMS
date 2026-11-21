@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import redis
+import socket
 
 # Unique identity of this NMS/lab instance.
 # Used as lab_id in experiment registration and northbound reports.
@@ -157,12 +158,17 @@ TRAFFIC_SERVER_PORTS = list(range(5200, 5240))  # shared pool for all robots
 TRAFFIC_LOCAL_SERVER_ENABLED: bool = True
 #
 # Public iperf3 server
-TRAFFIC_LOCAL_SERVER_ENABLED = False
+TRAFFIC_LOCAL_SERVER_ENABLED = True
 # TRAFFIC_SERVER_HOST = "ping.online.net"
 # TRAFFIC_SERVER_PORTS = list(range(5200, 5210))
 
 TRAFFIC_LOCAL_IPERF3_BIN = r"D:\Data\Software\iperf3\iperf3.exe"
-TRAFFIC_LOCAL_INTERFACE_ALIAS = "乙太網路"
+hostname = socket.gethostname()
+TRAFFIC_LOCAL_INTERFACE_ALIAS = (
+    "乙太網路 12"
+    if hostname.lower() == "jt-home"
+    else "乙太網路"
+)
 TRAFFIC_LOCAL_BIND_IP = ""  # optional override; must exist on the interface above
 TRAFFIC_LOCAL_EXCLUDED_SUBNET = "192.168.11.0/24"  # never bind to mesh LAN
 TRAFFIC_LOCAL_LOG_DIR = Path(__file__).resolve().parent / "iperf3_server_logs"
