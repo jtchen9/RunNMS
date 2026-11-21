@@ -1,0 +1,12 @@
+﻿scanner,t_offset_sec,category,action,args_json,reentry_robot,reentry_xy,,initial_robot,initial_xy
+twin-scout-alpha,0,scan,scan.start,{},,,=$H$1+B2/86400,twin-scout-alpha,"(5,3)"
+twin-scout-bravo,0,scan,scan.start,{},,,=$H$1+B3/86400,twin-scout-bravo,"(8.8,3)"
+twin-scout-alpha,120,mobility,mobility.move,"{""x_m"":5,""y_m"":2.8}",,,=$H$1+B4/86400,,
+twin-scout-alpha,300,system,system.shutdown,{},,,=$H$1+B5/86400,,
+twin-scout-alpha,900,scan,scan.start,{},twin-scout-alpha,"(8.8, 7.4)",=$H$1+B6/86400,,
+twin-scout-alpha,960,mobility,mobility.report.location,{},,,=$H$1+B7/86400,,
+twin-scout-alpha,1020,mobility,mobility.move,"{""x_m"": 8.8, ""y_m"": 7.4}",,,=$H$1+B8/86400,,
+twin-scout-alpha,1200,scan,scan.stop,{},,,=$H$1+B9/86400,,
+twin-scout-bravo,1200,scan,scan.stop,{},,,=$H$1+B10/86400,,
+twin-scout-alpha,1260,system,system.shutdown,{},,,=$H$1+B11/86400,,
+twin-scout-bravo,1260,system,system.shutdown,{},,,=$H$1+B12/86400,,

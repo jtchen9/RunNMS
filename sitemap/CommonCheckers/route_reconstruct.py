@@ -115,7 +115,7 @@ def reconstruct(commands,initial_poses,policy=None, *, macro_policy=None):
             macro_error = str(exc)
     robots={}
     for name in sorted({e['scanner'] for e in events if e['mobility'] and e['scanner'].strip()}):
-        ee=sorted([e for e in events if e['scanner']==name and e['mobility']],key=lambda e:(e['t_offset_sec'] is None,e['t_offset_sec'] or 0,e['source_line']))
+        ee=sorted([e for e in events if e['scanner']==name and (e['mobility'] or e['action']=='system.shutdown')],key=lambda e:(e['t_offset_sec'] is None,e['t_offset_sec'] or 0,e['source_line']))
         initial=starts.get(name);current=(initial['x_m'],initial['y_m']) if initial else None
         if not initial:issue('INITIAL_UNAVAILABLE','No unambiguous valid initial pose; first incoming segment unknown',initial_poses,None,name)
         blocked=name in unorderable or unidentified_movement
@@ -123,7 +123,7 @@ def reconstruct(commands,initial_poses,policy=None, *, macro_policy=None):
         groups={}
         for e in ee:
             if e['t_offset_sec'] is not None:groups.setdefault(e['t_offset_sec'],[]).append(e)
-        conflicts={t for t,g in groups.items() if sum(e['action']!='mobility.report.location' for e in g)>1}
+        conflicts={t for t,g in groups.items() if sum(e['mobility'] and e['action']!='mobility.report.location' for e in g)>1}
         points=[]
         for e in ee:
             e.update(from_x_m=None,from_y_m=None,x_m=None,y_m=None,dx_m=None,dy_m=None,length_m=None,segment_known=False)
@@ -132,12 +132,19 @@ def reconstruct(commands,initial_poses,policy=None, *, macro_policy=None):
                 issue('SIMULTANEOUS_MOVEMENT','Multiple movement commands for this robot at the same issue time',commands,e['source_line'],name)
             elif not e['valid']:
                 e['status']='invalid';current=None
+            elif e['action']=='system.shutdown':
+                e['status']='offline_boundary';current=None
             elif e['action']=='mobility.report.location':
                 e['status']='location_report_request'
                 # No measured position is present in this command; retain intended state only.
             elif e['action']=='mobility.move':
                 try:
-                    args=e['args']
+                    args=dict(e['args'])
+                    for cfg in macro_configs.values():
+                        token=str(cfg.get('launch_constant','')).upper()
+                        if token and all(isinstance(args.get(k),str) and args[k].strip().upper()==token for k in ('x_m','y_m')):
+                            args.update(x_m=cfg['start_x_m'],y_m=cfg['start_y_m'])
+                            break
                     if 'dx_m' in args or 'dy_m' in args:raise ValueError('Relative/mixed movement is unsupported; require absolute x_m/y_m')
                     if not isinstance(args['x_m'],(int,float)) or not isinstance(args['y_m'],(int,float)):raise ValueError('Coordinates must be JSON numbers')
                     target=(number(args['x_m']),number(args['y_m']))
@@ -177,7 +184,7 @@ def reconstruct(commands,initial_poses,policy=None, *, macro_policy=None):
             else:
                 e['status']='unresolved_movement';current=None
                 issue('MOVEMENT_UNRESOLVED','No geometry available for '+e['action'],commands,e['source_line'],name)
-            if e['action']!='mobility.report.location':points.append(e)
+            if e['mobility'] and e['action']!='mobility.report.location':points.append(e)
         robots[name]=dict(initial_pose=initial,events=ee,points=points)
     errors=sum(d['severity']=='error' for d in diagnostics)
     return dict(schema_version=1,tool_version=VERSION,description='Commanded destinations and straight planned segments; no arrival-time or safety inference',status='errors' if errors else 'ok',route_complete=errors==0,inputs=inputs,events=events,robots=robots,diagnostics=diagnostics,summary=dict(command_rows=len(events),robots=len(robots),movement_rows=sum(len(r['points']) for r in robots.values()),known_segments=sum(e.get('segment_known',False) for e in events),errors=errors),safety_checked=False)

@@ -6,8 +6,8 @@ from typing import Any, Dict, List
 from . import demoroom_planning_grid as planning_grid
 from .demoroom_planning_entrance import entrance_blocked
 from .script_model import InitialPose, ScriptRow
+from .planned_reentry import move_target, unknown_approach_issue
 from .static_safety_core import (
-    apply_mobility_move_pose,
     charging_zone_crossing_issues,
     deg_norm_360,
     first_restricted_sample_on_segment,
@@ -195,20 +195,29 @@ def check_planned_path_rules(
                 })
 
     for row in sorted(rows, key=lambda r: (r.t_offset_sec, r.row_number)):
+        if row.category == "system" and row.action == "system.shutdown":
+            planned_by_scanner.pop(row.scanner, None)
+            continue
         if row.category != "mobility":
             continue
 
         current = planned_by_scanner.get(row.scanner)
 
-        if current is None or row.action == "mobility.report.location":
+        if row.scanner not in initial_poses or row.action == "mobility.report.location":
             continue
 
         if row.action == "mobility.move":
-            new_pose, move_issues = apply_mobility_move_pose(current, row.args)
+            new_pose, move_issues = move_target(current, row.args)
             for issue in move_issues:
                 issues.append(_with_row_context(issue, row))
             if move_issues:
                 continue
+
+            if current is None:
+                issues.append(_with_row_context(unknown_approach_issue(), row))
+                # Validate this endpoint as a point only. This does not certify
+                # the unknown approach, nor is it fed to concurrency checks.
+                current = new_pose
 
             if bounds and not point_in_bounds(new_pose["x_m"], new_pose["y_m"], bounds):
                 _append_out_of_bounds_issue(
@@ -266,6 +275,8 @@ def check_planned_path_rules(
             continue
 
         if row.action in macro_cfg_by_action:
+            if current is None:
+                continue
             new_pose = macro_planned_pose(macro_cfg_by_action[row.action])
 
             if bounds and not point_in_bounds(new_pose["x_m"], new_pose["y_m"], bounds):

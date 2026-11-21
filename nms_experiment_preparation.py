@@ -48,8 +48,8 @@ class Preparation:
         _local(now)
         if not lab_id or not experiment_id:
             raise PreparationError("lab_id and experiment_id are required")
-        if manifest.get("schema_version") != "experiment_csv_v1":
-            raise PreparationError("Expected the Step 1 parsed CSV manifest")
+        if manifest.get("schema_version") != "experiment_csv_v2":
+            raise PreparationError("Expected the single-CSV I/J roster manifest")
         self._manifest = deepcopy(manifest)
         commands = self._manifest.get("commands", [])
         if not commands:

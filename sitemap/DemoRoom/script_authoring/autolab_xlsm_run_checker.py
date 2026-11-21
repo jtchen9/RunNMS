@@ -13,7 +13,6 @@ from typing import Any
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run AutoLab CommonCheckers from XLSM-generated CSV files.")
     p.add_argument("--script_csv", required=True)
-    p.add_argument("--initial_poses_csv", required=True)
     p.add_argument("--site_dir", required=True)
     p.add_argument("--common_dir", required=True)
     p.add_argument("--report_json", required=True)
@@ -160,14 +159,12 @@ def _run_checker(args: argparse.Namespace) -> tuple[int, dict]:
         raise FileNotFoundError(f"common_dir not found: {common_dir}")
 
     script_csv = Path(args.script_csv)
-    initial_poses_csv = Path(args.initial_poses_csv)
     site_dir = Path(args.site_dir)
     report_path = Path(args.report_json)
     normalized_script_path = Path(args.normalized_script_csv) if args.normalized_script_csv else script_csv
 
     for label, path in [
         ("script_csv", script_csv),
-        ("initial_poses_csv", initial_poses_csv),
         ("site_dir", site_dir),
     ]:
         if not path.exists():
@@ -179,7 +176,6 @@ def _run_checker(args: argparse.Namespace) -> tuple[int, dict]:
 
     raw_report = validate_script(
         script_csv=script_csv,
-        initial_poses_csv=initial_poses_csv,
         site_dir=site_dir,
         common_dir=common_dir,
         report_json=report_path,
@@ -210,7 +206,7 @@ def main() -> int:
             print(f"Report written to: {args.report_json}")
             if args.feedback_csv:
                 print(f"Feedback written to: {args.feedback_csv}")
-            print(f"NMS-ready numeric script written to: {report.get('normalized_script_path', args.script_csv)}")
+            print(f"Single registration CSV retained at: {report.get('normalized_script_path', args.script_csv)}")
             return 0
 
         print("\nCHECK RESULT: FAIL")
@@ -226,7 +222,8 @@ def main() -> int:
         # normalized path was requested and this run fails unexpectedly.
         if args.normalized_script_csv:
             try:
-                Path(args.normalized_script_csv).unlink(missing_ok=True)
+                if Path(args.normalized_script_csv).resolve() != Path(args.script_csv).resolve():
+                    Path(args.normalized_script_csv).unlink(missing_ok=True)
             except Exception:
                 pass
         error_report = {
@@ -236,8 +233,8 @@ def main() -> int:
             "warning_count": 0,
             "issues": [{
                 "level": "error",
-                "code": "XLSM_CHECKER_RUNNER_ERROR",
-                "row_number": None,
+                "code": getattr(e, "code", "XLSM_CHECKER_RUNNER_ERROR"),
+                "row_number": getattr(e, "row_number", None),
                 "message": f"{type(e).__name__}: {e}",
                 "suggestion": "Open checker_stdout.txt and verify Python, NMS root, CommonCheckers path, site_dir, and generated CSV files.",
             }],

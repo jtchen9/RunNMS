@@ -86,7 +86,7 @@ def check_global_moving_command_spacing(
         [r for r in rows if r.category == "mobility" and r.action in moving],
         key=lambda r: (r.t_offset_sec, r.row_number),
     )
-    segments = planned_segments(ordered, initial_poses or {}, macro_policy or {})
+    segments = planned_segments(rows, initial_poses or {}, macro_policy or {})
     issues = []
     for i, cur in enumerate(ordered):
         for prev in reversed(ordered[:i]):

@@ -28,7 +28,6 @@ def validate(raw, poses_raw, root, site_id):
     with tempfile.TemporaryDirectory(prefix="preparation_validate_") as folder:
         script=Path(folder)/"CommandSheet.csv";script.write_bytes(raw)
         poses=Path(folder)/"InitialPoses.csv"
-        if poses_raw is not None:poses.write_bytes(poses_raw)
         report=validate_script(script_csv=script,initial_poses_csv=poses,
                                common_dir=common,site_dir=root/"sitemap"/site_id,prepared_manifest=manifest)
     if not report["ok"]:raise HTTPException(422,{"error":"public_validation_failed","public_validation":report})
@@ -109,7 +108,6 @@ async def register(csv_file,initial_poses_file,session_id):
                         public_validation_json=json.dumps(validation,ensure_ascii=False),
                         extra_metadata_json=json.dumps({"route_preview":preview,"preparation_required":True}))
             files=[("command_sheet_file",(filename,raw,"text/csv"))]+routes
-            if poses_raw is not None:files.append(("initial_poses_file",(initial_poses_file.filename,poses_raw,"text/csv")))
             store=runtime.store()
             store.create(fields,files,dict(phase="awaiting_attempt",attempt=0,updated_at=now),uid)
             registry=dict(lab_id=fields["lab_id"],experiment_id=fields["experiment_id"],session_id=fields["session_id"],

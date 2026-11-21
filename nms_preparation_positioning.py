@@ -127,7 +127,7 @@ def measured_evidence(snapshot, *, scope, since, previous=None):
 async def position_once(*, scanner, target, port, owns_attempt,
                         timeout_seconds=240, measure_only=False, on_progress=None, before_move=None, monotonic=time.monotonic,
                         sleep=asyncio.sleep):
-    """Report -> <=1m/path gate -> ordinary move -> fresh confirmation.
+    """Report -> <=2m/path gate -> ordinary move -> fresh confirmation.
 
     The S0/S5/S6 machinery owns motion and its normal correction thresholds.
     A final independent report is used for preparation acceptance. No result
@@ -183,8 +183,8 @@ async def position_once(*, scanner, target, port, owns_attempt,
         start_pose, initial_evidence = measured_evidence(snap, scope=scope, since=since, previous=before)
         distance = math.hypot(start_pose["x_m"]-xy["x_m"], start_pose["y_m"]-xy["y_m"])
         diagnostics.update(initial_pose=start_pose, initial_distance_m=distance)
-        if distance > 1.0 + 1e-9:
-            raise PositioningError(f"Initial position is {distance:.3f}m away; limit is 1.000m")
+        if distance > 2.0 + 1e-9:
+            raise PositioningError(f"Initial position is {distance:.3f}m away; limit is 2.000m")
         if measure_only:
             return {"status": "measured", "scanner": scanner, "evidence": initial_evidence, **diagnostics}
         phase = "path_check"

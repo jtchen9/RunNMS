@@ -1,0 +1,4 @@
+﻿scanner,t_offset_sec,category,action,args_json,reentry_robot,reentry_xy,,initial_robot,initial_xy
+twin-scout-alpha,0,scan,scan.start,{},,,=$H$1+B2/86400,twin-scout-alpha,"(5,3)"
+,,,,,,,,twin-scout-bravo,"(8.8,3)"
+twin-scout-bravo,0,scan,scan.start,{},,,=$H$1+B4/86400,,

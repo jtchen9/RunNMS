@@ -5,16 +5,124 @@
   "site_version": "2026.07.14.1",
   "common_checkers_version": "",
   "script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\experiment_script.csv",
-  "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\initial_poses.csv",
-  "script_hash": "sha256:89a6c1a498f9c4dbec2c5e4b72d3522967d13073ac08ec985836a17df88158e2",
-  "initial_poses_hash": "sha256:30602861a9b9ad5bd3a14dbd22420d52d72398a944132a7a8c73a5d33d3d1552",
+  "initial_poses_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\experiment_script.csv",
+  "script_hash": "sha256:323b50e5a8f12566116ed63acd682b728b40834a87fab552929c78eaf766d216",
+  "initial_poses_hash": "sha256:323b50e5a8f12566116ed63acd682b728b40834a87fab552929c78eaf766d216",
   "error_count": 0,
-  "warning_count": 0,
-  "issues": [],
+  "warning_count": 1,
+  "issues": [
+    {
+      "level": "warning",
+      "code": "REENTRY_APPROACH_REQUIRES_RUNTIME_CHECK",
+      "message": "Re-entry destination checked; approach distance/path cannot be checked offline because placement after shutdown is unknown. Positions of other robots after shutdown are also unknown until their next planned destination.",
+      "suggestion": "Place the robot with a clear approach and power it on early. The authored location report and existing runtime checks must check the actual move.",
+      "row_number": 8,
+      "scanner": "twin-scout-alpha",
+      "action": "mobility.move"
+    }
+  ],
+  "validated_commands": [
+    {
+      "row_number": 2,
+      "scanner": "twin-scout-alpha",
+      "t_offset_sec": 0,
+      "category": "scan",
+      "action": "scan.start",
+      "args": {}
+    },
+    {
+      "row_number": 3,
+      "scanner": "twin-scout-bravo",
+      "t_offset_sec": 0,
+      "category": "scan",
+      "action": "scan.start",
+      "args": {}
+    },
+    {
+      "row_number": 4,
+      "scanner": "twin-scout-alpha",
+      "t_offset_sec": 120,
+      "category": "mobility",
+      "action": "mobility.move",
+      "args": {
+        "x_m": 5,
+        "y_m": 2.8
+      }
+    },
+    {
+      "row_number": 5,
+      "scanner": "twin-scout-alpha",
+      "t_offset_sec": 300,
+      "category": "system",
+      "action": "system.shutdown",
+      "args": {}
+    },
+    {
+      "row_number": 6,
+      "scanner": "twin-scout-alpha",
+      "t_offset_sec": 900,
+      "category": "scan",
+      "action": "scan.start",
+      "args": {}
+    },
+    {
+      "row_number": 7,
+      "scanner": "twin-scout-alpha",
+      "t_offset_sec": 960,
+      "category": "mobility",
+      "action": "mobility.report.location",
+      "args": {}
+    },
+    {
+      "row_number": 8,
+      "scanner": "twin-scout-alpha",
+      "t_offset_sec": 1020,
+      "category": "mobility",
+      "action": "mobility.move",
+      "args": {
+        "x_m": 5,
+        "y_m": 3
+      }
+    },
+    {
+      "row_number": 9,
+      "scanner": "twin-scout-alpha",
+      "t_offset_sec": 1200,
+      "category": "scan",
+      "action": "scan.stop",
+      "args": {}
+    },
+    {
+      "row_number": 10,
+      "scanner": "twin-scout-bravo",
+      "t_offset_sec": 1200,
+      "category": "scan",
+      "action": "scan.stop",
+      "args": {}
+    },
+    {
+      "row_number": 11,
+      "scanner": "twin-scout-alpha",
+      "t_offset_sec": 1260,
+      "category": "system",
+      "action": "system.shutdown",
+      "args": {}
+    },
+    {
+      "row_number": 12,
+      "scanner": "twin-scout-bravo",
+      "t_offset_sec": 1260,
+      "category": "system",
+      "action": "system.shutdown",
+      "args": {}
+    }
+  ],
   "resolved_launch_constant_count": 0,
   "normalized_script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\experiment_script.csv",
+  "csv_rewritten": false,
+  "registration_format": "single_csv_ij_roster",
   "source_script_path": "D:\\Data\\_Action\\_RunNMS\\sitemap\\DemoRoom\\script_authoring\\generated\\experiment_script.csv",
-  "source_script_hash": "sha256:ddcdcb7a1a13e46cbe7286a313cc06bd6d194ab5b88cb468a3e82f4a72f62023",
+  "source_script_hash": "sha256:323b50e5a8f12566116ed63acd682b728b40834a87fab552929c78eaf766d216",
   "generated_by": "autolab_xlsm_run_checker.py",
-  "generated_at": "2026-09-22T16:29:17"
+  "generated_at": "2026-11-22T02:37:52"
 }

@@ -2491,16 +2491,15 @@ def _run_public_script_validation(
 @router.post("/cmd/_preview_registration_csv", tags=["4 Commands (Polling)"])
 async def cmd_preview_registration_csv(
     csv_file: UploadFile = File(
-        ..., description="Read-only format preview. A-E commands; F-G initial positions and re-entry reminders; H display time."
+        ..., description="Read-only format preview. A-E commands; F/G re-entry reminders; H display time; I/J initial roster."
     ),
     initial_poses_file: Optional[UploadFile] = File(
-        None, description="Optional legacy initial-poses CSV. Omit when F-G contain positions."
+        None, description="Obsolete: omit this field. Use I/J in the single command CSV."
     ),
 ) -> Dict[str, Any]:
     """Step 1: parse only. No registration, preflight, Redis changes or commands.
 
-    Success does NOT authorize execution. Actual one-file registration is enabled
-    only after preparation and shared-checker support have been implemented.
+    Success does NOT authorize execution or run the safety checker.
     Use /cmd/_load_csv_file for actual preparation registration.
     """
     from experiment_csv import CsvFormatError, parse_registration_csv
@@ -2523,8 +2522,8 @@ async def cmd_preview_registration_csv(
 
 @router.post("/cmd/_load_csv_file", tags=["4 Commands (Polling)"])
 async def cmd_load_csv_file(
-    csv_file: UploadFile = File(..., description="Commands A-E, initial robot/xy F-G; H is display-only. NMS assigns t0 after preparation."),
-    initial_poses_file: Optional[UploadFile] = File(None, description="Optional legacy poses file; omit with inline F/G positions."),
+    csv_file: UploadFile = File(..., description="Commands A-E; F/G reminders; initial robot/xy I/J; H is display-only. NMS assigns t0 after preparation."),
+    initial_poses_file: Optional[UploadFile] = File(None, description="Obsolete: omit this field. Use I/J in the single command CSV."),
     session_id: Optional[str] = Form(None),
 ) -> Dict[str, Any]:
     from nms_preparation_registration import register

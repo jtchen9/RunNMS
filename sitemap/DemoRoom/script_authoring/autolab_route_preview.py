@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sys
 import webbrowser
+import tempfile
 
 
 def main():
@@ -18,15 +19,21 @@ def main():
     sys.path.insert(0, str(root.resolve() / "sitemap" / "CommonCheckers"))
     try:
         from route_reconstruct import run
-        result = run(
-            commands=job / "experiment_script.csv",
-            initial_poses=job / "initial_poses.csv",
-            policy=None,
-            output_dir=job / "images",
-            macro_policy=root / "sitemap/DemoRoom/script_authoring/config/macro_policy.json",
-            map_workbook=workbook,
-            per_robot=True,
-        )["integration_result"]
+        from checker.registration_csv import parse_registration_csv
+        from single_csv_authoring import planned_poses_bytes
+        manifest = parse_registration_csv((job / "experiment_script.csv").read_bytes())
+        with tempfile.TemporaryDirectory(prefix="autolab_preview_") as folder:
+            poses = Path(folder) / "renderer_poses.csv"
+            poses.write_bytes(planned_poses_bytes(manifest))
+            result = run(
+                commands=job / "experiment_script.csv",
+                initial_poses=poses,
+                policy=None,
+                output_dir=job / "images",
+                macro_policy=root / "sitemap/DemoRoom/script_authoring/config/macro_policy.json",
+                map_workbook=workbook,
+                per_robot=True,
+            )["integration_result"]
     except Exception as exc:
         result = {"status": "error", "png_files": [],
                   "diagnostics": [{"message": str(exc)}]}

@@ -4,7 +4,8 @@ import math
 from typing import Any, Dict, List
 
 from .script_model import InitialPose, ScriptRow
-from .static_safety_core import apply_mobility_move_pose, deg_norm_360
+from .planned_reentry import move_target
+from .static_safety_core import deg_norm_360, macro_planned_pose
 
 
 def _with_row_context(issue: Dict[str, Any], row: ScriptRow) -> Dict[str, Any]:
@@ -19,12 +20,13 @@ def check_max_single_mobility_move_distance(
     rows: List[ScriptRow],
     initial_poses: Dict[str, InitialPose],
     policy: Dict[str, Any],
+    macro_policy: Dict[str, Any] | None = None,
 ) -> List[Dict[str, Any]]:
     """
     Reject any single script-level mobility.move whose planned distance is too long.
 
     This is an offline/preflight rule. It simulates planned poses from the
-    script writer's initial_poses.csv and checks only semantic mobility.move
+    script writer's I/J roster and checks only semantic mobility.move
     rows. Site macros are checked by macro_rules.py / path_rules.py because
     their distance and legality are defined by site macro policy.
     """
@@ -45,16 +47,23 @@ def check_max_single_mobility_move_distance(
     }
 
     for row in sorted(rows, key=lambda r: (r.t_offset_sec, r.row_number)):
+        if row.category == "system" and row.action == "system.shutdown":
+            planned_by_scanner.pop(row.scanner, None)
+            continue
         if row.category != "mobility":
             continue
 
         current = planned_by_scanner.get(row.scanner)
-        if current is None:
-            # check_initial_poses_exist() already reports this.
+        if row.scanner not in initial_poses:
             continue
 
         if row.action == "mobility.report.location":
-            # Offline checker assumes report.location confirms the intended pose.
+            # A report has no measured result offline; unknown stays unknown.
+            continue
+
+        if row.action in (macro_policy or {}).get("macros", {}):
+            if current is not None:
+                planned_by_scanner[row.scanner] = macro_planned_pose(macro_policy["macros"][row.action])
             continue
 
         if row.action != "mobility.move":
@@ -62,10 +71,15 @@ def check_max_single_mobility_move_distance(
             # macro/path rules.
             continue
 
-        new_pose, move_issues = apply_mobility_move_pose(current, row.args)
+        new_pose, move_issues = move_target(current, row.args)
         for issue in move_issues:
             issues.append(_with_row_context(issue, row))
         if move_issues:
+            continue
+
+        if current is None:
+            # Endpoint known, incoming distance unknown until runtime report.
+            planned_by_scanner[row.scanner] = new_pose
             continue
 
         distance_m = math.hypot(

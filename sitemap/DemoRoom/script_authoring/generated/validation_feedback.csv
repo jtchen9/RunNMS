@@ -1,1 +1,2 @@
 ﻿cmd_row_id,row_number,status,level,issue_code,message,suggestion,scanner,action,other_scanner,distance_m
+7,8,WARNING,warning,REENTRY_APPROACH_REQUIRES_RUNTIME_CHECK,Re-entry destination checked; approach distance/path cannot be checked offline because placement after shutdown is unknown. Positions of other robots after shutdown are also unknown until their next planned destination.,Place the robot with a clear approach and power it on early. The authored location report and existing runtime checks must check the actual move.,twin-scout-alpha,mobility.move,,

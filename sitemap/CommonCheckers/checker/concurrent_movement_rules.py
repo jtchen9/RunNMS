@@ -3,30 +3,42 @@ from __future__ import annotations
 
 import math
 from .static_safety_core import (
-    apply_mobility_move_pose, macro_planned_pose, distance_point_to_segment,
+    macro_planned_pose, distance_point_to_segment,
 )
 
+from .planned_reentry import move_target
 
 def planned_segments(rows, initial_poses, macro_policy):
     poses = {name: dict(x_m=p.x_m, y_m=p.y_m, heading_deg=p.heading_deg)
              for name, p in initial_poses.items()}
     macros = macro_policy.get("macros", {})
     segments = {}
-    for row in rows:
+    for row in sorted(rows, key=lambda r: (r.t_offset_sec, r.row_number)):
+        if row.category == "system" and row.action == "system.shutdown":
+            poses.pop(row.scanner, None)
+            continue
+        if row.category != "mobility" or row.action == "mobility.report.location":
+            continue
         current = poses.get(row.scanner)
-        if current is None:
+        if row.scanner not in initial_poses:
             continue
         try:
             if row.action == "mobility.move":
-                target, issues = apply_mobility_move_pose(current, row.args)
+                target, issues = move_target(current, row.args)
                 if issues:
                     raise ValueError("Invalid move")
             elif row.action in macros:
+                if current is None:
+                    continue
                 # Same offline macro contract as path_rules.py; macro rules
                 # independently require the correct staging position.
                 target = macro_planned_pose(macros[row.action])
             else:
                 raise ValueError("Unknown moving action")
+            if current is None:
+                poses[row.scanner] = target
+                # No path-separation exemption for an unknown approach.
+                continue
             segment = ((float(current["x_m"]), float(current["y_m"])),
                        (float(target["x_m"]), float(target["y_m"])))
             if not all(math.isfinite(v) for point in segment for v in point):

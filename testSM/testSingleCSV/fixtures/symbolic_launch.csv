@@ -1,0 +1,6 @@
+﻿scanner,t_offset_sec,category,action,args_json,reentry_robot,reentry_xy,,initial_robot,initial_xy
+twin-scout-alpha,0,scan,scan.start,{},,,=$H$1+B2/86400,twin-scout-alpha,"(5,3)"
+twin-scout-alpha,60,system,system.shutdown,{},,,=$H$1+B3/86400,,
+twin-scout-alpha,600,mobility,mobility.report.location,{},twin-scout-alpha,"(9.1,4.399)",=$H$1+B4/86400,,
+twin-scout-alpha,660,mobility,mobility.move,"{""x_m"":""IN2OUT"",""y_m"":""IN2OUT""}",,,=$H$1+B5/86400,,
+twin-scout-alpha,900,mobility,mobility.in2out,{},,,=$H$1+B6/86400,,

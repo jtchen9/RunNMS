@@ -79,7 +79,7 @@ def _has_initial_pose_file_blocking_error(issues: list[Dict[str, Any]]) -> bool:
 def validate_script(
     *,
     script_csv: str | Path,
-    initial_poses_csv: str | Path,
+    initial_poses_csv: Optional[str | Path] = None,
     site_dir: str | Path,
     common_dir: str | Path,
     report_json: Optional[str | Path] = None,
@@ -87,7 +87,8 @@ def validate_script(
     prepared_manifest: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     script_csv = Path(script_csv)
-    initial_poses_csv = Path(initial_poses_csv)
+    # I/J is the pose source even when the NMS supplies its internal adapter argument.
+    initial_poses_csv = script_csv
     site_dir = Path(site_dir)
     common_dir = Path(common_dir)
 
@@ -101,15 +102,15 @@ def validate_script(
     ap_roster = _load_json(site_dir / "script_authoring" / "config" / "ap_roster.json")
 
     if prepared_manifest is None:
-        source_rows, issues = load_script_csv(script_csv)
-        initial_poses, pose_issues = load_initial_poses_csv(initial_poses_csv)
-    else:
-        from .script_model import ScriptRow, InitialPose
-        source_rows = [ScriptRow(c["row_number"],c["scanner"],c["t_offset_sec"],c["category"].lower(),c["action"],c["args"])
-                       for c in prepared_manifest["commands"]]
-        initial_poses = {p["scanner"]: InitialPose(p["row_number"],p["scanner"],p["x_m"],p["y_m"],p["heading_deg"],.3,10)
-                         for p in prepared_manifest["initial_positions"]}
-        issues, pose_issues = [], []
+        from single_csv_authoring import checker_manifest
+        prepared_manifest = checker_manifest(script_csv.read_bytes())
+    from checker.script_model import ScriptRow, InitialPose
+    source_rows = [ScriptRow(c["row_number"],c["scanner"],c["t_offset_sec"],c["category"].lower(),c["action"],c["args"])
+                   for c in prepared_manifest["commands"]]
+    initial_poses = {p["scanner"]: InitialPose(p["row_number"],p["scanner"],p["x_m"],p["y_m"],p["heading_deg"],.3,10)
+                     for p in prepared_manifest["initial_positions"]}
+    from single_csv_authoring import reminder_issues
+    issues, pose_issues = reminder_issues(prepared_manifest, macro_policy), []
     issues.extend(pose_issues)
 
     rows, reserved_issues, resolved_constant_count = resolve_reserved_launch_locations(
@@ -127,7 +128,12 @@ def validate_script(
     }
     issues.extend(check_device_targets(rows, set(initial_poses), ap_scanners))
     issues.extend(check_traffic_sessions(rows, initial_poses))
-    issues.extend(check_first_mobility_command(rows, policy))
+    prepared_single_csv = prepared_manifest is not None and prepared_manifest.get("schema_version") == "experiment_csv_v2"
+    if prepared_single_csv:
+        from checker.initialization_rules import check_prepared_mobility_sequence
+        issues.extend(check_prepared_mobility_sequence(rows, policy))
+    else:
+        issues.extend(check_first_mobility_command(rows, policy))
 
     # If the initial-pose file itself is missing or malformed, stop here for
     # pose-dependent checks. This avoids duplicate/confusing messages such as
@@ -135,11 +141,12 @@ def validate_script(
     # file path or wrong CSV type.
     if not _has_initial_pose_file_blocking_error(pose_issues):
         issues.extend(check_initial_poses_exist(rows, initial_poses))
-        issues.extend(check_max_single_mobility_move_distance(rows, initial_poses, policy))
+        issues.extend(check_max_single_mobility_move_distance(rows, initial_poses, policy, macro_policy))
         issues.extend(check_macro_and_bump_rules(rows, initial_poses, macro_policy))
         issues.extend(check_planned_path_rules(rows, initial_poses, macro_policy, zone_policy, path_policy, safety_policy, site_dir))
 
-    issues.extend(check_first_move_after_report_location_spacing(rows, policy))
+    if not prepared_single_csv:
+        issues.extend(check_first_move_after_report_location_spacing(rows, policy))
     issues.extend(check_global_moving_command_spacing(rows, policy, initial_poses, macro_policy))
 
     ok = not any(x.get("level") == "error" for x in issues)
@@ -159,13 +166,19 @@ def validate_script(
                                              category=r.category,action=r.action,args=r.args) for r in rows]
     report["resolved_launch_constant_count"] = resolved_constant_count
     report["normalized_script_path"] = str(normalized_script_csv or "")
+    report["csv_rewritten"] = False
+    report["registration_format"] = "single_csv_ij_roster"
 
     if normalized_script_csv:
         normalized_path = Path(normalized_script_csv)
         if ok:
             report["source_script_path"] = report["script_path"]
             report["source_script_hash"] = report["script_hash"]
-            write_normalized_script_csv(normalized_path, rows)
+            # Preserve the registration contract and authored A-E. Resolution
+            # of symbolic targets is returned in validated_commands only.
+            if normalized_path.resolve() != script_csv.resolve():
+                normalized_path.parent.mkdir(parents=True, exist_ok=True)
+                normalized_path.write_bytes(script_csv.read_bytes())
             report["script_path"] = str(normalized_path)
             report["script_hash"] = sha256_file(normalized_path)
         elif normalized_path.resolve() != script_csv.resolve() and normalized_path.exists():
@@ -188,24 +201,19 @@ def run_from_vscode() -> Dict[str, Any]:
     # Edit these paths for the script you want to check.
     #
     # SCRIPT_CSV is the experiment command script.
-    # INITIAL_POSES_CSV is a different file: it must contain columns
-    # scanner,intended_x_m,intended_y_m,intended_heading_deg,...
-    #
-    # Do not point INITIAL_POSES_CSV to a script CSV.
+    # The same CSV carries I/J initial positions. No separate poses input.
     # ---------------------------------------------------------
     # Auto-detect the sitemap folder from this file location:
     #   <workspace>/sitemap/CommonCheckers/checker/checker_runner.py
     SITEMAP_DIR = Path(__file__).resolve().parents[2]
 
     SCRIPT_CSV = SITEMAP_DIR / "DemoRoom" / "script_authoring" / "examples" / "demo_invalid_move_too_long.csv"
-    INITIAL_POSES_CSV = SITEMAP_DIR / "DemoRoom" / "script_authoring" / "examples" / "demo_initial_poses.csv"
     SITE_DIR = SITEMAP_DIR / "DemoRoom"
     COMMON_DIR = SITEMAP_DIR / "CommonCheckers"
     REPORT_JSON = SITEMAP_DIR / "validation_report.json"
 
     report = validate_script(
         script_csv=SCRIPT_CSV,
-        initial_poses_csv=INITIAL_POSES_CSV,
         site_dir=SITE_DIR,
         common_dir=COMMON_DIR,
         report_json=REPORT_JSON,

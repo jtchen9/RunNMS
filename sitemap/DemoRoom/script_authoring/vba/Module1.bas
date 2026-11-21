@@ -72,6 +72,7 @@ Private Const PARAM_CATALOG_COL_INPUT_MODE As Long = 5
 Private Const PARAM_CATALOG_COL_REQUIRED As Long = 6
 Private Const PARAM_CATALOG_COL_DEFAULT As Long = 7
 Private Const PARAM_CATALOG_COL_ALLOWED_VALUES As Long = 8
+Private gExportCommandIds As Object
 
 ' ============================================================
 ' Phase-3 map macros
@@ -189,6 +190,7 @@ Private Sub DrawPlannedOverlay(ByVal selectedCmdRowID As Long, ByVal selectedVal
     Dim selectedScanner As String
     Dim selectedAction As String
     Dim selectedIsMovement As Boolean
+    Dim selectedTargetOnly As Boolean
     Dim selectedIsMacro As Boolean
     Dim selectedStartX As Double, selectedStartY As Double
     Dim selectedTargetX As Double, selectedTargetY As Double
@@ -209,11 +211,15 @@ Private Sub DrawPlannedOverlay(ByVal selectedCmdRowID As Long, ByVal selectedVal
 
     hasPlannedCurrent = xDict.Exists(selectedScanner)
 
-    If selectedAction = "mobility.move" And hasPlannedCurrent Then
+    If selectedAction = "mobility.move" Then
         If ResolveMoveTargetForMap(wsCmd, selectedValueRow, selectedTargetX, selectedTargetY) Then
-            selectedIsMovement = True
-            selectedStartX = CDbl(xDict(selectedScanner))
-            selectedStartY = CDbl(yDict(selectedScanner))
+            If hasPlannedCurrent Then
+                selectedIsMovement = True
+                selectedStartX = CDbl(xDict(selectedScanner))
+                selectedStartY = CDbl(yDict(selectedScanner))
+            Else
+                selectedTargetOnly = True
+            End If
         End If
     ElseIf selectedIsMacro And hasPlannedCurrent Then
         selectedStartX = CDbl(xDict(selectedScanner))
@@ -239,6 +245,10 @@ Private Sub DrawPlannedOverlay(ByVal selectedCmdRowID As Long, ByVal selectedVal
         DrawTargetCell wsMap, selectedTargetX, selectedTargetY, RobotShortLabel(selectedScanner), selectedIsMacro
     End If
 
+    If selectedTargetOnly Then
+        DrawTargetCell wsMap, selectedTargetX, selectedTargetY, RobotShortLabel(selectedScanner), False
+    End If
+
     For Each scanner In xDict.Keys
         DrawRobotCenter wsMap, CDbl(xDict(scanner)), CDbl(yDict(scanner)), RobotShortLabel(CStr(scanner))
     Next scanner
@@ -248,6 +258,10 @@ Private Sub DrawPlannedOverlay(ByVal selectedCmdRowID As Long, ByVal selectedVal
     WriteMapStatus wsMap, selectedCmdRowID, selectedScanner, selectedIsMovement, selectedIsMacro, selectedAction, _
                    selectedStartX, selectedStartY, selectedTargetX, selectedTargetY, _
                    macroPolicyStartX, macroPolicyStartY, macroStartErrorM
+    If selectedTargetOnly Then
+        wsMap.Range("DP14").value = "Re-entry destination only"
+        wsMap.Range("DP15").value = "Unknown approach; no travel line"
+    End If
 End Sub
 
 Private Sub LoadInitialPoses(wsPose As Worksheet, ByRef xDict As Object, ByRef yDict As Object, ByRef hDict As Object)
@@ -309,8 +323,12 @@ Private Sub ApplyCommandsBeforeSelected(wsCmd As Worksheet, ByVal selectedCmdRow
                 scanner = Trim$(CStr(wsCmd.Cells(r, COL_SCANNER).value))
                 action = ResolveActionForMapRow(wsCmd, r)
 
-                If scanner <> "" And xDict.Exists(scanner) Then
+                If scanner <> "" Then
                     Select Case action
+                        Case "system.shutdown"
+                            If xDict.Exists(scanner) Then xDict.Remove scanner
+                            If yDict.Exists(scanner) Then yDict.Remove scanner
+                            If hDict.Exists(scanner) Then hDict.Remove scanner
                         Case "mobility.move"
                             Dim moveX As Double, moveY As Double
                             If ResolveMoveTargetForMap(wsCmd, r, moveX, moveY) Then
@@ -326,7 +344,7 @@ Private Sub ApplyCommandsBeforeSelected(wsCmd As Worksheet, ByVal selectedCmdRow
 
                         Case "mobility.in2out", "mobility.out2in"
                             Dim macroStartX As Double, macroStartY As Double, ex As Double, ey As Double, mh As Double
-                            If GetMacroSegment(action, macroStartX, macroStartY, ex, ey) Then
+                            If xDict.Exists(scanner) And GetMacroSegment(action, macroStartX, macroStartY, ex, ey) Then
                                 xDict(scanner) = ex
                                 yDict(scanner) = ey
                                 If GetMacroHeading(action, mh) Then
@@ -802,30 +820,14 @@ End Function
 ' ============================================================
 
 Public Sub ImportCommandCsvToPreview()
-    ImportCsvFileIntoPreview _
-        SHEET_EXPORT, _
-        "Choose command CSV to load into ExportPreview", _
-        Array( _
-            "scanner", _
-            "t_offset_sec", _
-            "category", _
-            "action", _
-            "args_json" _
-        )
+    ImportCsvFileIntoPreview SHEET_EXPORT, "Choose single registration CSV", _
+        Array("scanner", "t_offset_sec", "category", "action", "args_json", _
+              "reentry_robot", "reentry_xy", "", "initial_robot", "initial_xy")
 End Sub
 
 Public Sub ImportInitialPosesCsvToPreview()
-    ImportCsvFileIntoPreview _
-        SHEET_INITIAL_EXPORT, _
-        "Choose initial-position CSV to load into InitialPosesExportPreview", _
-        Array( _
-            "scanner", _
-            "intended_x_m", _
-            "intended_y_m", _
-            "intended_heading_deg", _
-            "position_tolerance_m", _
-            "heading_tolerance_deg" _
-        )
+    ' Keep the existing button binding, with one-file behavior.
+    ImportCommandCsvToPreview
 End Sub
 
 Private Sub ImportCsvFileIntoPreview( _
@@ -863,11 +865,14 @@ Private Sub ImportCsvFileIntoPreview( _
         Exit Sub
     End If
 
+    If previewSheetName = SHEET_EXPORT Then csvText = SingleCsvBridge(csvText, True)
+    Set rows = ParseCsvText(csvText)
     Dim wsPreview As Worksheet
     Set wsPreview = ThisWorkbook.Worksheets(previewSheetName)
 
     Application.ScreenUpdating = False
     wsPreview.Cells.ClearContents
+    wsPreview.Range("A:J").NumberFormat = "@"
     WriteCsvRowsToSheet wsPreview, rows
     Application.ScreenUpdating = True
 
@@ -928,7 +933,7 @@ Private Function CsvHeaderMatchesExact( _
         actualName = Trim$(CStr(actualHeaders(LBound(actualHeaders) + i)))
         expectedName = CStr(expectedHeaders(LBound(expectedHeaders) + i))
 
-        If StrComp(actualName, expectedName, vbBinaryCompare) <> 0 Then
+        If Not (expectedCount = 10 And i = 7) And StrComp(actualName, expectedName, vbBinaryCompare) <> 0 Then
             problemDetail = _
                 "Header column " & (i + 1) & " is '" & actualName & _
                 "'; expected '" & expectedName & "'." & _
@@ -981,9 +986,22 @@ Public Sub ExpandCommandPreviewToCommandSheet()
         Exit Sub
     End If
 
+    On Error GoTo InvalidInput
+    Dim validatedText As String
+    validatedText = SingleCsvBridge(CsvRowsText(rows), True)
+    ValidateImportRoster rows
+    ValidateImportCommands rows
+    If CountCsvCommands(rows) > (COMMAND_GUI_MAX_ROW - FIRST_DATA_ROW + 1) \ 2 Then
+        Err.Raise vbObjectError + 6301, , "CSV exceeds CommandSheet capacity. No rows were imported."
+    End If
+    On Error GoTo 0
+    Dim wsPose As Worksheet, poseBackup As Variant, poseLast As Long
+    Set wsPose = ThisWorkbook.Worksheets(SHEET_POSES)
+    poseLast = wsPose.Cells(wsPose.rows.Count, 2).End(xlUp).Row
+    poseBackup = wsPose.Range("A4:G" & poseLast).Formula
     Dim answer As VbMsgBoxResult
     answer = MsgBox( _
-        "This will replace the editable command rows in CommandSheet." & vbCrLf & _
+        "This will replace CommandSheet commands and the initial robot roster in InitialPoses." & vbCrLf & _
         "ExportPreview and both catalog worksheets will not be changed." & vbCrLf & vbCrLf & _
         "Continue?", _
         vbQuestion + vbYesNo + vbDefaultButton2 _
@@ -1003,7 +1021,7 @@ Public Sub ExpandCommandPreviewToCommandSheet()
     commandBackup = wsCmd.Range( _
         wsCmd.Cells(FIRST_DATA_ROW, COL_CMD_ID), _
         wsCmd.Cells(COMMAND_GUI_MAX_ROW, COL_LAYOUT_AC) _
-    ).value
+    ).Formula
 
     On Error GoTo Failed
     Application.ScreenUpdating = False
@@ -1030,7 +1048,7 @@ Public Sub ExpandCommandPreviewToCommandSheet()
         If importedCount >= maxCommands Then Exit For
 
         fields = rows(sourceRow)
-        If CsvArrayRowIsEmpty(fields) Then GoTo NextCommandRow
+        If Not CsvHasCommand(fields) Then GoTo NextCommandRow
 
         importedCount = importedCount + 1
         keyRow = FIRST_DATA_ROW + ((importedCount - 1) * 2)
@@ -1084,7 +1102,7 @@ NextCommandRow:
         If expandedCount >= importedCount Then Exit For
 
         fields = rows(sourceRow)
-        If CsvArrayRowIsEmpty(fields) Then GoTo NextExpansionRow
+        If Not CsvHasCommand(fields) Then GoTo NextExpansionRow
 
         expandedCount = expandedCount + 1
         valueRow = FIRST_DATA_ROW + ((expandedCount - 1) * 2) + 1
@@ -1124,13 +1142,17 @@ NextCommandRow:
 
 NextExpansionRow:
     Next sourceRow
-
+    If commandBlankCount + scannerBlankCount + timeBlankCount + argsNotExpandedCount > 0 Then
+        Err.Raise vbObjectError + 6302, , "An imported command cannot be represented by the current catalogs. Import was rolled back."
+    End If
+    ApplyImportRoster rows
+    Set gExportCommandIds = Nothing
     wsCmd.Protect UserInterfaceOnly:=True, AllowFormattingCells:=True, AllowFormattingColumns:=True, AllowFormattingRows:=True
     Application.EnableEvents = True
     Application.ScreenUpdating = True
 
     Dim omittedCount As Long
-    omittedCount = CountNonemptyCsvDataRows(rows) - importedCount
+    omittedCount = CountCsvCommands(rows) - importedCount
     If omittedCount < 0 Then omittedCount = 0
 
     MsgBox "Command preview expansion finished." & vbCrLf & _
@@ -1153,105 +1175,21 @@ Failed:
     wsCmd.Range( _
         wsCmd.Cells(FIRST_DATA_ROW, COL_CMD_ID), _
         wsCmd.Cells(COMMAND_GUI_MAX_ROW, COL_LAYOUT_AC) _
-    ).value = commandBackup
+    ).Formula = commandBackup
+    wsPose.Range("A4:G" & poseLast).Formula = poseBackup
     wsCmd.Protect UserInterfaceOnly:=True, AllowFormattingCells:=True, AllowFormattingColumns:=True, AllowFormattingRows:=True
     Application.EnableEvents = True
     Application.ScreenUpdating = True
     On Error GoTo 0
     MsgBox "Command preview expansion stopped:" & vbCrLf & importError, vbCritical
+    Exit Sub
+InvalidInput:
+    MsgBox "Import stopped before changing worksheets: " & Err.Description, vbExclamation
 End Sub
 
 Public Sub ExpandInitialPosesPreviewToInitialPoses()
-    Dim wsPreview As Worksheet
-    Dim wsPose As Worksheet
-    Set wsPreview = ThisWorkbook.Worksheets(SHEET_INITIAL_EXPORT)
-    Set wsPose = ThisWorkbook.Worksheets(SHEET_POSES)
-
-    Dim rows As Collection
-    Set rows = SheetUsedRangeToRows(wsPreview)
-    If rows.Count = 0 Then
-        MsgBox "InitialPosesExportPreview is empty. Import an initial-position CSV first.", vbExclamation
-        Exit Sub
-    End If
-
-    Dim scannerCol As Long
-    Dim xCol As Long
-    Dim yCol As Long
-    Dim headingCol As Long
-    scannerCol = FindCsvHeaderColumn(rows, "scanner")
-    xCol = FindCsvHeaderColumn(rows, "intended_x_m")
-    yCol = FindCsvHeaderColumn(rows, "intended_y_m")
-    headingCol = FindCsvHeaderColumn(rows, "intended_heading_deg")
-
-    If scannerCol < 0 Or xCol < 0 Or yCol < 0 Or headingCol < 0 Then
-        MsgBox "InitialPosesExportPreview must contain scanner, intended_x_m, intended_y_m, " & _
-               "and intended_heading_deg columns." & vbCrLf & _
-               "InitialPoses was not changed.", vbExclamation
-        Exit Sub
-    End If
-
-    Dim answer As VbMsgBoxResult
-    answer = MsgBox( _
-        "This will update matching robot pose fields in InitialPoses." & vbCrLf & _
-        "Enabled values, robots absent from the preview, and AP rows will remain unchanged." & _
-        vbCrLf & vbCrLf & "Continue?", _
-        vbQuestion + vbYesNo + vbDefaultButton2 _
-    )
-    If answer <> vbYes Then Exit Sub
-
-    Dim updatedCount As Long
-    Dim unknownCount As Long
-    Dim sourceRow As Long
-    Dim poseRow As Long
-    Dim fields As Variant
-    Dim scanner As String
-    Dim poseLastRow As Long
-    Dim poseBackup As Variant
-    Dim poseImportError As String
-    poseLastRow = wsPose.Cells(wsPose.rows.Count, 2).End(xlUp).Row
-    If poseLastRow < 4 Then poseLastRow = 4
-    poseBackup = wsPose.Range(wsPose.Cells(4, 3), wsPose.Cells(poseLastRow, 5)).value
-
-    On Error GoTo Failed
-    Application.ScreenUpdating = False
-
-    For sourceRow = 2 To rows.Count
-        fields = rows(sourceRow)
-        If CsvArrayRowIsEmpty(fields) Then GoTo NextPoseRow
-
-        scanner = Trim$(CsvArrayField(fields, scannerCol))
-        poseRow = FindExistingRobotPoseRow(wsPose, scanner)
-
-        If poseRow > 0 Then
-            ' Enabled (column A), Scanner, Map note, and DeviceType are preserved.
-            WriteImportedScalarToCell wsPose.Cells(poseRow, 3), CsvArrayField(fields, xCol)
-            WriteImportedScalarToCell wsPose.Cells(poseRow, 4), CsvArrayField(fields, yCol)
-            WriteImportedScalarToCell wsPose.Cells(poseRow, 5), CsvArrayField(fields, headingCol)
-            updatedCount = updatedCount + 1
-        ElseIf scanner <> "" Then
-            unknownCount = unknownCount + 1
-        End If
-
-NextPoseRow:
-    Next sourceRow
-
-    Application.ScreenUpdating = True
-    MsgBox "Initial-position preview expansion finished." & vbCrLf & _
-           "Existing robot rows updated: " & updatedCount & vbCrLf & _
-           "Unknown or non-robot scanners ignored: " & unknownCount & vbCrLf & vbCrLf & _
-           "Enabled values and AP rows were not changed." & vbCrLf & _
-           "No CommonCheckers validation was run.", _
-           IIf(unknownCount > 0, vbExclamation, vbInformation)
-    Sheets("InitialPoses").Select
-    Exit Sub
-
-Failed:
-    poseImportError = Err.Description
-    On Error Resume Next
-    wsPose.Range(wsPose.Cells(4, 3), wsPose.Cells(poseLastRow, 5)).value = poseBackup
-    On Error GoTo 0
-    Application.ScreenUpdating = True
-    MsgBox "Initial-position preview expansion stopped:" & vbCrLf & poseImportError, vbCritical
+    ' The initial roster and commands are now imported together.
+    ExpandCommandPreviewToCommandSheet
 End Sub
 
 Private Function ExpandImportedArgsForCommandRow( _
@@ -1304,6 +1242,8 @@ Private Function ExpandImportedArgsForCommandRow( _
                         PARAM_CATALOG_COL_NAME _
                     ).value))
 
+                    Set targetCell = wsCmd.Cells(valueRow, COL_PARAM1 + parameterPosition - 1)
+                    targetCell.ClearContents
                     If parameterName <> "" And jsonValues.Exists(parameterName) Then
                         Set targetCell = wsCmd.Cells( _
                             valueRow, _
@@ -1317,7 +1257,7 @@ Private Function ExpandImportedArgsForCommandRow( _
 
                         If allowedValues <> "" And _
                            Not CsvListContainsText(allowedValues, CStr(importedValue)) Then
-                            targetCell.ClearContents
+                            Exit Function
                         ElseIf IsEmpty(importedValue) Then
                             targetCell.ClearContents
                         Else
@@ -1685,6 +1625,7 @@ Private Function CsvListContainsText( _
 End Function
 
 Public Sub ExportScriptCsv()
+    On Error GoTo Failed
     Dim wsCmd As Worksheet
     Dim wsExport As Worksheet
     Set wsCmd = ThisWorkbook.Worksheets(SHEET_COMMAND)
@@ -1709,7 +1650,10 @@ Public Sub ExportScriptCsv()
 
     WriteUtf8TextFile outPath, csvText
 
-    MsgBox "Script CSV exported:" & vbCrLf & outPath, vbInformation
+    MsgBox "Single registration CSV exported:" & vbCrLf & outPath, vbInformation
+    Exit Sub
+Failed:
+    MsgBox "Export stopped: " & Err.Description, vbExclamation
 End Sub
 
 Private Function BuildArgsJsonSilent() As Boolean
@@ -1756,54 +1700,57 @@ Failed:
 End Function
 
 Private Function BuildScriptCsvText(wsCmd As Worksheet, wsExport As Worksheet) As String
-    Dim lastRow As Long
+    Dim rows As New Collection, fields As Variant, targets As Object
+    Dim wsPose As Worksheet, lastRow As Long, r As Long, i As Long, poseIndex As Long
+    Dim scanner As String, category As String, rowNo As Long, csvText As String
+    Set targets = CreateObject("Scripting.Dictionary")
+    Set gExportCommandIds = CreateObject("Scripting.Dictionary")
+    Set wsPose = ThisWorkbook.Worksheets(SHEET_POSES)
+    rows.Add Array("scanner", "t_offset_sec", "category", "action", "args_json", _
+                   "reentry_robot", "reentry_xy", "", "initial_robot", "initial_xy")
     lastRow = wsCmd.Cells(wsCmd.rows.Count, COL_CMD_ID).End(xlUp).Row
-
-    wsExport.Cells.ClearContents
-    wsExport.Range("A1:E1").value = Array("scanner", "t_offset_sec", "category", "action", "args_json")
-    wsExport.Range("A1:E1").Font.Bold = True
-
-    Dim csvText As String
-    csvText = "scanner,t_offset_sec,category,action,args_json" & vbCrLf
-
-    Dim r As Long
-    Dim outRow As Long
-    outRow = 2
-
-    For r = 4 To lastRow
-        If LCase$(Trim$(CStr(wsCmd.Cells(r, COL_LINE_TYPE).value))) = "value" Then
-            If IsTruthy(wsCmd.Cells(r, COL_ENABLED).value) Then
-                Dim scanner As String
-                Dim category As String
-                Dim action As String
-                Dim argsJson As String
-                Dim tOffset As Long
-
-                scanner = Trim$(CStr(wsCmd.Cells(r, COL_SCANNER).value))
-                category = Trim$(CStr(wsCmd.Cells(r, COL_CATEGORY).value))
-                action = Trim$(CStr(wsCmd.Cells(r, COL_ACTION).value))
-                argsJson = Trim$(CStr(wsCmd.Cells(r, COL_ARGS_JSON).value))
-                tOffset = TimeOffsetSeconds(wsCmd, r)
-
-                wsExport.Cells(outRow, 1).value = scanner
-                wsExport.Cells(outRow, 2).value = tOffset
-                wsExport.Cells(outRow, 3).value = category
-                wsExport.Cells(outRow, 4).value = action
-                wsExport.Cells(outRow, 5).value = argsJson
-
-                csvText = csvText & CsvEscape(scanner) & "," & _
-                                    CStr(tOffset) & "," & _
-                                    CsvEscape(category) & "," & _
-                                    CsvEscape(action) & "," & _
-                                    CsvEscape(argsJson) & vbCrLf
-
-                outRow = outRow + 1
-            End If
+    For r = FIRST_DATA_ROW To lastRow
+        If IsValueRow(wsCmd, r) And IsTruthy(wsCmd.Cells(r, COL_ENABLED).value) Then
+            scanner = Trim$(CStr(wsCmd.Cells(r, COL_SCANNER).value))
+            category = Trim$(CStr(wsCmd.Cells(r, COL_CATEGORY).value))
+            rows.Add Array(scanner, CStr(TimeOffsetSeconds(wsCmd, r)), category, _
+                Trim$(CStr(wsCmd.Cells(r, COL_ACTION).value)), CStr(wsCmd.Cells(r, COL_ARGS_JSON).value), _
+                "", "", "", "", "")
+            gExportCommandIds(CStr(rows.Count)) = CLng(wsCmd.Cells(r, COL_CMD_ID).value)
+            If LCase$(category) <> "ap" And LCase$(category) <> "ap_meta" Then targets(scanner) = True
         End If
     Next r
-
-    wsExport.Columns("A:E").AutoFit
-
+    poseIndex = 2
+    For r = 4 To wsPose.Cells(wsPose.rows.Count, 2).End(xlUp).Row
+        scanner = Trim$(CStr(wsPose.Cells(r, 2).value))
+        If targets.Exists(scanner) And IsTruthy(wsPose.Cells(r, 1).value) And _
+           LCase$(Trim$(CStr(wsPose.Cells(r, POSE_COL_DEVICE_TYPE).value))) <> "ap" Then
+            If Not IsNumeric(wsPose.Cells(r, 3).value) Or Not IsNumeric(wsPose.Cells(r, 4).value) Then
+                Err.Raise vbObjectError + 6300, , "InitialPoses needs numeric x/y for " & scanner
+            End If
+            Do While rows.Count < poseIndex
+                rows.Add Array("", "", "", "", "", "", "", "", "", "")
+            Loop
+            fields = rows(poseIndex)
+            fields(8) = scanner
+            fields(9) = "(" & JsonNumber(CDbl(wsPose.Cells(r, 3).value)) & ", " & JsonNumber(CDbl(wsPose.Cells(r, 4).value)) & ")"
+            rows.Remove poseIndex
+            If poseIndex <= rows.Count Then
+                rows.Add fields, Before:=poseIndex
+            Else
+                rows.Add fields
+            End If
+            poseIndex = poseIndex + 1
+        End If
+    Next r
+    csvText = SingleCsvBridge(CsvRowsText(rows), False)
+    Set rows = ParseCsvText(csvText)
+    wsExport.Cells.ClearContents
+    wsExport.Range("A:J").NumberFormat = "@"
+    WriteCsvRowsToSheet wsExport, rows
+    wsExport.Range("A1:J1").Font.Bold = True
+    wsExport.Columns("A:J").AutoFit
+    wsExport.Columns("E").ColumnWidth = 50
     BuildScriptCsvText = csvText
 End Function
 
@@ -1867,140 +1814,22 @@ End Sub
 ' ============================================================
 
 Public Sub ExportInitialPosesCsv()
-    Dim wsPose As Worksheet
-    Set wsPose = ThisWorkbook.Worksheets(SHEET_POSES)
-
-    Dim wsPreview As Worksheet
-    Set wsPreview = GetOrCreateSheet(SHEET_INITIAL_EXPORT)
-
-    Dim csvText As String
-    csvText = BuildInitialPosesCsvText(wsPose, wsPreview)
-
-    If CountInitialPoseRows(wsPose) = 0 Then
-        MsgBox "No enabled initial poses found. Export stopped.", vbExclamation
-        Exit Sub
-    End If
-
-    Dim outPath As String
-    outPath = PickCsvOutputPath("initial_poses.csv")
-    If outPath = "" Then
-        Exit Sub
-    End If
-
-    WriteUtf8TextFile outPath, csvText
-
-    MsgBox "Initial poses CSV exported:" & vbCrLf & outPath, vbInformation
+    ' Existing button now exports the same single registration CSV.
+    ExportScriptCsv
 End Sub
 
 Public Sub ExportAllCsv()
-    ' Convenience macro for script writers.
-    ' It exports experiment_script.csv first, then initial_poses.csv.
     ExportScriptCsv
-    ExportInitialPosesCsv
 End Sub
-
 
 Private Sub ExportAllCsvToFolder(ByVal folderPath As String)
     EnsureFolderExists folderPath
-
-    Dim wsCmd As Worksheet
-    Dim wsExport As Worksheet
-    Dim wsPose As Worksheet
-    Dim wsPosePreview As Worksheet
-
-    Set wsCmd = ThisWorkbook.Worksheets(SHEET_COMMAND)
-    Set wsExport = ThisWorkbook.Worksheets(SHEET_EXPORT)
-    Set wsPose = ThisWorkbook.Worksheets(SHEET_POSES)
-    Set wsPosePreview = GetOrCreateSheet(SHEET_INITIAL_EXPORT)
-
-    Dim ok As Boolean
-    ok = BuildArgsJsonSilent()
-    If Not ok Then
-        Err.Raise vbObjectError + 6100, "ExportAllCsvToFolder", "One or more enabled command rows have Args JSON errors."
+    If Not BuildArgsJsonSilent() Then
+        Err.Raise vbObjectError + 6100, , "One or more enabled rows have Args JSON errors."
     End If
-
-    Dim scriptCsv As String
-    Dim poseCsv As String
-
-    scriptCsv = BuildScriptCsvText(wsCmd, wsExport)
-    poseCsv = BuildInitialPosesCsvText(wsPose, wsPosePreview)
-
-    WriteUtf8TextFile JoinPath(folderPath, "experiment_script.csv"), scriptCsv
-    WriteUtf8TextFile JoinPath(folderPath, "initial_poses.csv"), poseCsv
+    WriteUtf8TextFile JoinPath(folderPath, "experiment_script.csv"), _
+        BuildScriptCsvText(ThisWorkbook.Worksheets(SHEET_COMMAND), ThisWorkbook.Worksheets(SHEET_EXPORT))
 End Sub
-
-
-Private Function BuildInitialPosesCsvText(wsPose As Worksheet, wsPreview As Worksheet) As String
-    Dim lastRow As Long
-    lastRow = wsPose.Cells(wsPose.rows.Count, 2).End(xlUp).Row
-
-    wsPreview.Cells.ClearContents
-    wsPreview.Range("A1:F1").value = Array("scanner", "intended_x_m", "intended_y_m", "intended_heading_deg", "position_tolerance_m", "heading_tolerance_deg")
-    wsPreview.Range("A1:F1").Font.Bold = True
-
-    Dim csvText As String
-    csvText = "scanner,intended_x_m,intended_y_m,intended_heading_deg,position_tolerance_m,heading_tolerance_deg" & vbCrLf
-
-    Dim r As Long
-    Dim outRow As Long
-    outRow = 2
-
-    For r = 4 To lastRow
-        If IsTruthy(wsPose.Cells(r, 1).value) And _
-           LCase$(Trim$(CStr(wsPose.Cells(r, POSE_COL_DEVICE_TYPE).value))) <> "ap" Then
-            Dim scanner As String
-            Dim xM As Variant
-            Dim yM As Variant
-            Dim headingDeg As Variant
-
-            scanner = Trim$(CStr(wsPose.Cells(r, 2).value))
-            xM = wsPose.Cells(r, 3).value
-            yM = wsPose.Cells(r, 4).value
-            headingDeg = wsPose.Cells(r, 5).value
-
-            If scanner <> "" And IsNumeric(xM) And IsNumeric(yM) And IsNumeric(headingDeg) Then
-                wsPreview.Cells(outRow, 1).value = scanner
-                wsPreview.Cells(outRow, 2).value = CDbl(xM)
-                wsPreview.Cells(outRow, 3).value = CDbl(yM)
-                wsPreview.Cells(outRow, 4).value = CDbl(headingDeg)
-                wsPreview.Cells(outRow, 5).value = ""
-                wsPreview.Cells(outRow, 6).value = ""
-
-                csvText = csvText & CsvEscape(scanner) & "," & _
-                                    JsonNumber(CDbl(xM)) & "," & _
-                                    JsonNumber(CDbl(yM)) & "," & _
-                                    JsonNumber(CDbl(headingDeg)) & "," & _
-                                    "," & vbCrLf
-
-                outRow = outRow + 1
-            End If
-        End If
-    Next r
-
-    wsPreview.Columns("A:F").AutoFit
-
-    BuildInitialPosesCsvText = csvText
-End Function
-
-Private Function CountInitialPoseRows(wsPose As Worksheet) As Long
-    Dim lastRow As Long
-    lastRow = wsPose.Cells(wsPose.rows.Count, 2).End(xlUp).Row
-
-    Dim r As Long
-    Dim n As Long
-    n = 0
-
-    For r = 4 To lastRow
-        If IsTruthy(wsPose.Cells(r, 1).value) And _
-           LCase$(Trim$(CStr(wsPose.Cells(r, POSE_COL_DEVICE_TYPE).value))) <> "ap" Then
-            If Trim$(CStr(wsPose.Cells(r, 2).value)) <> "" Then
-                n = n + 1
-            End If
-        End If
-    Next r
-
-    CountInitialPoseRows = n
-End Function
 
 Private Function GetOrCreateSheet(ByVal sheetName As String) As Worksheet
     Dim ws As Worksheet
@@ -2071,7 +1900,7 @@ Public Sub RunCommonCheckers()
     commonDir = JoinPath(JoinPath(nmsRoot, "sitemap"), "CommonCheckers")
 
     scriptCsv = JoinPath(generatedFolder, "experiment_script.csv")
-    initialPosesCsv = JoinPath(generatedFolder, "initial_poses.csv")
+    initialPosesCsv = "I/J in experiment_script.csv"
     reportJson = JoinPath(generatedFolder, "validation_report.json")
     stdoutPath = JoinPath(generatedFolder, "checker_stdout.txt")
     feedbackCsv = JoinPath(generatedFolder, "validation_feedback.csv")
@@ -2092,7 +1921,6 @@ Public Sub RunCommonCheckers()
     innerCmd = QuotePath(pythonExe) & " " & _
                QuotePath(helperScript) & " " & _
                "--script_csv " & QuotePath(scriptCsv) & " " & _
-               "--initial_poses_csv " & QuotePath(initialPosesCsv) & " " & _
                "--site_dir " & QuotePath(siteDir) & " " & _
                "--common_dir " & QuotePath(commonDir) & " " & _
                "--report_json " & QuotePath(reportJson) & " " & _
@@ -2119,6 +1947,10 @@ Public Sub RunCommonCheckers()
     End If
 
     Application.ScreenUpdating = True
+
+    ' Preview the exact CSV just checked, automatically in a browser tab.
+    ' Preview errors are handled separately and cannot change checker results.
+    ExportPlacementMapForCsv scriptCsv, reportJson, exitCode
 
     If exitCode = 0 Then
         If FileExists(reportJson) Then
@@ -2166,7 +1998,7 @@ Private Sub WritePreflightLaunchStatus(wsStatus As Worksheet, ByVal generatedFol
     WriteStatusRow wsStatus, 4, "Exit code", "RUNNING"
     WriteStatusRow wsStatus, 5, "Generated folder", generatedFolder
     WriteStatusRow wsStatus, 6, "Script CSV", scriptCsv
-    WriteStatusRow wsStatus, 7, "Initial poses CSV", initialPosesCsv
+    WriteStatusRow wsStatus, 7, "Initial roster", initialPosesCsv
     WriteStatusRow wsStatus, 8, "Report JSON", reportJson
     WriteStatusRow wsStatus, 9, "Report exists", IIf(FileExists(reportJson), "YES", "NO")
     WriteStatusRow wsStatus, 10, "Stdout log", stdoutPath
@@ -2190,7 +2022,7 @@ Private Sub WritePreflightStatus(wsStatus As Worksheet, ByVal exitCode As Long, 
     WriteStatusRow wsStatus, 4, "Exit code", exitCode
     WriteStatusRow wsStatus, 5, "Generated folder", generatedFolder
     WriteStatusRow wsStatus, 6, "Script CSV", scriptCsv
-    WriteStatusRow wsStatus, 7, "Initial poses CSV", initialPosesCsv
+    WriteStatusRow wsStatus, 7, "Initial roster", initialPosesCsv
     WriteStatusRow wsStatus, 8, "Report JSON", reportJson
     WriteStatusRow wsStatus, 9, "Report exists", IIf(FileExists(reportJson), "YES", "NO")
     WriteStatusRow wsStatus, 10, "Stdout log", stdoutPath
@@ -2442,6 +2274,13 @@ Private Sub ApplyValidationFeedbackToCommandSheet(wsCmd As Worksheet, ByVal rows
             Dim excelRow As Long
 
             cmdRowId = CLng(Val(CStr(fields(0))))
+            If Not gExportCommandIds Is Nothing Then
+                If gExportCommandIds.Exists(CStr(fields(1))) Then
+                    cmdRowId = gExportCommandIds(CStr(fields(1)))
+                Else
+                    cmdRowId = 0
+                End If
+            End If
             statusText = CStr(fields(2))
             issueCode = CStr(fields(4))
             messageText = CStr(fields(5))
@@ -2946,7 +2785,7 @@ Private Sub ApplyCommandLayoutToValueRow(wsCmd As Worksheet, ByVal valueRow As L
     wsCmd.Cells(valueRow, COL_ACTION).value = ActionForCommandId(commandId)
     ApplyScannerDropdownForCommand wsCmd, valueRow, commandId
 
-    ApplyParameterCatalogLayout wsCmd, keyRow, valueRow, commandId
+    ApplyParameterCatalogLayout wsCmd, keyRow, valueRow, commandId, (StrComp(previousCommandId, commandId, vbBinaryCompare) <> 0)
     ApplyDependentCatalogDefaults wsCmd, valueRow, commandId
 
     wsCmd.Cells(valueRow, COL_STATUS).value = IIf(IsEnabledValue(wsCmd.Cells(valueRow, COL_ENABLED).value), "NOT CHECKED", "DISABLED")
@@ -3004,7 +2843,8 @@ Private Sub ApplyParameterCatalogLayout( _
     wsCmd As Worksheet, _
     ByVal keyRow As Long, _
     ByVal valueRow As Long, _
-    ByVal commandId As String _
+    ByVal commandId As String, _
+    ByVal applyDefaults As Boolean _
 )
     Dim wsCatalog As Worksheet
     Set wsCatalog = ThisWorkbook.Worksheets(SHEET_PARAMETER_CATALOG)
@@ -3076,7 +2916,7 @@ Private Sub ApplyParameterCatalogLayout( _
                             catalogRow, _
                             PARAM_CATALOG_COL_DEFAULT _
                         ).value
-                        If IsBlankCellValue(wsCmd.Cells( _
+                        If applyDefaults And IsBlankCellValue(wsCmd.Cells( _
                             valueRow, _
                             parameterColumn _
                         ).value) And _
@@ -3858,3 +3698,232 @@ Failed:
 End Sub
 
 
+
+' Single-CSV helpers. Python handles the shared CSV contract and F/G derivation.
+Private Function CsvRowsText(ByVal rows As Collection) As String
+    Dim fields As Variant, r As Long, c As Long, line As String
+    For r = 1 To rows.Count
+        fields = rows(r): line = ""
+        For c = LBound(fields) To UBound(fields)
+            If c > LBound(fields) Then line = line & ","
+            line = line & CsvEscape(CStr(fields(c)))
+        Next c
+        CsvRowsText = CsvRowsText & line & vbCrLf
+    Next r
+End Function
+
+Private Function CsvHasCommand(ByVal fields As Variant) As Boolean
+    Dim c As Long
+    For c = 0 To 4
+        If Trim$(CsvArrayField(fields, c)) <> "" Then CsvHasCommand = True: Exit Function
+    Next c
+End Function
+
+Private Function CountCsvCommands(ByVal rows As Collection) As Long
+    Dim r As Long
+    For r = 2 To rows.Count
+        If CsvHasCommand(rows(r)) Then CountCsvCommands = CountCsvCommands + 1
+    Next r
+End Function
+
+Private Function SingleCsvBridge(ByVal textBody As String, ByVal validateOnly As Boolean) As String
+    Dim root As String, problem As String, pythonExe As String, helper As String
+    Dim fs As Object, shell As Object, folder As String, inputPath As String, outputPath As String
+    Dim logPath As String, cmd As String, innerCmd As String, rc As Long, errText As String
+    On Error GoTo Failed
+    root = Trim$(CStr(ThisWorkbook.Worksheets(SHEET_PREFLIGHT_CONFIG).Range("B5").value))
+    If root = "" Then
+        If Not ConfigurePreflightForPackage(root, problem) Then Err.Raise vbObjectError + 6310, , problem
+    End If
+    pythonExe = Trim$(CStr(ThisWorkbook.Worksheets(SHEET_PREFLIGHT_CONFIG).Range("B4").value))
+    If pythonExe = "" Then pythonExe = "python"
+    helper = JoinPath(ThisWorkbook.path, "autolab_single_csv.py")
+    If Not FileExists(helper) Then Err.Raise vbObjectError + 6311, , "Missing helper: " & helper
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    folder = JoinPath(CStr(fs.GetSpecialFolder(2)), fs.GetTempName)
+    fs.CreateFolder folder
+    inputPath = JoinPath(folder, "input.csv")
+    outputPath = JoinPath(folder, "output.csv")
+    logPath = JoinPath(folder, "result.txt")
+    WriteUtf8TextFile inputPath, textBody
+    innerCmd = QuotePath(pythonExe) & " " & QuotePath(helper) & _
+        " --root " & QuotePath(root) & " --input " & QuotePath(inputPath) & " --output " & QuotePath(outputPath)
+    If validateOnly Then innerCmd = innerCmd & " --validate-only"
+    innerCmd = innerCmd & " > " & QuotePath(logPath) & " 2>&1"
+    cmd = Environ$("ComSpec") & " /S /C " & Chr$(34) & innerCmd & Chr$(34)
+    Set shell = CreateObject("WScript.Shell")
+    rc = shell.Run(cmd, 0, True)
+    If rc <> 0 Or Not FileExists(outputPath) Then
+        If FileExists(logPath) Then errText = ReadTextFileUtf8(logPath)
+        Err.Raise vbObjectError + 6312, , "Single CSV check failed: " & errText
+    End If
+    SingleCsvBridge = ReadTextFileUtf8(outputPath)
+    If Len(SingleCsvBridge) > 0 Then
+        If Left$(SingleCsvBridge, 1) = ChrW(&HFEFF) Then SingleCsvBridge = Mid$(SingleCsvBridge, 2)
+    End If
+    fs.DeleteFolder folder, True
+    Exit Function
+Failed:
+    errText = Err.Description
+    On Error Resume Next
+    If Not fs Is Nothing Then
+        If folder <> "" Then
+            If fs.FolderExists(folder) Then fs.DeleteFolder folder, True
+        End If
+    End If
+    On Error GoTo 0
+    Err.Raise vbObjectError + 6313, "SingleCsvBridge", errText
+End Function
+
+Private Sub ParseInitialXY(ByVal text As String, ByRef x As Double, ByRef y As Double)
+    ' Python has already validated finite numeric coordinates and tuple syntax.
+    Dim parts As Variant
+    text = Trim$(text)
+    parts = Split(Mid$(text, 2, Len(text) - 2), ",")
+    If UBound(parts) <> 1 Then Err.Raise vbObjectError + 6314, , "Invalid initial coordinate"
+    x = Val(Trim$(parts(0))): y = Val(Trim$(parts(1)))
+End Sub
+
+Private Sub ValidateImportRoster(ByVal rows As Collection)
+    Dim r As Long, fields As Variant, scanner As String
+    For r = 2 To rows.Count
+        fields = rows(r): scanner = Trim$(CsvArrayField(fields, 8))
+        If scanner <> "" Then
+            If FindExistingRobotPoseRow(ThisWorkbook.Worksheets(SHEET_POSES), scanner) = 0 Then
+                Err.Raise vbObjectError + 6315, , "InitialPoses has no robot row for " & scanner
+            End If
+        End If
+    Next r
+End Sub
+
+Private Sub ApplyImportRoster(ByVal rows As Collection)
+    Dim ws As Worksheet, r As Long, fields As Variant, scanner As String, targetRow As Long
+    Dim x As Double, y As Double
+    Set ws = ThisWorkbook.Worksheets(SHEET_POSES)
+    For r = 4 To ws.Cells(ws.rows.Count, 2).End(xlUp).Row
+        If LCase$(Trim$(CStr(ws.Cells(r, POSE_COL_DEVICE_TYPE).value))) <> "ap" Then ws.Cells(r, 1).value = False
+    Next r
+    For r = 2 To rows.Count
+        fields = rows(r): scanner = Trim$(CsvArrayField(fields, 8))
+        If scanner <> "" Then
+            targetRow = FindExistingRobotPoseRow(ws, scanner)
+            ParseInitialXY CsvArrayField(fields, 9), x, y
+            ws.Cells(targetRow, 1).value = True
+            ws.Cells(targetRow, 3).value = x
+            ws.Cells(targetRow, 4).value = y
+            ws.Cells(targetRow, 5).ClearContents
+        End If
+    Next r
+End Sub
+
+Private Sub ValidateImportCommands(ByVal rows As Collection)
+    Dim r As Long, fields As Variant, commandId As String, values As Object, keys As Object
+    Dim catalog As Worksheet, j As Long, key As Variant, parameterName As String
+    Set catalog = ThisWorkbook.Worksheets(SHEET_PARAMETER_CATALOG)
+    For r = 2 To rows.Count
+        fields = rows(r)
+        If CsvHasCommand(fields) Then
+            commandId = CommandIdForImportedAction(Trim$(CsvArrayField(fields, 3)))
+            If commandId = "" Then Err.Raise vbObjectError + 6316, , "Unknown action at CSV row " & r
+            If Not ScannerAllowedForCommand(Trim$(CsvArrayField(fields, 0)), commandId) Then _
+                Err.Raise vbObjectError + 6317, , "Unsupported scanner at CSV row " & r
+            If CategoryForCommandId(commandId) <> Trim$(CsvArrayField(fields, 2)) Then _
+                Err.Raise vbObjectError + 6318, , "Category mismatch at CSV row " & r
+            If Not TryParseFlatJsonObject(CsvArrayField(fields, 4), values) Then _
+                Err.Raise vbObjectError + 6319, , "Args cannot be represented by this editor at CSV row " & r
+            Set keys = CreateObject("Scripting.Dictionary")
+            For j = 2 To catalog.Cells(catalog.rows.Count, PARAM_CATALOG_COL_COMMAND_ID).End(xlUp).Row
+                If Trim$(CStr(catalog.Cells(j, PARAM_CATALOG_COL_COMMAND_ID).value)) = commandId Then
+                    parameterName = Trim$(CStr(catalog.Cells(j, PARAM_CATALOG_COL_NAME).value))
+                    keys(parameterName) = True
+                End If
+            Next j
+            For Each key In values.Keys
+                If Not keys.Exists(CStr(key)) Then Err.Raise vbObjectError + 6320, , "Unsupported argument " & CStr(key) & " at CSV row " & r
+            Next key
+        End If
+    Next r
+End Sub
+
+Public Sub ConfigureSingleCsvControls()
+    ' Run once after replacing Module1. Existing button bindings stay valid.
+    Dim ws As Worksheet, shp As Shape, action As String, caption As String
+    On Error Resume Next
+    For Each ws In ThisWorkbook.Worksheets
+        For Each shp In ws.Shapes
+            action = shp.OnAction: caption = ""
+            If InStr(action, "ExportAllCsv") > 0 Or InStr(action, "ExportScriptCsv") > 0 Or InStr(action, "ExportInitialPosesCsv") > 0 Then caption = "Export single CSV"
+            If InStr(action, "ImportCommandCsvToPreview") > 0 Or InStr(action, "ImportInitialPosesCsvToPreview") > 0 Then caption = "Import single CSV"
+            If InStr(action, "ExpandCommandPreviewToCommandSheet") > 0 Or InStr(action, "ExpandInitialPosesPreviewToInitialPoses") > 0 Then caption = "Apply CSV commands + roster"
+            If caption <> "" Then shp.TextFrame.Characters.Text = caption
+        Next shp
+    Next ws
+    ThisWorkbook.Worksheets(SHEET_INITIAL_EXPORT).Visible = xlSheetHidden
+    On Error GoTo 0
+    MsgBox "Single-CSV controls updated. Edit initial x/y in InitialPoses; heading is optional. ExportPreview uses I/J for the roster and F/G for re-entry reminders.", vbInformation
+End Sub
+
+' ============================================================
+' Operator placement PNG. Read exported CSV; never annotate StaticMap itself.
+' Existing export/import/checker button macro names remain unchanged.
+' ============================================================
+Public Sub ExportPlacementMap()
+    Dim csvPath As String
+    csvPath = PickCsvInputPath("Choose the exported registration CSV for its placement guide")
+    If csvPath = "" Then Exit Sub
+    ExportPlacementMapForCsv csvPath
+End Sub
+
+Private Sub ExportPlacementMapForCsv(ByVal csvPath As String, Optional ByVal reportPath As String = "", Optional ByVal checkerExitCode As Long = -1)
+    Dim root As String, problem As String, pythonExe As String, helper As String
+    Dim fs As Object, shell As Object, folder As String, workbookCopy As String
+    Dim previewDir As String, pagePath As String, logPath As String, innerCmd As String, cmd As String
+    Dim rc As Long, detail As String, errorText As String
+    On Error GoTo Failed
+    If ThisWorkbook.path = "" Then Err.Raise vbObjectError + 6340, , "Save this workbook before generating a placement preview."
+    root = Trim$(CStr(ThisWorkbook.Worksheets(SHEET_PREFLIGHT_CONFIG).Range("B5").value))
+    If root = "" Then
+        If Not ConfigurePreflightForPackage(root, problem) Then Err.Raise vbObjectError + 6341, , problem
+    End If
+    pythonExe = Trim$(CStr(ThisWorkbook.Worksheets(SHEET_PREFLIGHT_CONFIG).Range("B4").value))
+    If pythonExe = "" Then pythonExe = "python"
+    helper = JoinPath(ThisWorkbook.path, "autolab_placement_map.py")
+    If Not FileExists(helper) Then Err.Raise vbObjectError + 6342, , "Missing helper: " & helper
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    previewDir = JoinPath(JoinPath(ThisWorkbook.path, "generated"), "placement_preview")
+    pagePath = JoinPath(previewDir, "preview.html")
+    folder = JoinPath(CStr(fs.GetSpecialFolder(2)), fs.GetTempName)
+    fs.CreateFolder folder
+    workbookCopy = JoinPath(folder, "placement_map.xlsm")
+    logPath = JoinPath(folder, "result.txt")
+    ' Snapshot only: StaticMap is never annotated or edited.
+    ThisWorkbook.SaveCopyAs workbookCopy
+    innerCmd = QuotePath(pythonExe) & " " & QuotePath(helper) & _
+        " --root " & QuotePath(root) & " --workbook " & QuotePath(workbookCopy) & _
+        " --csv " & QuotePath(csvPath) & " --preview-dir " & QuotePath(previewDir)
+    If reportPath <> "" Then
+        innerCmd = innerCmd & " --validation-report " & QuotePath(reportPath) & _
+            " --checker-exit " & CStr(checkerExitCode)
+    End If
+    innerCmd = innerCmd & " > " & QuotePath(logPath) & " 2>&1"
+    cmd = Environ$("ComSpec") & " /S /C " & Chr$(34) & innerCmd & Chr$(34)
+    Set shell = CreateObject("WScript.Shell")
+    rc = shell.Run(cmd, 0, True)
+    If rc <> 0 Or Not FileExists(pagePath) Then
+        If FileExists(logPath) Then detail = ReadTextFileUtf8(logPath)
+        Err.Raise vbObjectError + 6343, , detail
+    End If
+    fs.DeleteFolder folder, True
+    folder = ""
+    Exit Sub
+Failed:
+    errorText = Err.Description
+    On Error Resume Next
+    If Not fs Is Nothing Then
+        If folder <> "" Then
+            If fs.FolderExists(folder) Then fs.DeleteFolder folder, True
+        End If
+    End If
+    On Error GoTo 0
+    MsgBox "Placement browser preview could not finish. The CSV and checker result are retained." & vbCrLf & errorText, vbExclamation
+End Sub

@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .script_model import InitialPose, ScriptRow
+from .planned_reentry import move_target
 from .static_safety_core import (
-    apply_mobility_move_pose,
     bump_guard_crossing_issues,
     deg_norm_360,
     macro_robot_clearance_issues,
@@ -55,6 +55,9 @@ def check_macro_and_bump_rules(
     }
 
     for row in sorted(rows, key=lambda r: (r.t_offset_sec, r.row_number)):
+        if row.category == "system" and row.action == "system.shutdown":
+            planned_by_scanner.pop(row.scanner, None)
+            continue
         if row.category != "mobility":
             continue
 
@@ -62,23 +65,22 @@ def check_macro_and_bump_rules(
 
         # If the initial pose is missing, P2 already reports that. Avoid noisy
         # follow-on geometry errors here.
-        if current is None:
+        if row.scanner not in initial_poses:
             continue
 
         if row.action == "mobility.report.location":
-            # Offline checker assumes report.location confirms the intended pose.
-            # Runtime will compare learned true pose with this intended pose.
+            # A report has no measured result offline; unknown stays unknown.
             continue
 
         if row.action == "mobility.move":
-            new_pose, move_issues = apply_mobility_move_pose(current, row.args)
+            new_pose, move_issues = move_target(current, row.args)
             for issue in move_issues:
                 issues.append(_with_row_context(issue, row))
             if move_issues:
                 continue
 
             for issue in bump_guard_crossing_issues(
-                start_pose=current,
+                start_pose=current if current is not None else new_pose,
                 end_pose=new_pose,
                 bump_guard_zones=macro_policy,
             ):
@@ -88,6 +90,9 @@ def check_macro_and_bump_rules(
             continue
 
         if row.action in macro_cfg_by_action:
+            if current is None:
+                # Sequence checker rejects a macro before re-entry staging move.
+                continue
             cfg = macro_cfg_by_action[row.action]
 
             if cfg.get("args_allowed") is False and row.args:
