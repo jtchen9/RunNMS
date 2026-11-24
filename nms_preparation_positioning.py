@@ -14,10 +14,15 @@ import uuid
 from nms_preparation_gate import serialized as preparation_serialized
 
 TIME_FMT = "%Y-%m-%d-%H:%M:%S"
+POLL_RESUME_WAIT_SECONDS = 30.0
 
 
 class PositioningError(ValueError):
     pass
+
+
+class PollNotFresh(PositioningError):
+    """Transient admission failure while the synchronous agent resumes polling."""
 
 
 def _pose(value):
@@ -174,7 +179,23 @@ async def position_once(*, scanner, target, port, owns_attempt,
 
     try:
         guard()
-        port.open(scanner, scope=scope, owns_attempt=admission_current)
+        # Health ACKs can arrive before the agent's next poll. Only stale-poll
+        # admission is retryable here; all other guards still fail immediately.
+        poll_deadline = min(deadline, monotonic() + POLL_RESUME_WAIT_SECONDS)
+        while True:
+            guard()
+            try:
+                port.open(scanner, scope=scope, owns_attempt=admission_current)
+                break
+            except PollNotFresh as exc:
+                remaining = poll_deadline - monotonic()
+                if remaining <= 0:
+                    raise PositioningError(
+                        "Robot is not polling after waiting up to 30s for a fresh poll"
+                    ) from exc
+                # No admission lock is held across this await. Polls, deletion
+                # and other robots' preparation can continue normally.
+                await sleep(min(0.25, remaining))
         opened = True
         before = port.snapshot(scanner).get("evidence") or {}
         phase = "initial_location"
@@ -296,7 +317,7 @@ class NmsPositioningPort:
         if self.store._load_stop().get("stop"): raise PositioningError("Stop is latched")
         if self.mobility.registration_blocks_commands(scanner): raise PositioningError("Robot registration is incomplete")
         if self.state._get_state(scanner) != "s0idle": raise PositioningError("Robot is not idle")
-        if not self.mobility.link.poll_fresh(scanner): raise PositioningError("Robot is not polling")
+        if not self.mobility.link.poll_fresh(scanner): raise PollNotFresh("Robot is not polling")
 
     @preparation_serialized
     def open(self, scanner, *, scope, owns_attempt):
