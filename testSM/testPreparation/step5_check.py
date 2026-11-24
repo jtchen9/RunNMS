@@ -97,10 +97,10 @@ class LifecycleCases(Base):
         self.ready();self.assertEqual(self.d["snapshot"]["preparation"]["phase"],"preparing")
         self.d=self.st.fail(self.uid,gate.OWNER,self.token,NOW,"commit failed")
         self.assertEqual(self.d["snapshot"]["preparation"]["phase"],"retry_wait")
-    def test_180_second_adjustment_and_new_attempt_token(self):
+    def test_60_second_adjustment_and_new_attempt_token(self):
         self.begin();old=self.token;self.st.fail(self.uid,gate.OWNER,old,NOW,"s7stopped",A)
-        with self.assertRaises(Conflict):self.st.begin(self.uid,gate.OWNER,"2026-11-20-18:02:59")
-        d=self.st.begin(self.uid,gate.OWNER,"2026-11-20-18:03:00")
+        with self.assertRaises(Conflict):self.st.begin(self.uid,gate.OWNER,"2026-11-20-18:00:59")
+        d=self.st.begin(self.uid,gate.OWNER,"2026-11-20-18:01:00")
         self.assertEqual(d["runtime"]["attempt"],2);self.assertNotEqual(old,d["runtime"]["token"])
         with self.assertRaises(Conflict):self.st.stage(self.uid,gate.OWNER,old,"ready",NOW)
     def test_restart_in_flight_requires_reset_same_registration(self):
@@ -214,7 +214,7 @@ class Worker(Base):
         self.assertTrue(d["runtime"]["released"]);self.assertEqual(self.r.xlen("cmd:"+A),1)
     def test_s7_during_preparation_schedules_retry_without_releasing(self):
         d=self.invoke(failure=(A,False))
-        self.assertEqual(d["runtime"]["phase"],"retry_wait");self.assertEqual(d["runtime"]["retry_at"],"2026-11-20-18:03:00")
+        self.assertEqual(d["runtime"]["phase"],"retry_wait");self.assertEqual(d["runtime"]["retry_at"],"2026-11-20-18:01:00")
         self.assertEqual(self.r.xlen("cmd:"+A),0);self.assertFalse(d["runtime"]["released"])
     def test_delete_during_measurement_cannot_issue_followup_or_release(self):
         d=self.invoke(cancel_at=(A,True))

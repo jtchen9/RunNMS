@@ -12,7 +12,7 @@ import math
 import uuid
 
 TIME_FMT = "%Y-%m-%d-%H:%M:%S"
-RETRY_SECONDS = 180
+RETRY_SECONDS = 60
 TERMINAL = {"cancelled", "stopped"}
 
 
@@ -102,7 +102,7 @@ class Preparation:
         if self.phase not in {"awaiting_attempt", "retry_wait"}:
             raise PreparationError("Health checks or the previous attempt are unfinished")
         if self.retry_at is not None and now < self.retry_at:
-            raise PreparationError("The 180-second operator adjustment period is unfinished")
+            raise PreparationError("The 60-second operator adjustment period is unfinished")
         if self.reset_required and not reset_completed:
             raise PreparationError("Reset the failed preparation attempt before retrying")
         if stop_latched:

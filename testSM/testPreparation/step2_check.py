@@ -74,20 +74,20 @@ class Lifecycle(unittest.TestCase):
         with self.assertRaises(PreparationError):
             new().begin_attempt(now=START, all_robots_idle=True, stop_latched=False)
 
-    def test_retry_waits_full_180_seconds(self):
+    def test_retry_waits_full_60_seconds(self):
         p = new(); token = begin(p)
         p.attempt_failed(token=token, now=START+timedelta(seconds=100), reason='no pose', scanner=B)
-        self.assertEqual(p.snapshot(now=START+timedelta(seconds=101))['retry_in_sec'], 179)
+        self.assertEqual(p.snapshot(now=START+timedelta(seconds=101))['retry_in_sec'], 59)
         with self.assertRaises(PreparationError):
-            p.begin_attempt(now=START+timedelta(seconds=279), all_robots_idle=True, stop_latched=False)
-        p.begin_attempt(now=START+timedelta(seconds=280), all_robots_idle=True, stop_latched=False)
+            p.begin_attempt(now=START+timedelta(seconds=159), all_robots_idle=True, stop_latched=False)
+        p.begin_attempt(now=START+timedelta(seconds=160), all_robots_idle=True, stop_latched=False)
         self.assertEqual(p.attempt, 2)
 
     def test_retry_reconfirms_already_ready_robot(self):
         p = new(); token = begin(p)
         p.report_ready(A, token=token, now=START+timedelta(seconds=80))
         p.attempt_failed(token=token, now=START+timedelta(seconds=100), reason='no pose', scanner=B)
-        token = p.begin_attempt(now=START+timedelta(seconds=280), all_robots_idle=True, stop_latched=False)
+        token = p.begin_attempt(now=START+timedelta(seconds=160), all_robots_idle=True, stop_latched=False)
         p.report_ready(B, token=token, now=START+timedelta(seconds=300))
         self.assertEqual(p.snapshot(now=START)['pending_robots'], [A])
         with self.assertRaises(PreparationError): p.schedule_candidate(now=START+timedelta(seconds=300))
@@ -95,7 +95,7 @@ class Lifecycle(unittest.TestCase):
     def test_multiple_retry_durations_counted_once(self):
         p = new(); token = begin(p)
         p.attempt_failed(token=token, now=START+timedelta(seconds=100), reason='pose')
-        token = p.begin_attempt(now=START+timedelta(seconds=280), all_robots_idle=True, stop_latched=False)
+        token = p.begin_attempt(now=START+timedelta(seconds=160), all_robots_idle=True, stop_latched=False)
         p.attempt_failed(token=token, now=START+timedelta(seconds=310), reason='pose')
         token = p.begin_attempt(now=START+timedelta(seconds=490), all_robots_idle=True, stop_latched=False)
         for robot in (A,B): p.report_ready(robot, token=token, now=START+timedelta(seconds=520))
@@ -104,7 +104,7 @@ class Lifecycle(unittest.TestCase):
     def test_late_result_from_old_attempt_ignored(self):
         p = new(); old = begin(p)
         p.attempt_failed(token=old, now=START+timedelta(seconds=100), reason='timeout')
-        p.begin_attempt(now=START+timedelta(seconds=280), all_robots_idle=True, stop_latched=False)
+        p.begin_attempt(now=START+timedelta(seconds=160), all_robots_idle=True, stop_latched=False)
         self.assertFalse(p.report_ready(A, token=old, now=START+timedelta(seconds=290)))
         self.assertFalse(p.attempt_failed(token=old, now=START+timedelta(seconds=290), reason='late'))
 
@@ -176,7 +176,7 @@ class Lifecycle(unittest.TestCase):
         p = new(); token = begin(p)
         p.attempt_failed(token=token, now=START+timedelta(seconds=100), reason='camera missing', scanner=B)
         s = p.snapshot(now=START+timedelta(seconds=130))
-        self.assertEqual((s['failed_robot'], s['reason'], s['retry_in_sec']), (B,'camera missing',150))
+        self.assertEqual((s['failed_robot'], s['reason'], s['retry_in_sec']), (B,'camera missing',30))
         self.assertIsNone(s['start_at']); self.assertIsNone(s['end_at'])
         json.dumps(s)  # Ready for a future northbound adapter, not sent by this test.
 

@@ -254,7 +254,7 @@ async def prepare_controller_robot(controller, scanner, port, **timing):
         else:
             snap = port.snapshot(scanner)
             # S7 is an attempt failure during preparation, not experiment death.
-            # The lifecycle driver waits 180s, cancels old work/timers and resets
+            # The lifecycle driver waits 60s, cancels old work/timers and resets
             # before invoking begin_attempt(reset_completed=True). It must then
             # obtain new reports; this callback never clears a stop on its own.
             controller.attempt_failed(token=token, now=now, reason=result["reason"], scanner=scanner,

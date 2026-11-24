@@ -145,7 +145,7 @@ class Attempt(unittest.TestCase):
         c.health_passed(token=c.token,now=START);c.begin_attempt(now=START,all_robots_idle=True,stop_latched=False)
         p=Port();p.initial=pose(3,3)
         asyncio.run(prepare_controller_robot(c,A,p,monotonic=lambda:p.seconds,sleep=p.sleep))
-        self.assertEqual(c.phase,'retry_wait');self.assertEqual(c.snapshot(now=START+timedelta(seconds=1))['retry_in_sec'],180)
+        self.assertEqual(c.phase,'retry_wait');self.assertEqual(c.snapshot(now=START+timedelta(seconds=1))['retry_in_sec'],60)
 
     def test_s7_is_retryable_after_wait_and_reset(self):
         man={'schema_version':'experiment_csv_v1','initial_positions':[dict(scanner=A,x_m=5,y_m=3)],
@@ -156,7 +156,7 @@ class Attempt(unittest.TestCase):
         asyncio.run(prepare_controller_robot(c,A,p,monotonic=lambda:p.seconds,sleep=p.sleep))
         self.assertEqual(c.phase,'retry_wait');self.assertTrue(c.reset_required)
         with self.assertRaises(PreparationError):
-            c.begin_attempt(now=START+timedelta(seconds=100),all_robots_idle=True,stop_latched=False,reset_completed=True)
+            c.begin_attempt(now=START+timedelta(seconds=30),all_robots_idle=True,stop_latched=False,reset_completed=True)
         with self.assertRaises(PreparationError):
             c.begin_attempt(now=START+timedelta(seconds=200),all_robots_idle=True,stop_latched=False)
         with self.assertRaises(PreparationError):

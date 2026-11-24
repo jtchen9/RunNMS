@@ -90,7 +90,7 @@ class Lifecycle(Store):
         rt=doc["runtime"]
         if rt["released"] or rt["cancel_requested"]:
             raise Conflict("Cannot retry an ended preparation")
-        rt.update(phase="retry_wait",freeze_at=now,retry_at=(datetime.strptime(now,FMT)+timedelta(seconds=180)).strftime(FMT),
+        rt.update(phase="retry_wait",freeze_at=now,retry_at=(datetime.strptime(now,FMT)+timedelta(seconds=60)).strftime(FMT),
                   ready=[],active_robot=None,active_robots=[],failed_robot=scanner,token=uuid.uuid4().hex)
         return self.publish(doc,now,[("attempt_failed",scanner,{}),("retry_scheduled",None,{"retry_at":rt["retry_at"],"reset_required":True})],reason)
 
@@ -102,7 +102,7 @@ class Lifecycle(Store):
             rt=doc["runtime"]
             if rt["phase"] not in {"awaiting_attempt","retry_wait"} or rt["cancel_requested"]:
                 raise Conflict("Cannot begin this attempt")
-            if rt["retry_at"] and now<rt["retry_at"]:raise Conflict("180-second adjustment period unfinished")
+            if rt["retry_at"] and now<rt["retry_at"]:raise Conflict("60-second adjustment period unfinished")
             rt.update(phase="resetting",attempt=rt["attempt"]+1,token=uuid.uuid4().hex,ready=[],failed_robot=None,active_robot=None,active_robots=[],robot_progress={})
             return self.publish(doc,now,[("attempt_started",None,{}),("reset_started",None,{})])
         return self.owned_edit(uid,edit,owner)
