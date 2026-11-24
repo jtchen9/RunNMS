@@ -11,9 +11,9 @@ def normalize_operator_args(scanner, action, args, policy):
         raise ValueError("command args must be a JSON object")
     result = dict(args)
     if action == "system.shutdown":
-        wait = args.get("time_to_wait", 300)
+        wait = args.get("time_to_wait", 60)
         if type(wait) is not int or wait <= 0:
-            raise ValueError("time_to_wait must be a positive JSON integer; default is 300 seconds")
+            raise ValueError("time_to_wait must be a positive JSON integer; default is 60 seconds")
         if set(args) - {"time_to_wait", "_experiment"}:
             raise ValueError("unsupported shutdown arguments")
         result["time_to_wait"] = wait
