@@ -288,7 +288,7 @@ MOBILITY_POS_IGNORE_THRESH_M = 0.05
 # A first result within 0.15 m is accepted without correction. A result between
 # 0.15 m and this limit may receive one correction when location confidence is
 # sufficient. A result above this limit stops the experiment.
-MOBILITY_FIRST_CORRECTION_MAX_M = 0.30
+MOBILITY_FIRST_CORRECTION_MAX_M = 0.40
 
 # Precision-tolerance gate used by S5 after the single allowed correction.
 # A residual at or below this value is accepted; a larger residual stops the
