@@ -5,3 +5,5 @@ testLocation/input/
 locationSolver/output/
 sitemap/DemoRoom/script_authoring/generated/route_preview/current
 iperf3_server_logs/
+locationSolver/
+mobilityTrace/
