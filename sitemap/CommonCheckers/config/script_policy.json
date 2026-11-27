@@ -217,7 +217,7 @@
         "numeric_ranges": {},
         "integer_ranges": {
           "duration_sec": {
-            "min_exclusive": 60,
+            "min_inclusive": 60,
             "max_inclusive": 1200
           },
           "report_interval_sec": {
